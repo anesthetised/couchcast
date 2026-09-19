@@ -727,8 +727,22 @@ p.card {
   text-shadow: none;
 }
 
-/* Idle: hide the chat unless someone is typing in it. */
+/* Idle: the chat stays readable as a "ghost" — messages over the video
+   without background or input — unless someone is typing in it. */
 .stage.fullscreen.idle .fs-chat:not(:focus-within):not(:hover) {
-  opacity: 0;
   pointer-events: none;
+}
+
+.stage.fullscreen.idle .fs-chat:not(:focus-within):not(:hover) .chat {
+  background: transparent;
+}
+
+.stage.fullscreen.idle .fs-chat:not(:focus-within):not(:hover) .chat-form,
+.stage.fullscreen.idle .fs-chat:not(:focus-within):not(:hover) .chat-delete {
+  opacity: 0;
+}
+
+.fs-chat .chat-form,
+.fs-chat .chat-delete {
+  transition: opacity 200ms;
 }
