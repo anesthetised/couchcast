@@ -29,8 +29,8 @@ jobs:
           --health-cmd "pg_isready -U couchcast -d couchcast_test"
           --health-interval 5s --health-timeout 3s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -40,7 +40,7 @@ jobs:
           if [ -n "$unformatted" ]; then echo "$unformatted"; exit 1; fi
       - name: go vet
         run: go vet ./...
-      - uses: golangci/golangci-lint-action@v8
+      - uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
       - name: go test
@@ -56,11 +56,11 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
         with:
           package_json_file: web/package.json
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -87,7 +87,7 @@ jobs:
       COUCHCAST_DATABASE_URL: postgres://couchcast:couchcast@localhost:5432/couchcast?sslmode=disable
       ATLAS_DEV_URL: postgres://couchcast:couchcast@localhost:5432/atlas_dev?sslmode=disable
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Create the Atlas dev database
         run: docker exec ${{ job.services.postgres.id }} psql -U couchcast -c 'CREATE DATABASE atlas_dev'
       - name: Define the atlas helper
@@ -117,10 +117,10 @@ jobs:
     name: Image
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
       - name: Build runtime image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           target: runtime
