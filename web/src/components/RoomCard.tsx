@@ -88,9 +88,7 @@ const RoomCard: Component<Props> = (props) => {
         <Show when={props.room.live}>
           <span class="room-card-live">● live</span>
         </Show>
-        <Show when={props.room.viewers > 0}>
-          <span class="room-card-viewers">👁 {props.room.viewers}</span>
-        </Show>
+
         <Show when={media() && props.room.playback && !props.room.playback.playing}>
           <span class="room-card-badge">paused</span>
         </Show>
@@ -103,7 +101,7 @@ const RoomCard: Component<Props> = (props) => {
         <div class="room-card-title">{media()?.title || props.room.name}</div>
         <div class="muted small">
           <Show when={media()}>{props.room.name} · </Show>
-          by {props.room.owner} · {props.room.memberCount} member{props.room.memberCount === 1 ? "" : "s"}
+          by {props.room.owner} · {props.room.viewers} watching
         </div>
       </div>
     </a>
