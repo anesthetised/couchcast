@@ -29,8 +29,9 @@ func TestVoteMode(t *testing.T) {
 		require.NoError(t, f.room.QueueAdd(ctx, f.owner, u))
 	}
 	titles := func(c *fakeConn) []string {
-		var out []string
-		for _, q := range c.lastSnapshot().Queue {
+		snap := c.lastSnapshot()
+		out := make([]string, 0, len(snap.Queue))
+		for _, q := range snap.Queue {
 			out = append(out, q.Media.Title)
 		}
 		return out
