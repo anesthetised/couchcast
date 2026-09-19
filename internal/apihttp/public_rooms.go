@@ -51,6 +51,7 @@ type directoryRoom struct {
 	Owner       string             `json:"owner"`
 	Viewers     int                `json:"viewers"`
 	MemberCount int                `json:"memberCount"`
+	Live        bool               `json:"live"`
 	Media       *directoryMedia    `json:"media"`
 	Playback    *directoryPlayback `json:"playback"`
 }
@@ -64,8 +65,9 @@ type directoryResponse struct {
 }
 
 // handlePublicRooms serves the directory on the home page: public rooms
-// with what is playing, live viewer counts, search, live filter and
-// pagination. Anonymous access is intended.
+// with what is playing, viewer counts, search, a live filter (a ready
+// video is playing, watched or not) and pagination. Anonymous access is
+// intended.
 func (s *Server) handlePublicRooms(w http.ResponseWriter, r *http.Request) {
 	qs := r.URL.Query()
 
@@ -103,7 +105,7 @@ func (s *Server) handlePublicRooms(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	resp := directoryResponse{ServerNowMs: now.UnixMilli(), Page: page, PerPage: perPage, Total: total, Rooms: make([]directoryRoom, 0, len(rooms))}
 	for _, pr := range rooms {
-		dr := directoryRoom{Slug: pr.Room.Slug, Name: pr.Room.Name, Owner: pr.Owner, Viewers: pr.Viewers, MemberCount: pr.MemberCount}
+		dr := directoryRoom{Slug: pr.Room.Slug, Name: pr.Room.Name, Owner: pr.Owner, Viewers: pr.Viewers, MemberCount: pr.MemberCount, Live: pr.Live}
 		if pr.Media != nil {
 			m := &directoryMedia{ID: pr.Media.ID, Title: pr.Media.Title, ThumbnailURL: pr.Media.ThumbnailURL, DurationMs: pr.Media.DurationMs}
 			if pr.Media.IsReady() && s.deps.Signer != nil {

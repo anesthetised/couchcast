@@ -71,7 +71,8 @@ func TestPublicRoomsDirectory(t *testing.T) {
 	live.counts[pending.ID] = 2
 	live.playback[ready.ID] = protocol.Playback{Playing: false, PositionMs: 4242, AtServerMs: 123}
 
-	// Anonymous, default page: live first, then playing, then fillers; 32 total.
+	// Anonymous, default page: the playing room is live and comes first,
+	// then the watched-but-pending room, then fillers; 32 total.
 	rec := anon.do(http.MethodGet, "/api/v1/rooms/public", nil)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	resp := decodeBody[directoryResponse](t, rec)
@@ -82,20 +83,23 @@ func TestPublicRoomsDirectory(t *testing.T) {
 	assert.Greater(t, resp.ServerNowMs, int64(0))
 
 	first := resp.Rooms[0]
-	assert.Equal(t, "pending-room", first.Slug)
-	assert.Equal(t, 2, first.Viewers)
+	assert.Equal(t, "ready-room", first.Slug)
+	assert.True(t, first.Live)
+	assert.Equal(t, 0, first.Viewers)
 	require.NotNil(t, first.Media)
-	assert.Empty(t, first.Media.Manifest, "not ready: no manifest or token")
-	assert.Empty(t, first.Media.Token)
+	assert.Equal(t, "/media/"+m1.ID.String()+"/manifest.mpd", first.Media.Manifest)
+	assert.True(t, signer.Verify(first.Media.Token, m1.ID, time.Now()))
+	require.NotNil(t, first.Playback)
+	assert.EqualValues(t, 4242, first.Playback.PositionMs, "live clock wins over the persisted one")
+	assert.False(t, first.Playback.Playing)
 
 	second := resp.Rooms[1]
-	assert.Equal(t, "ready-room", second.Slug)
+	assert.Equal(t, "pending-room", second.Slug)
+	assert.False(t, second.Live)
+	assert.Equal(t, 2, second.Viewers)
 	require.NotNil(t, second.Media)
-	assert.Equal(t, "/media/"+m1.ID.String()+"/manifest.mpd", second.Media.Manifest)
-	assert.True(t, signer.Verify(second.Media.Token, m1.ID, time.Now()))
-	require.NotNil(t, second.Playback)
-	assert.EqualValues(t, 4242, second.Playback.PositionMs, "live clock wins over the persisted one")
-	assert.False(t, second.Playback.Playing)
+	assert.Empty(t, second.Media.Manifest, "not ready: no manifest or token")
+	assert.Empty(t, second.Media.Token)
 
 	assert.Nil(t, resp.Rooms[2].Media)
 	for _, rm := range resp.Rooms {
@@ -121,7 +125,7 @@ func TestPublicRoomsDirectory(t *testing.T) {
 	rec = anon.do(http.MethodGet, "/api/v1/rooms/public?live=1", nil)
 	resp = decodeBody[directoryResponse](t, rec)
 	assert.Equal(t, 1, resp.Total)
-	assert.Equal(t, "pending-room", resp.Rooms[0].Slug)
+	assert.Equal(t, "ready-room", resp.Rooms[0].Slug)
 
 	// "public" never resolves as a room slug.
 	assert.Equal(t, http.StatusNotFound, anon.do(http.MethodGet, "/api/v1/rooms/public/members", nil).Code)

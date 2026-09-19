@@ -85,8 +85,11 @@ const RoomCard: Component<Props> = (props) => {
           {(src) => <img src={src()} alt="" loading="lazy" />}
         </Show>
         <video ref={video} muted playsinline autoplay={props.room.playback?.playing ?? false} classList={{ visible: previewing() }} />
+        <Show when={props.room.live}>
+          <span class="room-card-live">● live</span>
+        </Show>
         <Show when={props.room.viewers > 0}>
-          <span class="room-card-live">● {props.room.viewers} watching</span>
+          <span class="room-card-viewers">👁 {props.room.viewers}</span>
         </Show>
         <Show when={media() && props.room.playback && !props.room.playback.playing}>
           <span class="room-card-badge">paused</span>

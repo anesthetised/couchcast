@@ -157,6 +157,26 @@ func (r *Repo) ListRoomsForUser(ctx context.Context, userID uuid.UUID) ([]RoomWi
 	return out, rows.Err()
 }
 
+// ListPlayingRoomIDs returns rooms whose persisted state is "playing".
+func (r *Repo) ListPlayingRoomIDs(ctx context.Context) ([]uuid.UUID, error) {
+	const q = `SELECT id FROM rooms WHERE playing AND current_item_id IS NOT NULL`
+	rows, err := r.pool.Query(ctx, q)
+	if err != nil {
+		return nil, wrapErr(err)
+	}
+	defer rows.Close()
+
+	var out []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
 // CountMembers returns the number of membership rows in a room.
 func (r *Repo) CountMembers(ctx context.Context, roomID uuid.UUID) (int, error) {
 	const q = `SELECT count(*) FROM room_members WHERE room_id = $1`
@@ -173,11 +193,13 @@ type PublicRoom struct {
 	Media       *entity.Media
 	MemberCount int
 	Viewers     int
+	Live        bool // a ready video is playing right now
 }
 
-// PublicRoomsQuery selects and pages the public directory. Live viewer
-// counts come from the in-memory room manager and are passed in so that
-// filtering, ordering and pagination all happen in one SQL query.
+// PublicRoomsQuery selects and pages the public directory. A room is live
+// when a ready video is playing in it, whoever is watching. Viewer counts
+// come from the in-memory room manager and are passed in so that ordering
+// and pagination all happen in one SQL query.
 type PublicRoomsQuery struct {
 	Search     string
 	LiveIDs    []uuid.UUID
@@ -187,8 +209,9 @@ type PublicRoomsQuery struct {
 	Limit      int
 }
 
-// ListPublicRooms returns one page of public rooms (live rooms first, then
-// rooms with something playing, then by recency) and the total match count.
+// ListPublicRooms returns one page of public rooms (live first, then by
+// viewers, then rooms with something queued, then by recency) and the
+// total match count.
 func (r *Repo) ListPublicRooms(ctx context.Context, q PublicRoomsQuery) ([]PublicRoom, int, error) {
 	if q.LiveIDs == nil {
 		q.LiveIDs = []uuid.UUID{}
@@ -203,6 +226,7 @@ func (r *Repo) ListPublicRooms(ctx context.Context, q PublicRoomsQuery) ([]Publi
 		       u.username,
 		       (SELECT count(*) FROM room_members m WHERE m.room_id = r.id),
 		       coalesce(v.viewers, 0),
+		       (r.playing AND m.status = 'ready') AS live,
 		       m.id, coalesce(m.source_key, ''), coalesce(m.source_url, ''), coalesce(m.title, ''), coalesce(m.duration_ms, 0), coalesce(m.thumbnail_url, ''),
 		       m.status, m.progress, coalesce(m.error, ''), coalesce(m.size_bytes, 0), m.renditions, coalesce(m.s3_prefix, ''),
 		       m.created_at, m.updated_at, m.last_accessed_at,
@@ -214,8 +238,9 @@ func (r *Repo) ListPublicRooms(ctx context.Context, q PublicRoomsQuery) ([]Publi
 		LEFT JOIN media m ON m.id = qi.media_id
 		WHERE r.visibility = 'public'
 		  AND ($3 = '' OR r.name ILIKE '%' || $3 || '%' ESCAPE '\' OR r.slug ILIKE '%' || $3 || '%' ESCAPE '\')
-		  AND (NOT $4 OR v.id IS NOT NULL)
-		ORDER BY coalesce(v.viewers, 0) DESC, (r.current_item_id IS NOT NULL) DESC, r.updated_at DESC
+		  AND (NOT $4 OR (r.playing AND m.status = 'ready'))
+		ORDER BY (r.playing AND m.status = 'ready') DESC, coalesce(v.viewers, 0) DESC,
+		         (r.current_item_id IS NOT NULL) DESC, r.updated_at DESC
 		OFFSET $5 LIMIT $6
 	`
 	rows, err := r.pool.Query(ctx, sql, q.LiveIDs, q.LiveCounts, escapeLike(q.Search), q.OnlyLive, q.Offset, q.Limit)
@@ -242,7 +267,7 @@ func (r *Repo) ListPublicRooms(ctx context.Context, q PublicRoomsQuery) ([]Publi
 		rm := &pr.Room
 		if err := rows.Scan(&rm.ID, &rm.Slug, &rm.Name, &rm.OwnerID, &rm.Visibility, &settings, &rm.CurrentItemID,
 			&rm.Playing, &rm.PositionMs, &rm.PositionAt, &rm.CreatedAt, &rm.UpdatedAt,
-			&pr.Owner, &pr.MemberCount, &pr.Viewers,
+			&pr.Owner, &pr.MemberCount, &pr.Viewers, &pr.Live,
 			&mediaID, &m.SourceKey, &m.SourceURL, &m.Title, &m.DurationMs, &m.ThumbnailURL,
 			&mStatus, &mProg, &m.Error, &m.SizeBytes, &mRend, &m.S3Prefix,
 			&mCreated, &mUpdated, &mAccessed,

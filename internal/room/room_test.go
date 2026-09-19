@@ -330,6 +330,20 @@ func TestPresenceAndKick(t *testing.T) {
 	assert.Equal(t, 1, f.room.Viewers())
 }
 
+func TestPlayingRoomStaysLoaded(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.ready("https://a", 600_000)
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a"))
+
+	f.now = f.now.Add(time.Hour)
+	assert.False(t, f.room.Tick(ctx, time.Minute), "playing with nobody watching is not idle")
+
+	require.NoError(t, f.room.Pause(ctx, f.owner))
+	f.now = f.now.Add(time.Hour)
+	assert.True(t, f.room.Tick(ctx, time.Minute), "paused and empty is idle")
+}
+
 func TestRestoreFromDatabase(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

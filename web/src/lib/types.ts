@@ -58,6 +58,7 @@ export interface DirectoryRoom {
   owner: string;
   viewers: number;
   memberCount: number;
+  live: boolean;
   media: {
     id: string;
     title: string;

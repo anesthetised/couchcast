@@ -126,6 +126,9 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		})
 	})
 
+	if err := rooms.Warm(ctx); err != nil {
+		logger.Warn("warm playing rooms", "error", err)
+	}
 	g.Go(func() error { return rooms.Run(ctx) })
 	g.Go(func() error { return rooms.ListenProgress(ctx, pool) })
 

@@ -40,6 +40,7 @@ type Store interface {
 	ToggleQueueVote(ctx context.Context, itemID, userID uuid.UUID) (bool, error)
 	ListQueueVotesByUser(ctx context.Context, roomID, userID uuid.UUID) ([]uuid.UUID, error)
 	UpdateRoomSettings(ctx context.Context, id uuid.UUID, settings entity.Settings) error
+	ListPlayingRoomIDs(ctx context.Context) ([]uuid.UUID, error)
 }
 
 // Admitter turns URLs into media rows (ingest.Service).
@@ -914,7 +915,9 @@ func (r *Room) Refresh(ctx context.Context) error {
 }
 
 // Tick is called periodically by the manager: persists the running
-// position and reports whether the room is idle enough to unload.
+// position and reports whether the room is idle enough to unload. A room
+// that is playing stays loaded even with nobody watching, so the queue
+// keeps advancing and the directory can show it as live.
 func (r *Room) Tick(ctx context.Context, idleAfter time.Duration) (idle bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -924,7 +927,7 @@ func (r *Room) Tick(ctx context.Context, idleAfter time.Duration) (idle bool) {
 			r.deps.Logger.Warn("persist playback", "room", r.info.Slug, "error", err)
 		}
 	}
-	return len(r.viewers) == 0 && now.Sub(r.lastActive) > idleAfter
+	return !r.playing && len(r.viewers) == 0 && now.Sub(r.lastActive) > idleAfter
 }
 
 // shutdown stops timers and persists state before the room is unloaded.

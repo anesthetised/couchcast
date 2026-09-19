@@ -41,6 +41,24 @@ func NewManager(deps Deps) *Manager {
 	return &Manager{deps: deps, rooms: map[uuid.UUID]*Room{}, IdleAfter: 10 * time.Minute}
 }
 
+// Warm loads every room that was playing when the server last ran, so
+// unattended playback resumes and keeps advancing after a restart.
+func (m *Manager) Warm(ctx context.Context) error {
+	ids, err := m.deps.Store.ListPlayingRoomIDs(ctx)
+	if err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if _, err := m.Get(ctx, id); err != nil {
+			m.deps.Logger.Warn("warm room", "room", id, "error", err)
+		}
+	}
+	if len(ids) > 0 {
+		m.deps.Logger.Info("resumed playing rooms", "count", len(ids))
+	}
+	return nil
+}
+
 // Get returns the live room, loading it from the database on first use.
 func (m *Manager) Get(ctx context.Context, id uuid.UUID) (*Room, error) {
 	m.mu.Lock()
