@@ -32,7 +32,7 @@ const AuthForm: Component<Props> = (props) => {
   };
 
   return (
-    <form class="card form" onSubmit={submit}>
+    <form class="card form auth-form" onSubmit={submit}>
       <h1>{props.mode === "login" ? "Log in" : "Create account"}</h1>
 
       <label>

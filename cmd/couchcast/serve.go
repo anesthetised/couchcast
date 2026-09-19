@@ -46,6 +46,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Metrics:      m,
 		Static:       web.Dist(),
 		Users:        repo,
+		Rooms:        repo,
 		Sessions:     sessions,
 		AuthLimiter:  authLimiter,
 		LoginLimiter: loginLimiter,

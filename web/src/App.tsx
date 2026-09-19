@@ -5,6 +5,8 @@ import UserMenu from "~/components/UserMenu";
 import Home from "~/routes/Home";
 import Login from "~/routes/Login";
 import Register from "~/routes/Register";
+import Room from "~/routes/Room";
+import RoomSettings from "~/routes/RoomSettings";
 
 // Layout shared by every page.
 const Layout: Component<RouteSectionProps> = (props) => (
@@ -25,6 +27,8 @@ const App: Component = () => (
     <Route path="/" component={Home} />
     <Route path="/login" component={Login} />
     <Route path="/register" component={Register} />
+    <Route path="/r/:slug" component={Room} />
+    <Route path="/r/:slug/settings" component={RoomSettings} />
   </Router>
 );
 

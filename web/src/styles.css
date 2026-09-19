@@ -82,11 +82,14 @@ a {
 }
 
 .form {
-  max-width: 360px;
-  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.auth-form {
+  max-width: 360px;
+  margin: 0 auto;
 }
 
 .form h1 {
@@ -141,4 +144,106 @@ button.link {
   color: var(--accent);
   font-weight: 500;
   padding: 0;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+}
+
+.card h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.5rem;
+}
+
+.room-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
+}
+
+.room-header p {
+  margin: 0;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.row:first-child {
+  border-top: none;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.slug-input {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.slug-input input {
+  flex: 1;
+}
+
+.radio-row {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.radio {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text);
+}
+
+button.danger {
+  background: var(--error);
+  color: #fff;
+}
+
+.player-placeholder {
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.form .form {
+  padding: 0;
+  border: none;
+  margin-top: 1rem;
+}
+
+p.card {
+  margin: 0;
 }

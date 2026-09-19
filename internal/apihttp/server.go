@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"time"
 
+	"uuid"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
@@ -34,7 +36,12 @@ type Deps struct {
 	Static  fs.FS // built SPA; may contain only a placeholder in development
 
 	Users    UserStore
+	Rooms    RoomStore
 	Sessions *auth.Sessions
+
+	// OnBan is invoked after a room ban so the WebSocket hub (phase 5) can
+	// disconnect the user. Optional.
+	OnBan func(roomID, userID uuid.UUID)
 
 	// AuthLimiter is applied per client IP to register/login; LoginLimiter
 	// per username to login. Either may be nil to disable.
@@ -83,6 +90,35 @@ func New(deps Deps) *Server {
 			})
 			r.Post("/logout", s.handleLogout)
 			r.Get("/me", s.handleMe)
+		})
+
+		r.Route("/rooms", func(r chi.Router) {
+			r.With(auth.RequireUser).Post("/", s.handleCreateRoom)
+			r.Route("/{slug}", func(r chi.Router) {
+				r.Get("/", s.handleGetRoom)
+				r.Get("/members", s.handleListMembers)
+
+				r.Group(func(r chi.Router) {
+					r.Use(auth.RequireUser)
+					r.Patch("/", s.handleUpdateRoom)
+					r.Delete("/", s.handleDeleteRoom)
+					r.Put("/moderators/{username}", s.handleAddModerator)
+					r.Delete("/moderators/{username}", s.handleRemoveModerator)
+					r.Delete("/members/{username}", s.handleRemoveMember)
+					r.Get("/bans", s.handleListBans)
+					r.Put("/bans/{username}", s.handleBan)
+					r.Delete("/bans/{username}", s.handleUnban)
+					r.Post("/invites", s.handleCreateInvite)
+				})
+			})
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(auth.RequireUser)
+			r.Get("/me/rooms", s.handleMyRooms)
+			r.Get("/invites", s.handleMyInvites)
+			r.Post("/invites/{id}/accept", s.handleAcceptInvite)
+			r.Post("/invites/{id}/decline", s.handleDeclineInvite)
 		})
 	})
 
