@@ -5,6 +5,8 @@ package apihttp
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -13,7 +15,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/anesthetised/couchcast/internal/auth"
 	"github.com/anesthetised/couchcast/internal/metrics"
+	"github.com/anesthetised/couchcast/internal/ratelimit"
 )
 
 // Pinger reports whether a dependency is reachable. *pgxpool.Pool satisfies it.
@@ -28,6 +32,15 @@ type Deps struct {
 	DB      Pinger
 	Metrics *metrics.Metrics
 	Static  fs.FS // built SPA; may contain only a placeholder in development
+
+	Users    UserStore
+	Sessions *auth.Sessions
+
+	// AuthLimiter is applied per client IP to register/login; LoginLimiter
+	// per username to login. Either may be nil to disable.
+	AuthLimiter  *ratelimit.Limiter
+	LoginLimiter *ratelimit.Limiter
+	TrustProxy   bool
 }
 
 // Server owns the chi router.
@@ -51,11 +64,25 @@ func New(deps Deps) *Server {
 	r.Method(http.MethodGet, "/metrics", deps.Metrics.Handler())
 
 	r.Route("/api/v1", func(r chi.Router) {
+		r.Use(deps.Sessions.Middleware(deps.Logger))
+		r.Use(auth.CheckOrigin)
 		r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 			writeError(w, http.StatusNotFound, "not found")
 		})
 		r.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
 			writeError(w, http.StatusMethodNotAllowed, "method not allowed")
+		})
+
+		r.Route("/auth", func(r chi.Router) {
+			r.Group(func(r chi.Router) {
+				if deps.AuthLimiter != nil {
+					r.Use(deps.AuthLimiter.Middleware(ratelimit.ClientIP(deps.TrustProxy)))
+				}
+				r.Post("/register", s.handleRegister)
+				r.Post("/login", s.handleLogin)
+			})
+			r.Post("/logout", s.handleLogout)
+			r.Get("/me", s.handleMe)
 		})
 	})
 
@@ -92,6 +119,37 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// maxBodyBytes bounds JSON request bodies; nothing in the API is large.
+const maxBodyBytes = 64 << 10
+
+// decodeJSON parses the body into v, writing a 400 and returning false on
+// malformed input.
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	err := json.NewDecoder(r.Body).Decode(v)
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, io.EOF):
+		writeError(w, http.StatusBadRequest, "request body is required")
+	default:
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+		} else {
+			writeError(w, http.StatusBadRequest, "malformed JSON: "+err.Error())
+		}
+	}
+	return false
+}
+
+// internalError logs the cause with the request id and hides it from the
+// client.
+func (s *Server) internalError(w http.ResponseWriter, r *http.Request, what string, err error) {
+	s.deps.Logger.ErrorContext(r.Context(), what, "error", err, "request_id", middleware.GetReqID(r.Context()))
+	writeError(w, http.StatusInternalServerError, "internal error")
 }
 
 // requestLogger logs one line per request through slog, with the request id

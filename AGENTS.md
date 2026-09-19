@@ -43,6 +43,13 @@ Run `just test` and `just lint` before opening a PR.
   `/healthz`, `/metrics`, `/media/*` and the SPA fallback. Route registration
   lives in `New` so the whole URL space is visible in one place.
 - `internal/metrics` owns the Prometheus registry shared by all components.
+- `internal/auth` owns password hashing (argon2id), cookie sessions and the
+  middleware that puts the user into the request context (`auth.UserFrom`).
+  Handlers never read cookies themselves.
+- `internal/repository` is plain SQL over pgx; tests there run against
+  `COUCHCAST_TEST_DATABASE_URL` and replay `db/migrations` on start.
+- `internal/apihttp` handler tests use an in-memory fake store
+  (`testing_test.go`) and drive the real router with cookies.
 - `web/embed.go` embeds `web/dist` into the binary; in development `dist/`
   holds only a placeholder and Vite serves the app.
 - Permissions are a single function (`internal/access`, phase 3); do not

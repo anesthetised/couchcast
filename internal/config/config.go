@@ -51,6 +51,11 @@ type WebConfig struct {
 	MediaTokenTTL     time.Duration
 	ChatRetentionDays int
 	MaxCacheBytes     int64
+	// TrustProxy makes rate limiting use X-Forwarded-For. Enable only behind
+	// a reverse proxy that overwrites the header.
+	TrustProxy bool
+	// AuthRatePerMinute caps register/login attempts per client IP.
+	AuthRatePerMinute int
 }
 
 // IngestConfig holds settings used only by the ingest worker.
@@ -89,6 +94,8 @@ func fromEnv(c *Config) {
 	c.Web.MediaTokenTTL = env.Get(prefix+"MEDIA_TOKEN_TTL", time.Hour)
 	c.Web.ChatRetentionDays = env.Get(prefix+"CHAT_RETENTION_DAYS", 30)
 	c.Web.MaxCacheBytes = env.Get(prefix+"MAX_CACHE_BYTES", int64(50<<30))
+	c.Web.TrustProxy = env.Get(prefix+"TRUST_PROXY", false)
+	c.Web.AuthRatePerMinute = env.Get(prefix+"AUTH_RATE_PER_MINUTE", 10)
 
 	c.Ingest.Workers = env.Get(prefix+"INGEST_WORKERS", 2)
 	c.Ingest.MetricsAddr = env.Get(prefix+"INGEST_METRICS_ADDR", ":9090")
@@ -164,6 +171,9 @@ func (c WebConfig) Validate() error {
 	}
 	if c.ChatRetentionDays < 0 {
 		errs = append(errs, fmt.Errorf("%sCHAT_RETENTION_DAYS must not be negative", prefix))
+	}
+	if c.AuthRatePerMinute < 1 {
+		errs = append(errs, fmt.Errorf("%sAUTH_RATE_PER_MINUTE must be at least 1", prefix))
 	}
 	return errors.Join(errs...)
 }

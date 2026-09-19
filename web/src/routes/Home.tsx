@@ -1,27 +1,23 @@
-import { createResource, Show, type Component } from "solid-js";
+import { Show, type Component } from "solid-js";
 
-import { api } from "~/lib/api";
+import { auth } from "~/store/auth";
 
-type Health = { status: string; database?: string };
-
-// Placeholder landing page: proves the Vite → Go proxy works end to end.
-// Phase 3 replaces it with room creation, the user's rooms and invites.
-const Home: Component = () => {
-  const [health] = createResource(() => api<Health>("/healthz"));
-
-  return (
-    <section class="card">
-      <h1>Watch together</h1>
-      <p class="muted">Backend status:</p>
-      <Show when={health.loading}>
-        <p>checking…</p>
-      </Show>
-      <Show when={health.error}>
-        <p class="error">{String(health.error)}</p>
-      </Show>
-      <Show when={health()}>{(h) => <p class="ok">{h().status}</p>}</Show>
-    </section>
-  );
-};
+// Landing page. Phase 3 replaces the body with room creation, the user's
+// rooms and pending invites.
+const Home: Component = () => (
+  <section class="card">
+    <h1>Watch together</h1>
+    <Show
+      when={auth.user()}
+      fallback={
+        <p class="muted">
+          <a href="/login">Log in</a> or <a href="/register">register</a> to create a room.
+        </p>
+      }
+    >
+      {(u) => <p class="muted">Signed in as {u().username}. Rooms arrive in the next phase.</p>}
+    </Show>
+  </section>
+);
 
 export default Home;

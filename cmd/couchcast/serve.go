@@ -13,8 +13,11 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/anesthetised/couchcast/internal/apihttp"
+	"github.com/anesthetised/couchcast/internal/auth"
 	"github.com/anesthetised/couchcast/internal/config"
 	"github.com/anesthetised/couchcast/internal/metrics"
+	"github.com/anesthetised/couchcast/internal/ratelimit"
+	"github.com/anesthetised/couchcast/internal/repository"
 	"github.com/anesthetised/couchcast/web"
 )
 
@@ -30,13 +33,23 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	defer pool.Close()
 
 	m := metrics.New("web")
+	repo := repository.New(pool)
+	sessions := auth.NewSessions(repo, cfg.Web.SessionTTL, cfg.Web.SecureCookies)
+
+	authLimiter := ratelimit.New(float64(cfg.Web.AuthRatePerMinute), cfg.Web.AuthRatePerMinute)
+	loginLimiter := ratelimit.New(5, 5)
 
 	apihttp.SetVersion(version)
 	api := apihttp.New(apihttp.Deps{
-		Logger:  logger,
-		DB:      pool,
-		Metrics: m,
-		Static:  web.Dist(),
+		Logger:       logger,
+		DB:           pool,
+		Metrics:      m,
+		Static:       web.Dist(),
+		Users:        repo,
+		Sessions:     sessions,
+		AuthLimiter:  authLimiter,
+		LoginLimiter: loginLimiter,
+		TrustProxy:   cfg.Web.TrustProxy,
 	})
 
 	srv := &http.Server{
@@ -53,7 +66,40 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return tkhttp.ListenAndServe(ctx, srv)
 	})
 
+	g.Go(func() error {
+		authLimiter.Run(ctx.Done())
+		return nil
+	})
+	g.Go(func() error {
+		loginLimiter.Run(ctx.Done())
+		return nil
+	})
+	g.Go(func() error {
+		return runPeriodic(ctx, time.Hour, func(ctx context.Context) {
+			n, err := repo.DeleteExpiredSessions(ctx, time.Now())
+			if err != nil {
+				logger.Warn("delete expired sessions", "error", err)
+			} else if n > 0 {
+				logger.Info("deleted expired sessions", "count", n)
+			}
+		})
+	})
+
 	return g.Wait()
+}
+
+// runPeriodic calls fn every interval until the context is cancelled.
+func runPeriodic(ctx context.Context, interval time.Duration, fn func(context.Context)) error {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.C:
+			fn(ctx)
+		}
+	}
 }
 
 // connectDB opens the pool and verifies the connection so that a bad DSN
