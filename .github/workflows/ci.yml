@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOLANGCI_LINT_VERSION: v2.13.2
+  ATLAS_IMAGE: arigaio/atlas:1.3.0-community
+
+jobs:
+  go:
+    name: Go
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: couchcast
+          POSTGRES_PASSWORD: couchcast
+          POSTGRES_DB: couchcast_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U couchcast -d couchcast_test"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then echo "$unformatted"; exit 1; fi
+      - name: go vet
+        run: go vet ./...
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+      - name: go test
+        env:
+          COUCHCAST_TEST_DATABASE_URL: postgres://couchcast:couchcast@localhost:5432/couchcast_test?sslmode=disable
+        # Packages run serially: integration tests share one database.
+        run: go test -p 1 -race ./...
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm build
+
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: couchcast
+          POSTGRES_PASSWORD: couchcast
+          POSTGRES_DB: couchcast
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U couchcast"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+    env:
+      COUCHCAST_DATABASE_URL: postgres://couchcast:couchcast@localhost:5432/couchcast?sslmode=disable
+      ATLAS_DEV_URL: postgres://couchcast:couchcast@localhost:5432/atlas_dev?sslmode=disable
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create the Atlas dev database
+        run: docker exec ${{ job.services.postgres.id }} psql -U couchcast -c 'CREATE DATABASE atlas_dev'
+      - name: Define the atlas helper
+        run: |
+          cat > atlas.sh <<'SH'
+          #!/bin/sh
+          exec docker run --rm --network host -v "$PWD:/src" -w /src \
+            -e COUCHCAST_DATABASE_URL -e ATLAS_DEV_URL "$ATLAS_IMAGE" "$@"
+          SH
+          chmod +x atlas.sh
+      - name: Migration files are consistent (atlas.sum)
+        run: ./atlas.sh migrate validate --env local
+      - name: Lint the latest migration
+        run: ./atlas.sh migrate lint --env local --latest 1
+      - name: Migrations apply cleanly
+        run: ./atlas.sh migrate apply --env local
+      - name: schema.sql matches the migration directory
+        run: |
+          ./atlas.sh migrate diff ci_check --env local
+          if [ -n "$(git status --porcelain db/)" ]; then
+            echo "db/schema.sql and db/migrations have diverged; run 'just migrate-diff <name>' and commit the result:"
+            git status --porcelain db/
+            exit 1
+          fi
+
+  image:
+    name: Image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: runtime
+          push: false
+          tags: ghcr.io/anesthetised/couchcast:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

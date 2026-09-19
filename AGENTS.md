@@ -31,7 +31,11 @@ commands run from the repo root via `just` (see `justfile`):
 - `just lint` — golangci-lint; `just check` — TypeScript type check
 - `just build` — production image; `just prod-up` — run the base compose file
 
-Run `just test` and `just lint` before opening a PR.
+Run `just test` and `just lint` before opening a PR. CI
+(`.github/workflows/ci.yml`) runs gofmt, go vet, golangci-lint, the Go tests
+against Postgres, the TypeScript check and build, Atlas migration checks
+(validate, lint, apply, and that `db/schema.sql` matches `db/migrations`)
+and a production image build.
 
 ## Architecture
 

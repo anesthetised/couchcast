@@ -4,6 +4,8 @@ Watch videos together, in sync. Create a room, queue links from YouTube and
 other sources, pick your own quality, and let the server keep everyone on
 the same frame.
 
+[![CI](https://github.com/anesthetised/couchcast/actions/workflows/ci.yml/badge.svg)](https://github.com/anesthetised/couchcast/actions/workflows/ci.yml)
+
 > Status: early development. See the
 > [phase issues](https://github.com/anesthetised/couchcast/issues?q=label%3Aphase)
 > for the roadmap.
