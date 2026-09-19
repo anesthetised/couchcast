@@ -9,7 +9,7 @@ import Queue from "~/components/Queue";
 import RoomOptions from "~/components/RoomOptions";
 import VotePanel from "~/components/VotePanel";
 import { ApiError } from "~/lib/api";
-import { createFullscreen, readFullscreenChat, storeFullscreenChat } from "~/lib/fullscreen";
+import { createFullscreen, readFullscreenPanel, storeFullscreenPanel, type FullscreenPanel } from "~/lib/fullscreen";
 import { rooms } from "~/lib/rooms";
 import { isModerator } from "~/lib/types";
 import { createRoomStore } from "~/store/room";
@@ -39,12 +39,17 @@ const LiveRoom: Component<{ slug: string; name: string; canSettings: boolean }> 
   const store = createRoomStore(props.slug);
   let stage: HTMLDivElement | undefined;
   const fs = createFullscreen(() => stage);
-  const [chatInFullscreen, setChatInFullscreen] = createSignal(readFullscreenChat());
-  const toggleChat = () => {
-    const next = !chatInFullscreen();
-    setChatInFullscreen(next);
-    storeFullscreenChat(next);
+  const usePanel = (panel: FullscreenPanel) => {
+    const [on, setOn] = createSignal(readFullscreenPanel(panel));
+    const toggle = () => {
+      const next = !on();
+      setOn(next);
+      storeFullscreenPanel(panel, next);
+    };
+    return { on, toggle };
   };
+  const chatPanel = usePanel("chat");
+  const queuePanel = usePanel("queue");
 
   return (
     <div class="room-layout">
@@ -75,11 +80,18 @@ const LiveRoom: Component<{ slug: string; name: string; canSettings: boolean }> 
             room={store}
             onFullscreen={fs.toggle}
             isFullscreen={fs.active()}
-            chatVisible={chatInFullscreen()}
-            onToggleChat={toggleChat}
+            chatVisible={chatPanel.on()}
+            onToggleChat={chatPanel.toggle}
+            queueVisible={queuePanel.on()}
+            onToggleQueue={queuePanel.toggle}
           />
-          <Show when={fs.active() && chatInFullscreen()}>
-            <div class="fs-chat">
+          <Show when={fs.active() && queuePanel.on()}>
+            <div class="fs-panel fs-queue">
+              <Queue room={store} />
+            </div>
+          </Show>
+          <Show when={fs.active() && chatPanel.on()}>
+            <div class="fs-panel fs-chat">
               <Chat room={store} />
             </div>
           </Show>

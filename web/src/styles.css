@@ -678,21 +678,30 @@ p.card {
   opacity: 0.45;
 }
 
-/* Chat overlay: translucent at rest, opaque while hovered or focused. */
-.fs-chat {
+/* Overlay panels: translucent at rest, opaque while hovered or focused.
+   Chat sits on the right, the queue on the left. */
+.fs-panel {
   position: absolute;
   top: 0;
-  right: 0;
   bottom: 56px;
   width: min(340px, 40vw);
   display: flex;
   transition: opacity 200ms;
 }
 
-.fs-chat .chat {
+.fs-chat {
+  right: 0;
+}
+
+.fs-queue {
+  left: 0;
+}
+
+.fs-panel > .card {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-height: 0;
   border: none;
   border-radius: 0;
   background: rgba(0, 0, 0, 0.35);
@@ -700,8 +709,31 @@ p.card {
   padding: 0.75rem;
 }
 
-.fs-chat .chat h2 {
+.fs-panel > .card h2 {
   display: none;
+}
+
+.fs-panel:hover > .card,
+.fs-panel:focus-within > .card {
+  background: var(--surface);
+}
+
+.fs-queue .list {
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.fs-queue .queue-item {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.fs-queue:hover .queue-item,
+.fs-queue:focus-within .queue-item {
+  text-shadow: none;
+}
+
+.fs-queue .queue-actions {
+  transition: opacity 200ms;
 }
 
 .fs-chat .chat-list {
@@ -717,11 +749,6 @@ p.card {
   background: rgba(0, 0, 0, 0.5);
 }
 
-.fs-chat .chat:hover,
-.fs-chat .chat:focus-within {
-  background: var(--surface);
-}
-
 .fs-chat .chat:hover .chat-line,
 .fs-chat .chat:focus-within .chat-line {
   text-shadow: none;
@@ -730,17 +757,19 @@ p.card {
 /* Idle: the chat stays readable as a "ghost" — recent messages over the
    video without background or input. Keystrokes reset idle, so typing
    keeps the panel; a focused but silent input does not. */
-.stage.fullscreen.idle .fs-chat:not(:hover) {
+.stage.fullscreen.idle .fs-panel:not(:hover) {
   pointer-events: none;
 }
 
-.stage.fullscreen.idle .fs-chat:not(:hover) .chat {
+.stage.fullscreen.idle .fs-panel:not(:hover) > .card {
   background: transparent;
 }
 
 .stage.fullscreen.idle .fs-chat:not(:hover) .chat-form,
 .stage.fullscreen.idle .fs-chat:not(:hover) .chat-delete,
-.stage.fullscreen.idle .fs-chat:not(:hover) .chat-line.stale {
+.stage.fullscreen.idle .fs-chat:not(:hover) .chat-line.stale,
+.stage.fullscreen.idle .fs-queue:not(:hover) .queue-actions,
+.stage.fullscreen.idle .fs-queue:not(:hover) .queue-item:not(.current) .thumb {
   opacity: 0;
 }
 

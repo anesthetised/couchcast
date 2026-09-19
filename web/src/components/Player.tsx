@@ -13,6 +13,8 @@ type Props = {
   isFullscreen?: boolean;
   chatVisible?: boolean;
   onToggleChat?: () => void;
+  queueVisible?: boolean;
+  onToggleQueue?: () => void;
 };
 
 // Player renders the video, custom controls and the quality menu. Native
@@ -211,6 +213,11 @@ const Player: Component<Props> = (props) => {
         <button type="button" class="icon" onClick={() => setShowDebug(!showDebug())} title="Sync debug">
           ⓘ
         </button>
+        <Show when={props.isFullscreen && props.onToggleQueue}>
+          <button type="button" class={`icon ${props.queueVisible ? "" : "dim"}`} onClick={props.onToggleQueue} title={props.queueVisible ? "Hide queue" : "Show queue"}>
+            ☰
+          </button>
+        </Show>
         <Show when={props.isFullscreen && props.onToggleChat}>
           <button type="button" class={`icon ${props.chatVisible ? "" : "dim"}`} onClick={props.onToggleChat} title={props.chatVisible ? "Hide chat" : "Show chat"}>
             💬

@@ -46,19 +46,23 @@ export function createFullscreen(el: () => HTMLElement | undefined, idleAfterMs 
   return { active, idle, toggle, touch };
 }
 
-const FS_CHAT_KEY = "couchcast.fullscreenChat";
+// Overlay panels the viewer can show or hide in fullscreen; the choice
+// is remembered per browser.
+export type FullscreenPanel = "chat" | "queue";
 
-export function readFullscreenChat(): boolean {
+const prefKey = (panel: FullscreenPanel) => `couchcast.fullscreen.${panel}`;
+
+export function readFullscreenPanel(panel: FullscreenPanel): boolean {
   try {
-    return localStorage.getItem(FS_CHAT_KEY) !== "off";
+    return localStorage.getItem(prefKey(panel)) !== "off";
   } catch {
     return true;
   }
 }
 
-export function storeFullscreenChat(on: boolean) {
+export function storeFullscreenPanel(panel: FullscreenPanel, on: boolean) {
   try {
-    localStorage.setItem(FS_CHAT_KEY, on ? "on" : "off");
+    localStorage.setItem(prefKey(panel), on ? "on" : "off");
   } catch {
     // storage unavailable
   }
