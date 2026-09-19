@@ -697,6 +697,8 @@ p.card {
   left: 0;
 }
 
+/* Even when "opaque" the panels stay partly see-through: the video is
+   the point; blur keeps the text readable over moving footage. */
 .fs-panel > .card {
   flex: 1;
   display: flex;
@@ -704,8 +706,8 @@ p.card {
   min-height: 0;
   border: none;
   border-radius: 0;
-  background: rgba(0, 0, 0, 0.35);
-  transition: background 150ms;
+  background: rgba(0, 0, 0, 0.25);
+  transition: background 150ms, backdrop-filter 150ms;
   padding: 0.75rem;
 }
 
@@ -715,7 +717,9 @@ p.card {
 
 .fs-panel:hover > .card,
 .fs-panel:focus-within > .card {
-  background: var(--surface);
+  background: rgba(23, 26, 33, 0.78);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .fs-queue .list {
