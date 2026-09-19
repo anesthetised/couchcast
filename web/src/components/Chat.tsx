@@ -1,4 +1,4 @@
-import { createEffect, createSignal, For, on, Show, type Component } from "solid-js";
+import { createEffect, createSignal, For, on, onCleanup, Show, type Component } from "solid-js";
 
 import type { RoomStore } from "~/store/room";
 
@@ -12,6 +12,14 @@ const Chat: Component<Props> = (props) => {
   const messages = () => props.room.state.messages;
   const canWrite = () => props.room.state.me !== null;
   const canModerate = () => props.room.isModerator();
+
+  // Messages older than this are marked stale so the fullscreen ghost
+  // overlay can fade them out; the clock ticks coarsely on purpose.
+  const STALE_AFTER_MS = 60_000;
+  const [now, setNow] = createSignal(Date.now());
+  const clock = window.setInterval(() => setNow(Date.now()), 5_000);
+  onCleanup(() => window.clearInterval(clock));
+  const isStale = (createdMs: number) => now() - createdMs > STALE_AFTER_MS;
 
   // Stick to the bottom unless the reader scrolled up.
   createEffect(
@@ -40,7 +48,7 @@ const Chat: Component<Props> = (props) => {
       <ul class="chat-list" ref={list}>
         <For each={messages()} fallback={<li class="muted small">No messages yet.</li>}>
           {(m) => (
-            <li class="chat-line">
+            <li class={`chat-line ${isStale(m.createdMs) ? "stale" : ""}`}>
               <span class="chat-time muted">{time(m.createdMs)}</span>
               <span class="chat-user">{m.username}</span>
               <span class="chat-body">{m.body}</span>

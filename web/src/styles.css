@@ -727,22 +727,40 @@ p.card {
   text-shadow: none;
 }
 
-/* Idle: the chat stays readable as a "ghost" — messages over the video
-   without background or input — unless someone is typing in it. */
-.stage.fullscreen.idle .fs-chat:not(:focus-within):not(:hover) {
+/* Idle: the chat stays readable as a "ghost" — recent messages over the
+   video without background or input. Keystrokes reset idle, so typing
+   keeps the panel; a focused but silent input does not. */
+.stage.fullscreen.idle .fs-chat:not(:hover) {
   pointer-events: none;
 }
 
-.stage.fullscreen.idle .fs-chat:not(:focus-within):not(:hover) .chat {
+.stage.fullscreen.idle .fs-chat:not(:hover) .chat {
   background: transparent;
 }
 
-.stage.fullscreen.idle .fs-chat:not(:focus-within):not(:hover) .chat-form,
-.stage.fullscreen.idle .fs-chat:not(:focus-within):not(:hover) .chat-delete {
+.stage.fullscreen.idle .fs-chat:not(:hover) .chat-form,
+.stage.fullscreen.idle .fs-chat:not(:hover) .chat-delete,
+.stage.fullscreen.idle .fs-chat:not(:hover) .chat-line.stale {
   opacity: 0;
 }
 
 .fs-chat .chat-form,
 .fs-chat .chat-delete {
   transition: opacity 200ms;
+}
+
+.fs-chat .chat-line {
+  transition: opacity 1s;
+  animation: chat-in 250ms ease-out;
+}
+
+@keyframes chat-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
