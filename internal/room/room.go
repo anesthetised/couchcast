@@ -775,6 +775,9 @@ func (r *Room) QueueMove(ctx context.Context, actor access.Actor, itemID uuid.UU
 	if err := r.requireLocked(actor, access.ManageQueue); err != nil {
 		return err
 	}
+	if r.info.Settings.VoteMode {
+		return invalid("the queue is ordered by votes while vote mode is on")
+	}
 	idx := r.indexOf(itemID)
 	if idx < 0 {
 		return notFound("queue item")

@@ -151,3 +151,38 @@ func (r *Repo) BlockSource(ctx context.Context, sourceKey, reason string, create
 	_, err := r.pool.Exec(ctx, q, sourceKey, reason, createdBy)
 	return wrapErr(err)
 }
+
+// SumReadyMediaBytes returns the total size of packaged media.
+func (r *Repo) SumReadyMediaBytes(ctx context.Context) (int64, error) {
+	const q = `SELECT coalesce(sum(size_bytes), 0) FROM media WHERE status = 'ready'`
+	var n int64
+	err := r.pool.QueryRow(ctx, q).Scan(&n)
+	return n, wrapErr(err)
+}
+
+// ListEvictableMedia returns ready media that no queue references,
+// least recently accessed first.
+func (r *Repo) ListEvictableMedia(ctx context.Context, limit int) ([]entity.Media, error) {
+	const q = `
+		SELECT ` + mediaColumns + `
+		FROM media
+		WHERE status = 'ready' AND NOT EXISTS (SELECT 1 FROM queue_items qi WHERE qi.media_id = media.id)
+		ORDER BY last_accessed_at
+		LIMIT $1
+	`
+	rows, err := r.pool.Query(ctx, q, limit)
+	if err != nil {
+		return nil, wrapErr(err)
+	}
+	defer rows.Close()
+
+	var out []entity.Media
+	for rows.Next() {
+		m, err := scanMedia(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *m)
+	}
+	return out, rows.Err()
+}

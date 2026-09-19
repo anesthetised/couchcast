@@ -99,6 +99,8 @@ export function createRoomStore(slug: string) {
       retry: (itemId: string) => send({ type: "queue.retry", itemId }),
       vote: (itemId: string) => send({ type: "queue.vote", itemId }),
       skipVote: () => send({ type: "skip.vote" }),
+      settings: (patch: { voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean }) =>
+        send({ type: "settings.set", ...patch }),
       chat: (body: string) => send({ type: "chat.send", body }),
       chatDelete: (id: number) => send({ type: "chat.delete", id }),
       report: (s: "playing" | "buffering" | "ended", positionMs: number) =>

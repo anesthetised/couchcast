@@ -103,6 +103,17 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return tkhttp.ListenAndServe(ctx, srv)
 	})
 
+	evictor := mediastore.NewEvictor(store, repo, cfg.Web.MaxCacheBytes, logger)
+	g.Go(func() error {
+		return runPeriodic(ctx, 30*time.Minute, func(ctx context.Context) {
+			if n, err := evictor.Run(ctx); err != nil {
+				logger.Warn("media eviction", "error", err)
+			} else if n > 0 {
+				logger.Info("media eviction pass", "removed", n)
+			}
+		})
+	})
+
 	g.Go(func() error { return rooms.Run(ctx) })
 	g.Go(func() error { return rooms.ListenProgress(ctx, pool) })
 

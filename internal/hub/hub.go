@@ -248,6 +248,12 @@ func (c *conn) dispatch(ctx context.Context, data []byte) {
 		err = c.room.QueueMove(cmdCtx, actor, m.ItemID, m.AfterID)
 	case protocol.TypeQueueRetry:
 		err = c.room.QueueRetry(cmdCtx, actor, msg.(*protocol.ItemRef).ItemID)
+	case protocol.TypeQueueVote:
+		err = c.room.QueueVote(cmdCtx, actor, msg.(*protocol.ItemRef).ItemID)
+	case protocol.TypeSkipVote:
+		err = c.room.SkipVote(cmdCtx, actor)
+	case protocol.TypeSettingsSet:
+		err = c.room.SettingsSet(cmdCtx, actor, *msg.(*protocol.SettingsSet))
 	case protocol.TypeChatSend:
 		err = c.room.ChatSend(cmdCtx, actor, msg.(*protocol.ChatSend).Body)
 	case protocol.TypeChatDelete:

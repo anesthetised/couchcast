@@ -527,3 +527,33 @@ p.card {
 .chat-form input {
   flex: 1;
 }
+
+/* --- votes & options --------------------------------------------------- */
+
+.vote-panel {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.vote-panel button.voted {
+  background: var(--border);
+  color: var(--text);
+}
+
+.options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.options select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.25rem 0.4rem;
+  font: inherit;
+}

@@ -6,6 +6,8 @@ import Chat from "~/components/Chat";
 import Members from "~/components/Members";
 import Player from "~/components/Player";
 import Queue from "~/components/Queue";
+import RoomOptions from "~/components/RoomOptions";
+import VotePanel from "~/components/VotePanel";
 import { ApiError } from "~/lib/api";
 import { rooms } from "~/lib/rooms";
 import { isModerator } from "~/lib/types";
@@ -54,12 +56,14 @@ const LiveRoom: Component<{ slug: string; name: string; canSettings: boolean }> 
         </header>
         <Show when={store.lastError()}>{(e) => <p class="card error">{e()}</p>}</Show>
         <Player room={store} />
+        <VotePanel room={store} />
         <AddToQueue room={store} />
       </div>
       <aside class="room-side">
         <Queue room={store} />
         <Chat room={store} />
         <Members room={store} />
+        <RoomOptions room={store} />
       </aside>
     </div>
   );
