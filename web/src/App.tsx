@@ -4,6 +4,7 @@ import type { Component } from "solid-js";
 import UserMenu from "~/components/UserMenu";
 import Home from "~/routes/Home";
 import Login from "~/routes/Login";
+import Admin from "~/routes/Admin";
 import Register from "~/routes/Register";
 import Room from "~/routes/Room";
 import RoomSettings from "~/routes/RoomSettings";
@@ -29,6 +30,7 @@ const App: Component = () => (
     <Route path="/register" component={Register} />
     <Route path="/r/:slug" component={Room} />
     <Route path="/r/:slug/settings" component={RoomSettings} />
+    <Route path="/admin" component={Admin} />
   </Router>
 );
 

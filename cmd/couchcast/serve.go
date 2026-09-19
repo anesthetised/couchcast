@@ -68,25 +68,34 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}, logger, m)
 
 	api = apihttp.New(apihttp.Deps{
-		Logger:   logger,
-		DB:       pool,
-		Metrics:  m,
-		Static:   web.Dist(),
-		Users:    repo,
-		Rooms:    repo,
-		Sessions: sessions,
-		Media:    mediaHandler,
-		WS:       wsHub,
-		OnBan:    func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "removed from room") },
+		Logger:       logger,
+		DB:           pool,
+		Metrics:      m,
+		Static:       web.Dist(),
+		Users:        repo,
+		Rooms:        repo,
+		Admin:        repo,
+		Sessions:     sessions,
+		Media:        mediaHandler,
+		MediaObjects: store,
+		RoomsLoaded:  rooms.Loaded,
+		WS:           wsHub,
+		OnBan:        func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "removed from room") },
 		OnRoomChanged: func(roomID uuid.UUID) {
 			rctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			rooms.Refresh(rctx, roomID)
 		},
 		OnRoomDeleted: func(roomID uuid.UUID) { rooms.Unload(roomID, "room deleted") },
-		AuthLimiter:   authLimiter,
-		LoginLimiter:  loginLimiter,
-		TrustProxy:    cfg.Web.TrustProxy,
+		OnUserBanned:  func(userID uuid.UUID) { rooms.KickEverywhere(userID, "banned") },
+		OnMediaDeleted: func(mediaID uuid.UUID) {
+			rctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			rooms.MediaDeleted(rctx, mediaID)
+		},
+		AuthLimiter:  authLimiter,
+		LoginLimiter: loginLimiter,
+		TrustProxy:   cfg.Web.TrustProxy,
 	})
 
 	srv := &http.Server{

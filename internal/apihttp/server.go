@@ -44,7 +44,13 @@ type Deps struct {
 
 	Users    UserStore
 	Rooms    RoomStore
+	Admin    AdminStore // nil disables reports and the admin API (tests)
 	Sessions *auth.Sessions
+
+	// MediaObjects deletes packaged media when an administrator removes it.
+	MediaObjects MediaDeleter
+	// RoomsLoaded reports rooms held in memory for the stats endpoint.
+	RoomsLoaded func() int
 
 	// Media serves /media/{id}/{file}; nil disables the route (tests).
 	Media http.Handler
@@ -52,9 +58,11 @@ type Deps struct {
 	WS WebSocketServer
 
 	// Hooks let the live room layer react to REST changes. All optional.
-	OnBan         func(roomID, userID uuid.UUID)
-	OnRoomChanged func(roomID uuid.UUID)
-	OnRoomDeleted func(roomID uuid.UUID)
+	OnBan          func(roomID, userID uuid.UUID)
+	OnRoomChanged  func(roomID uuid.UUID)
+	OnRoomDeleted  func(roomID uuid.UUID)
+	OnUserBanned   func(userID uuid.UUID)
+	OnMediaDeleted func(mediaID uuid.UUID)
 
 	// AuthLimiter is applied per client IP to register/login; LoginLimiter
 	// per username to login. Either may be nil to disable.
@@ -138,7 +146,29 @@ func New(deps Deps) *Server {
 			r.Get("/invites", s.handleMyInvites)
 			r.Post("/invites/{id}/accept", s.handleAcceptInvite)
 			r.Post("/invites/{id}/decline", s.handleDeclineInvite)
+			if deps.Admin != nil {
+				r.Post("/media/{id}/reports", s.handleCreateReport)
+			}
 		})
+
+		if deps.Admin != nil {
+			r.Route("/admin", func(r chi.Router) {
+				r.Use(auth.RequireAdmin)
+				r.Get("/stats", s.handleAdminStats)
+				r.Get("/users", s.handleAdminUsers)
+				r.Post("/users/{id}/ban", s.handleAdminBanUser)
+				r.Post("/users/{id}/unban", s.handleAdminUnbanUser)
+				r.Get("/rooms", s.handleAdminRooms)
+				r.Delete("/rooms/{slug}", s.handleAdminDeleteRoom)
+				r.Get("/reports", s.handleAdminReports)
+				r.Post("/reports/{id}/dismiss", s.handleAdminDismissReports)
+				r.Delete("/media/{id}", s.handleAdminDeleteMedia)
+				r.Get("/blocklist", s.handleAdminBlocklist)
+				r.Post("/blocklist", s.handleAdminBlock)
+				r.Delete("/blocklist/*", s.handleAdminUnblock)
+				r.Get("/audit", s.handleAdminAudit)
+			})
+		}
 	})
 
 	r.NotFound(spaHandler(deps.Static))

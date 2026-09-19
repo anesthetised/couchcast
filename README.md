@@ -45,6 +45,18 @@ Production uses the same compose file without the development override:
 just build && just prod-migrate && just prod-up
 ```
 
+## Administration
+
+Grant the first administrator from the shell:
+
+```sh
+just admin-grant <username>
+```
+
+Administrators get an **Admin** link in the header with statistics, media
+reports (dismiss, or delete the video and block its source), user bans,
+room deletion, the blocklist and the audit log.
+
 ## Layout
 
 ```

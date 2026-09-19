@@ -25,6 +25,7 @@ commands:
   serve                  run the web server (default)
   ingest                 run the ingest worker
   admin grant <username> grant site administrator role to a user
+  admin revoke <username> revoke site administrator role
   media enqueue <url>    queue a url for ingest (development helper)
   media retry <id>       re-queue a failed media item
   media show <id>        print a media row

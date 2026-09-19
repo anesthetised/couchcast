@@ -77,6 +77,39 @@ func (m *Manager) Kick(roomID, userID uuid.UUID, reason string) {
 	}
 }
 
+// KickEverywhere disconnects a user from every loaded room (site ban).
+func (m *Manager) KickEverywhere(userID uuid.UUID, reason string) {
+	m.mu.Lock()
+	rooms := make([]*Room, 0, len(m.rooms))
+	for _, r := range m.rooms {
+		rooms = append(rooms, r)
+	}
+	m.mu.Unlock()
+	for _, r := range rooms {
+		r.Kick(userID, reason)
+	}
+}
+
+// MediaDeleted makes loaded rooms drop queue items of a removed media.
+func (m *Manager) MediaDeleted(ctx context.Context, mediaID uuid.UUID) {
+	m.mu.Lock()
+	var targets []*Room
+	for _, r := range m.rooms {
+		r.mu.Lock()
+		_, has := r.media[mediaID]
+		r.mu.Unlock()
+		if has {
+			targets = append(targets, r)
+		}
+	}
+	m.mu.Unlock()
+	for _, r := range targets {
+		if err := r.ReloadQueue(ctx); err != nil {
+			m.deps.Logger.Warn("reload queue", "room", r.Slug(), "error", err)
+		}
+	}
+}
+
 // Refresh reloads a loaded room's metadata after a REST change.
 func (m *Manager) Refresh(ctx context.Context, roomID uuid.UUID) {
 	if r, ok := m.Peek(roomID); ok {

@@ -77,6 +77,12 @@ Run `just test` and `just lint` before opening a PR.
   median of samples), `sync.ts` (deadband 50 ms, `playbackRate` nudge up
   to 1 s, seek beyond), `player.ts` (Shaka + token request filter).
   `store/room.ts` wraps the socket in a Solid store.
+- Site administration: `couchcast admin grant|revoke <username>` sets the
+  role; `/api/v1/admin/*` (behind `auth.RequireAdmin`) serves the `/admin`
+  SPA route. Deleting media there also blocklists its `source_key` so it
+  cannot be re-added, and loaded rooms reload their queues via
+  `Manager.MediaDeleted`. A site ban revokes sessions and kicks the user
+  from every loaded room.
 - Developer helpers: `couchcast media enqueue <url>`, `media show <id>`,
   `media retry <id>`, `media token <id>` (run via `just sh` or
   `{{compose}} run --rm web go run ./cmd/couchcast media ...`).

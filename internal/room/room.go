@@ -868,6 +868,28 @@ func (r *Room) MediaUpdated(m *entity.Media) {
 	r.broadcastLocked()
 }
 
+// ReloadQueue re-reads the queue after rows changed outside the room
+// (an administrator deleted a media item).
+func (r *Room) ReloadQueue(ctx context.Context) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.reloadQueue(ctx); err != nil {
+		return err
+	}
+	if r.current != nil && r.itemByID(*r.current) == nil {
+		var next *entity.QueueItem
+		if len(r.queue) > 0 {
+			next = r.queue[0]
+		}
+		r.setCurrentLocked(next)
+		if err := r.persistLocked(ctx); err != nil {
+			return err
+		}
+	}
+	r.broadcastLocked()
+	return nil
+}
+
 // Refresh reloads room metadata after a REST change (name, settings...).
 func (r *Room) Refresh(ctx context.Context) error {
 	info, err := r.deps.Store.GetRoomByID(ctx, r.info.ID)

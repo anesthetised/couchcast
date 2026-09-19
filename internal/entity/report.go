@@ -1,0 +1,73 @@
+package entity
+
+import (
+	"time"
+
+	"uuid"
+)
+
+// ReportReason categorises a media report.
+type ReportReason string
+
+const (
+	ReportCopyright ReportReason = "copyright"
+	ReportIllegal   ReportReason = "illegal"
+	ReportNSFW      ReportReason = "nsfw"
+	ReportOther     ReportReason = "other"
+)
+
+// ValidReportReason reports whether r is one of the known reasons.
+func ValidReportReason(r ReportReason) bool {
+	switch r {
+	case ReportCopyright, ReportIllegal, ReportNSFW, ReportOther:
+		return true
+	}
+	return false
+}
+
+// MediaReport is one user's complaint about a media item.
+type MediaReport struct {
+	ID         uuid.UUID
+	MediaID    uuid.UUID
+	ReporterID uuid.UUID
+	Reporter   string // username, populated by queries
+	Reason     ReportReason
+	Comment    string
+	CreatedAt  time.Time
+	ResolvedAt *time.Time
+}
+
+// ReportedMedia aggregates open reports per media for the admin panel.
+type ReportedMedia struct {
+	Media   Media
+	Count   int
+	Reports []MediaReport
+}
+
+// BlocklistEntry is a source key administrators refuse to ingest.
+type BlocklistEntry struct {
+	SourceKey string
+	Reason    string
+	CreatedBy string // username, may be empty
+	CreatedAt time.Time
+}
+
+// Stats is the admin dashboard summary.
+type Stats struct {
+	Users         int
+	BannedUsers   int
+	Rooms         int
+	PrivateRooms  int
+	MediaByStatus map[string]int
+	MediaBytes    int64
+	PendingJobs   int
+	RunningJobs   int
+	FailedJobs    int
+	OpenReports   int
+}
+
+// AdminUser is a user row for the admin list.
+type AdminUser struct {
+	User      User
+	RoomCount int
+}

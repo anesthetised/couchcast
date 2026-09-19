@@ -27,6 +27,9 @@ const UserMenu: Component = () => {
       >
         {(u) => (
           <>
+            <Show when={u().role === "admin"}>
+              <a href="/admin">Admin</a>
+            </Show>
             <span class="username">{u().username}</span>
             <button type="button" class="link" onClick={logout}>
               Log out

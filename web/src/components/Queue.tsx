@@ -1,5 +1,6 @@
-import { For, Show, type Component } from "solid-js";
+import { createSignal, For, Show, type Component } from "solid-js";
 
+import ReportDialog from "~/components/ReportDialog";
 import { formatTime } from "~/lib/format";
 import type { RoomStore } from "~/store/room";
 import type { QueueEntry } from "~/protocol";
@@ -11,6 +12,7 @@ const Queue: Component<Props> = (props) => {
   const canManage = () => props.room.isModerator();
   const me = () => props.room.state.me;
   const voteMode = () => props.room.state.snapshot?.room.settings.voteMode ?? false;
+  const [reporting, setReporting] = createSignal<QueueEntry | null>(null);
 
   const moveUp = (idx: number) => {
     const list = items();
@@ -81,6 +83,11 @@ const Queue: Component<Props> = (props) => {
                     </button>
                   </Show>
                 </Show>
+                <Show when={me()}>
+                  <button type="button" class="link" onClick={() => setReporting(item)} title="Report">
+                    ⚑
+                  </button>
+                </Show>
                 <Show when={canManage() || (me() && item.addedBy === me() && !item.current)}>
                   <button type="button" class="link danger-text" onClick={() => props.room.commands.remove(item.id)} title="Remove">
                     ✕
@@ -91,6 +98,9 @@ const Queue: Component<Props> = (props) => {
           )}
         </For>
       </ul>
+      <Show when={reporting()}>
+        {(item) => <ReportDialog mediaId={item().media.id} title={item().media.title || item().media.sourceUrl} onClose={() => setReporting(null)} />}
+      </Show>
     </section>
   );
 };
