@@ -655,13 +655,13 @@ p.card {
   object-fit: contain;
 }
 
-/* Controls float over the bottom edge and fade out when the pointer idles. */
+/* Controls float over the bottom edge and fade out when the pointer idles.
+   Same surface colour as the inline player, for consistency. */
 .stage.fullscreen .controls {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
   transition: opacity 200ms;
 }
 
