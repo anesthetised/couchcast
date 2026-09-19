@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"testing/fstest"
@@ -40,7 +41,7 @@ func (f *fakeStore) CreateUser(_ context.Context, username, hash string) (*entit
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, u := range f.users {
-		if u.Username == username {
+		if strings.EqualFold(u.Username, username) {
 			return nil, repository.ErrConflict
 		}
 	}
@@ -53,7 +54,7 @@ func (f *fakeStore) GetUserByUsername(_ context.Context, username string) (*enti
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, u := range f.users {
-		if u.Username == username {
+		if strings.EqualFold(u.Username, username) {
 			return u, nil
 		}
 	}

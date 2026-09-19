@@ -22,10 +22,10 @@ func TestUsers(t *testing.T) {
 	assert.Equal(t, entity.RoleUser, u.Role)
 	assert.False(t, u.IsBanned())
 
-	_, err = repo.CreateUser(ctx, "alice", "hash")
-	assert.ErrorIs(t, err, ErrConflict)
+	_, err = repo.CreateUser(ctx, "Alice", "hash")
+	assert.ErrorIs(t, err, ErrConflict, "uniqueness ignores case")
 
-	got, err := repo.GetUserByUsername(ctx, "alice")
+	got, err := repo.GetUserByUsername(ctx, "ALICE")
 	require.NoError(t, err)
 	assert.Equal(t, u.ID, got.ID)
 

@@ -39,9 +39,9 @@ func (r *Repo) GetUserByID(ctx context.Context, id uuid.UUID) (*entity.User, err
 	return scanUser(r.pool.QueryRow(ctx, q, id))
 }
 
-// GetUserByUsername returns a user or ErrNotFound.
+// GetUserByUsername returns a user or ErrNotFound. The match ignores case.
 func (r *Repo) GetUserByUsername(ctx context.Context, username string) (*entity.User, error) {
-	const q = `SELECT ` + userColumns + ` FROM users WHERE username = $1`
+	const q = `SELECT ` + userColumns + ` FROM users WHERE lower(username) = lower($1)`
 	return scanUser(r.pool.QueryRow(ctx, q, username))
 }
 

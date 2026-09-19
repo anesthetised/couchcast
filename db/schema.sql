@@ -16,11 +16,11 @@ CREATE TABLE users (
     banned_by     uuid        REFERENCES users (id) ON DELETE SET NULL,
     created_at    timestamptz NOT NULL DEFAULT now(),
 
-    CONSTRAINT users_username_unique CHECK (username = lower(username)),
     CONSTRAINT users_role_check CHECK (role IN ('user', 'admin'))
 );
 
-CREATE UNIQUE INDEX users_username_idx ON users (username);
+-- Usernames keep the case the user typed; uniqueness and lookups ignore it.
+CREATE UNIQUE INDEX users_username_lower_idx ON users (lower(username));
 
 CREATE TABLE sessions (
     token_hash   bytea       PRIMARY KEY,

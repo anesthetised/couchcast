@@ -26,11 +26,11 @@ func TestAuthFlow(t *testing.T) {
 	rec = env.do(http.MethodPost, "/api/v1/auth/register", nil)
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 
-	// Register logs in and lower-cases the username.
+	// Register logs in and keeps the username's case.
 	rec = env.do(http.MethodPost, "/api/v1/auth/register", credentials{Username: " Alice ", Password: "correct-horse"})
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
 	created := decodeBody[userResponse](t, rec)
-	assert.Equal(t, "alice", created.Username)
+	assert.Equal(t, "Alice", created.Username)
 	assert.Equal(t, "user", string(created.Role))
 	require.Len(t, env.cookies, 1)
 
@@ -38,7 +38,7 @@ func TestAuthFlow(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.Equal(t, created.ID, decodeBody[userResponse](t, rec).ID)
 
-	// Duplicate.
+	// Duplicate, regardless of case.
 	rec = env.do(http.MethodPost, "/api/v1/auth/register", credentials{Username: "alice", Password: "correct-horse"})
 	assert.Equal(t, http.StatusConflict, rec.Code)
 

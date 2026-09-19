@@ -21,7 +21,7 @@ type UserStore interface {
 	GetUserByUsername(ctx context.Context, username string) (*entity.User, error)
 }
 
-var usernameRe = regexp.MustCompile(`^[a-z0-9_]{3,32}$`)
+var usernameRe = regexp.MustCompile(`^[A-Za-z0-9_]{3,32}$`)
 
 const (
 	minPasswordLen = 8
@@ -54,12 +54,13 @@ func toUserResponse(u *entity.User) userResponse {
 	return userResponse{ID: u.ID, Username: u.Username, Role: u.Role, CreatedAt: u.CreatedAt}
 }
 
-// normalizeCredentials lower-cases the username and validates both fields.
-// It returns a user-facing message on failure.
+// normalizeCredentials trims the username (case is kept as typed; lookups
+// ignore it) and validates both fields. It returns a user-facing message
+// on failure.
 func normalizeCredentials(c *credentials) string {
-	c.Username = strings.ToLower(strings.TrimSpace(c.Username))
+	c.Username = strings.TrimSpace(c.Username)
 	if !usernameRe.MatchString(c.Username) {
-		return "username must be 3-32 characters: lowercase letters, digits and underscore"
+		return "username must be 3-32 characters: letters, digits and underscore"
 	}
 	if n := len(c.Password); n < minPasswordLen || n > maxPasswordLen {
 		return "password must be between 8 and 128 characters"
@@ -106,10 +107,10 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &c) {
 		return
 	}
-	c.Username = strings.ToLower(strings.TrimSpace(c.Username))
+	c.Username = strings.TrimSpace(c.Username)
 
 	// Per-account limit on top of the per-IP one applied by the router.
-	if s.deps.LoginLimiter != nil && !s.deps.LoginLimiter.Allow("user:"+c.Username) {
+	if s.deps.LoginLimiter != nil && !s.deps.LoginLimiter.Allow("user:"+strings.ToLower(c.Username)) {
 		w.Header().Set("Retry-After", "60")
 		writeError(w, http.StatusTooManyRequests, "too many login attempts")
 		return

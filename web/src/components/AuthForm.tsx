@@ -43,7 +43,7 @@ const AuthForm: Component<Props> = (props) => {
           required
           minLength={3}
           maxLength={32}
-          pattern="[A-Za-z0-9_]+"
+          pattern="[A-Za-z0-9_]{3,32}"
           value={username()}
           onInput={(e) => setUsername(e.currentTarget.value)}
         />

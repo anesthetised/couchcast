@@ -179,7 +179,7 @@ func (r *Repo) ListUsers(ctx context.Context, query string, limit int) ([]entity
 	const q = `
 		SELECT ` + userColumns + `, (SELECT count(*) FROM room_members m WHERE m.user_id = users.id)
 		FROM users
-		WHERE $1 = '' OR username LIKE $1 || '%'
+		WHERE $1 = '' OR lower(username) LIKE lower($1) || '%'
 		ORDER BY created_at DESC
 		LIMIT $2
 	`

@@ -135,7 +135,7 @@ type adminUserResponse struct {
 }
 
 func (s *Server) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
-	users, err := s.deps.Admin.ListUsers(r.Context(), strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q"))), 100)
+	users, err := s.deps.Admin.ListUsers(r.Context(), strings.TrimSpace(r.URL.Query().Get("q")), 100)
 	if err != nil {
 		s.internalError(w, r, "list users", err)
 		return

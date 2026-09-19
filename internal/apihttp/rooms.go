@@ -222,8 +222,7 @@ func (s *Server) denied(w http.ResponseWriter, rc roomCtx) {
 
 // targetUser resolves {username} to a user, writing 404 when missing.
 func (s *Server) targetUser(w http.ResponseWriter, r *http.Request) (*entity.User, bool) {
-	name := strings.ToLower(chi.URLParam(r, "username"))
-	u, err := s.deps.Users.GetUserByUsername(r.Context(), name)
+	u, err := s.deps.Users.GetUserByUsername(r.Context(), chi.URLParam(r, "username"))
 	if errors.Is(err, repository.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "user not found")
 		return nil, false
@@ -675,7 +674,7 @@ func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	target, err := s.deps.Users.GetUserByUsername(r.Context(), strings.ToLower(strings.TrimSpace(req.Username)))
+	target, err := s.deps.Users.GetUserByUsername(r.Context(), strings.TrimSpace(req.Username))
 	if errors.Is(err, repository.ErrNotFound) {
 		writeError(w, http.StatusNotFound, "user not found")
 		return

@@ -41,7 +41,7 @@ func admin(ctx context.Context, cfg config.Config, logger *slog.Logger, args []s
 	defer pool.Close()
 	repo := repository.New(pool)
 
-	username := strings.ToLower(strings.TrimSpace(args[1]))
+	username := strings.TrimSpace(args[1])
 	user, err := repo.GetUserByUsername(ctx, username)
 	if err != nil {
 		return fmt.Errorf("user %q: %w", username, err)
