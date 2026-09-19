@@ -65,6 +65,13 @@ type Selection struct {
 	Audio Format
 }
 
+// Formats returns the formats to download, video first.
+func (s Selection) Formats() []Format {
+	out := make([]Format, 0, len(s.Video)+1)
+	out = append(out, s.Video...)
+	return append(out, s.Audio)
+}
+
 // IDs returns the format ids to download, video first.
 func (s Selection) IDs() []string {
 	ids := make([]string, 0, len(s.Video)+1)
@@ -83,8 +90,9 @@ type Extractor interface {
 	// Probe fetches metadata and the available formats.
 	Probe(ctx context.Context, url string) (*Probe, error)
 	// Download fetches the given formats into dir and returns a map from
-	// format id to file path. progress receives 0..1 for the whole batch.
-	Download(ctx context.Context, url string, formatIDs []string, dir string, progress func(float64)) (map[string]string, error)
+	// format id to file path. progress receives 0..1 for the whole batch,
+	// weighted by the formats' expected sizes when known.
+	Download(ctx context.Context, url string, formats []Format, dir string, progress func(float64)) (map[string]string, error)
 }
 
 // videoPreference orders codec families for selection: VP9 first because

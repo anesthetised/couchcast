@@ -168,7 +168,14 @@ var progressRe = regexp.MustCompile(`^cc-progress:(\d+)/(\d+)$`)
 // Download implements source.Extractor. Formats are fetched one after
 // another (yt-dlp does this for a comma-separated -f) into dir named by
 // format id.
-func (e *Extractor) Download(ctx context.Context, rawURL string, formatIDs []string, dir string, progress func(float64)) (map[string]string, error) {
+func (e *Extractor) Download(ctx context.Context, rawURL string, formats []source.Format, dir string, progress func(float64)) (map[string]string, error) {
+	formatIDs := make([]string, 0, len(formats))
+	sizes := make([]int64, 0, len(formats))
+	for _, f := range formats {
+		formatIDs = append(formatIDs, f.ID)
+		sizes = append(sizes, f.Filesize)
+	}
+
 	args := make([]string, 0, 12+len(e.ExtraArgs))
 	args = append(args,
 		"--no-playlist", "--no-warnings", "--newline", "--no-part",
@@ -190,7 +197,7 @@ func (e *Extractor) Download(ctx context.Context, rawURL string, formatIDs []str
 		return nil, fmt.Errorf("yt-dlp download: %w", err)
 	}
 
-	tracker := newProgressTracker(len(formatIDs), progress)
+	tracker := newProgressTracker(sizes, progress)
 	scanner := bufio.NewScanner(stdout)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -214,33 +221,63 @@ func (e *Extractor) Download(ctx context.Context, rawURL string, formatIDs []str
 }
 
 // progressTracker turns per-file byte counts into one 0..1 value for the
-// batch. yt-dlp downloads formats sequentially, so a new file is detected
-// when downloaded bytes drop.
+// batch, weighting each file by its expected size so the largest rendition
+// does not look stuck at "20%". yt-dlp downloads formats sequentially, so
+// a new file is detected when downloaded bytes drop. Files with unknown
+// size get the average weight.
 type progressTracker struct {
-	total    int
-	done     int
-	lastFrac float64
+	weights  []float64 // normalised, sum to 1
+	index    int
 	lastSeen int64
 	report   func(float64)
 }
 
-func newProgressTracker(total int, report func(float64)) *progressTracker {
+func newProgressTracker(sizes []int64, report func(float64)) *progressTracker {
 	if report == nil {
 		report = func(float64) {}
 	}
-	return &progressTracker{total: total, report: report}
+	n := len(sizes)
+	weights := make([]float64, n)
+	if n == 0 {
+		return &progressTracker{weights: weights, report: report}
+	}
+
+	var known, sum float64
+	for _, s := range sizes {
+		if s > 0 {
+			known++
+			sum += float64(s)
+		}
+	}
+	avg := 1.0
+	if known > 0 {
+		avg = sum / known
+	}
+	total := 0.0
+	for i, s := range sizes {
+		w := float64(s)
+		if s <= 0 {
+			w = avg
+		}
+		weights[i] = w
+		total += w
+	}
+	for i := range weights {
+		weights[i] /= total
+	}
+	return &progressTracker{weights: weights, report: report}
 }
 
 func (t *progressTracker) line(s string) {
 	m := progressRe.FindStringSubmatch(strings.TrimSpace(s))
-	if m == nil {
+	if m == nil || len(t.weights) == 0 {
 		return
 	}
 	downloaded, _ := strconv.ParseInt(m[1], 10, 64)
 	size, _ := strconv.ParseInt(m[2], 10, 64)
 
-	if downloaded < t.lastSeen && t.done < t.total-1 {
-		t.done++
+	if downloaded < t.lastSeen && t.index < len(t.weights)-1 {
+		t.index++
 	}
 	t.lastSeen = downloaded
 
@@ -248,8 +285,12 @@ func (t *progressTracker) line(s string) {
 	if size > 0 {
 		frac = min(float64(downloaded)/float64(size), 1)
 	}
-	t.lastFrac = frac
-	t.report((float64(t.done) + frac) / float64(t.total))
+
+	done := 0.0
+	for i := 0; i < t.index; i++ {
+		done += t.weights[i]
+	}
+	t.report(done + frac*t.weights[t.index])
 }
 
 func lastLine(s string) string {

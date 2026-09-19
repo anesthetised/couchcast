@@ -59,13 +59,21 @@ func TestParseInfoFixture(t *testing.T) {
 
 func TestProgressTracker(t *testing.T) {
 	var got []float64
-	tr := newProgressTracker(2, func(v float64) { got = append(got, v) })
+	// 300 + 100 bytes: first file is 75% of the batch.
+	tr := newProgressTracker([]int64{300, 100}, func(v float64) { got = append(got, v) })
 
 	tr.line("noise")
-	tr.line("cc-progress:50/100")
-	tr.line("cc-progress:100/100")
+	tr.line("cc-progress:150/300")
+	tr.line("cc-progress:300/300")
 	tr.line("cc-progress:25/100") // bytes dropped: second file started
 	tr.line("cc-progress:100/100")
 
-	assert.InDeltaSlice(t, []float64{0.25, 0.5, 0.625, 1}, got, 1e-9)
+	assert.InDeltaSlice(t, []float64{0.375, 0.75, 0.8125, 1}, got, 1e-9)
+
+	// Unknown sizes fall back to equal weights.
+	got = nil
+	tr = newProgressTracker([]int64{0, 0}, func(v float64) { got = append(got, v) })
+	tr.line("cc-progress:50/100")
+	tr.line("cc-progress:10/100")
+	assert.InDeltaSlice(t, []float64{0.25, 0.55}, got, 1e-9)
 }

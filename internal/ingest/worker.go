@@ -112,7 +112,7 @@ func (w *Worker) process(ctx context.Context, media *entity.Media, log *slog.Log
 	}
 	start = time.Now()
 	reporter := &progressReporter{repo: w.repo, queue: w.queue, mediaID: media.ID, interval: time.Second, now: time.Now}
-	files, err := w.extractor.Download(ctx, media.SourceURL, sel.IDs(), srcDir, func(v float64) {
+	files, err := w.extractor.Download(ctx, media.SourceURL, sel.Formats(), srcDir, func(v float64) {
 		reporter.report(ctx, v, false)
 	})
 	if err != nil {
