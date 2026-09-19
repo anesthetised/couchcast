@@ -15,6 +15,7 @@ services:
     build:
       target: dev
     image: couchcast-dev
+    pull_policy: build
     command: ["air", "-c", ".air.web.toml"]
     environment:
       COUCHCAST_LOG_LEVEL: ${COUCHCAST_LOG_LEVEL:-debug}
@@ -31,6 +32,7 @@ services:
     build:
       target: dev
     image: couchcast-dev
+    pull_policy: build
     command: ["air", "-c", ".air.ingest.toml"]
     environment:
       COUCHCAST_LOG_LEVEL: ${COUCHCAST_LOG_LEVEL:-debug}
