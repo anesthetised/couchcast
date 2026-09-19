@@ -1,17 +1,62 @@
+/* ==========================================================================
+   couchcast design system
+   Dark, warm-accent theme. Everything below builds on the tokens in :root;
+   components never hard-code colours.
+   ========================================================================== */
+
 :root {
   color-scheme: dark;
-  --bg: #0f1115;
-  --surface: #171a21;
-  --border: #262a33;
-  --text: #e6e6e6;
-  --muted: #8b90a0;
+
+  /* surfaces */
+  --bg: #0b0d12;
+  --surface: #12151c;
+  --surface-2: #181c25;
+  --surface-3: #1f2430;
+  --border: #262b37;
+  --border-strong: #343a49;
+
+  /* text */
+  --text: #e9ebf1;
+  --text-2: #b6bbc8;
+  --muted: #8a90a2;
+
+  /* accent */
   --accent: #f2a541;
-  --ok: #4caf50;
-  --error: #e5484d;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --accent-hover: #ffb955;
+  --accent-soft: rgba(242, 165, 65, 0.14);
+  --on-accent: #1a1204;
+
+  /* status */
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --danger: #f0555b;
+  --danger-soft: rgba(240, 85, 91, 0.16);
+  --live: #ff5c5c;
+
+  /* geometry */
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-pill: 999px;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --ring: 0 0 0 3px var(--accent-soft);
+  --overlay: rgba(18, 21, 28, 0.25);
+  --overlay-strong: rgba(18, 21, 28, 0.78);
+
+  /* type */
+  --font: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --fs-xs: 0.78rem;
+  --fs-sm: 0.86rem;
+  --fs-md: 0.95rem;
+  --fs-lg: 1.15rem;
+  --fs-xl: 1.6rem;
+
+  font-family: var(--font);
   font-size: 15px;
   line-height: 1.5;
 }
+
+/* --- base ----------------------------------------------------------------- */
 
 * {
   box-sizing: border-box;
@@ -21,6 +66,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
@@ -28,35 +74,61 @@ a {
   text-decoration: none;
 }
 
-.topbar {
-  display: flex;
-  align-items: center;
-  padding: 0.75rem 1.25rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
+a:hover {
+  color: var(--accent-hover);
 }
 
-.brand {
+h1,
+h2,
+h3 {
+  margin: 0;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+}
+
+h1 {
+  font-size: var(--fs-xl);
   font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--text);
 }
 
-.page {
-  max-width: 960px;
-  margin: 2rem auto;
-  padding: 0 1.25rem;
+h2 {
+  font-size: var(--fs-lg);
+  font-weight: 650;
 }
 
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1.5rem;
+p {
+  margin: 0;
 }
+
+p + p {
+  margin-top: 0.5rem;
+}
+
+code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85em;
+  background: var(--surface-3);
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
+}
+
+:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+/* --- text utilities ------------------------------------------------------- */
 
 .muted {
   color: var(--muted);
+}
+
+.small {
+  font-size: var(--fs-sm);
 }
 
 .ok {
@@ -64,86 +136,59 @@ a {
 }
 
 .error {
-  color: var(--error);
+  color: var(--danger);
 }
+
+.danger-text {
+  color: var(--danger);
+}
+
+/* --- layout --------------------------------------------------------------- */
 
 .topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
   justify-content: space-between;
-}
-
-.usermenu {
-  display: flex;
   align-items: center;
-  gap: 1rem;
+  padding: 0.7rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+  background: rgba(11, 13, 18, 0.8);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
-.username {
-  color: var(--muted);
-}
-
-.form {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.auth-form {
-  max-width: 360px;
-  margin: 0 auto;
-}
-
-.form h1 {
-  margin: 0 0 0.5rem;
-  font-size: 1.4rem;
-}
-
-label {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-input[type="text"],
-input[type="password"],
-input[type="url"] {
-  padding: 0.55rem 0.7rem;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--bg);
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
   color: var(--text);
-  font: inherit;
 }
 
-input:focus {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-button,
-.button {
-  padding: 0.55rem 1rem;
-  border-radius: 6px;
-  border: 1px solid transparent;
+.brand::before {
+  content: "";
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
   background: var(--accent);
-  color: #1a1204;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
+  box-shadow: 0 0 12px var(--accent);
 }
 
-button:disabled {
-  opacity: 0.6;
-  cursor: default;
+.brand:hover {
+  color: var(--text);
 }
 
-button.link {
-  background: none;
-  border: none;
-  color: var(--accent);
-  font-weight: 500;
-  padding: 0;
+.page {
+  max-width: 960px;
+  margin: 1.75rem auto;
+  padding: 0 1.5rem;
+}
+
+.page.wide {
+  max-width: 1440px;
 }
 
 .stack {
@@ -152,26 +197,330 @@ button.link {
   gap: 1.25rem;
 }
 
+/* --- user menu ------------------------------------------------------------ */
+
+.usermenu {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: var(--fs-sm);
+}
+
+.usermenu a {
+  color: var(--text-2);
+}
+
+.usermenu a:hover {
+  color: var(--text);
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 700;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+}
+
+.username {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* --- cards ---------------------------------------------------------------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-1);
+}
+
 .card h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.1rem;
+  margin-bottom: 0.85rem;
 }
 
 .card h1 {
-  margin: 0 0 0.25rem;
-  font-size: 1.5rem;
+  margin-bottom: 0.25rem;
 }
 
-.room-header {
+p.card {
+  margin: 0;
+}
+
+.empty {
+  padding: 2.5rem 1rem;
+  text-align: center;
+  color: var(--muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+}
+
+/* --- buttons -------------------------------------------------------------- */
+
+button,
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: var(--on-accent);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms, color 120ms, transform 80ms;
+  white-space: nowrap;
+}
+
+button:hover,
+.button:hover {
+  background: var(--accent-hover);
+  color: var(--on-accent);
+}
+
+button:active,
+.button:active {
+  transform: translateY(1px);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  transform: none;
+}
+
+button.ghost,
+.button.ghost {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+button.ghost:hover,
+.button.ghost:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+button.danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+  border-color: transparent;
+}
+
+button.danger:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+button.link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-weight: 500;
+  padding: 0.2rem 0.3rem;
+}
+
+button.link:hover {
+  color: var(--accent-hover);
+  background: none;
+}
+
+button.link.danger-text {
+  color: var(--danger);
+}
+
+button.link.danger-text:hover {
+  color: #ff8085;
+}
+
+.icon-btn,
+.controls .icon {
+  background: none;
+  border: none;
+  color: var(--text-2);
+  padding: 0.3rem 0.45rem;
+  font-size: 1rem;
+  border-radius: var(--radius-sm);
+}
+
+.icon-btn:hover,
+.controls .icon:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.actions {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
+  gap: 0.6rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* --- chips (toggle filters) ---------------------------------------------- */
+
+.chips {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.chip {
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+
+.chip:hover {
+  background: var(--surface-3);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.chip[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.chip .dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--live);
+  margin-right: 0.4rem;
+  vertical-align: middle;
+}
+
+/* --- forms ---------------------------------------------------------------- */
+
+.form {
+  display: flex;
+  flex-direction: column;
   gap: 1rem;
 }
 
-.room-header p {
-  margin: 0;
+.form .form {
+  padding: 0;
+  border: none;
+  margin-top: 1rem;
+  box-shadow: none;
 }
+
+.auth-form {
+  max-width: 380px;
+  margin: 2rem auto 0;
+}
+
+.auth-form h1 {
+  margin-bottom: 0.5rem;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+
+/* Inline hints inside a label stay on the caption line. */
+label > .muted {
+  display: inline;
+  margin-left: 0.3rem;
+  font-weight: 400;
+}
+
+label > .muted:first-child {
+  margin-left: 0;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="url"],
+input[type="search"],
+select {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-md);
+  transition: border-color 120ms, box-shadow 120ms;
+}
+
+input::placeholder {
+  color: var(--muted);
+}
+
+input:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+input[type="search"]::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+  width: 16px;
+  height: 16px;
+}
+
+.radio,
+.radio-row .radio {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--text);
+  font-weight: 400;
+}
+
+.radio-row {
+  border: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.slug-input {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* --- lists ---------------------------------------------------------------- */
 
 .list {
   list-style: none;
@@ -184,7 +533,7 @@ button.link {
   justify-content: space-between;
   align-items: center;
   gap: 1rem;
-  padding: 0.5rem 0;
+  padding: 0.6rem 0;
   border-top: 1px solid var(--border);
 }
 
@@ -192,67 +541,337 @@ button.link {
   border-top: none;
 }
 
-.actions {
+.list.compact .row {
+  padding: 0.35rem 0;
+}
+
+/* --- badges --------------------------------------------------------------- */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  color: var(--text-2);
+  letter-spacing: 0.01em;
+}
+
+.badge.live {
+  background: rgba(255, 92, 92, 0.18);
+  color: var(--live);
+}
+
+.badge.live::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--live);
+  box-shadow: 0 0 8px var(--live);
+}
+
+.badge.private {
+  background: rgba(138, 144, 162, 0.18);
+  color: var(--text-2);
+}
+
+.badge.role {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.status-ready {
+  background: rgba(74, 222, 128, 0.16);
+  color: var(--ok);
+}
+
+.status-failed {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+/* ==========================================================================
+   Home
+   ========================================================================== */
+
+.hero {
   display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  padding: 0.5rem 0 0.25rem;
+}
+
+.hero h1 {
+  font-size: 2rem;
+  letter-spacing: -0.02em;
+  background: linear-gradient(90deg, var(--text), var(--text-2));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.hero p {
+  color: var(--muted);
+  margin-top: 0.3rem;
+}
+
+.hero .actions {
   gap: 0.75rem;
-  align-items: center;
 }
 
-.slug-input {
+/* Collapsible create panel */
+.collapse {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 220ms ease;
+}
+
+.collapse[data-open="true"] {
+  grid-template-rows: 1fr;
+}
+
+.collapse > div {
+  overflow: hidden;
+}
+
+/* A closed panel should not add a gap to the stack. */
+.stack > .collapse[data-open="false"] {
+  margin-bottom: -1.25rem;
+}
+
+.collapse .card {
+  margin-top: 0.25rem;
+  border-color: var(--border-strong);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+}
+
+.create-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 720px) {
+  .create-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Invites banner */
+.banner {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.85rem 1.1rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
 }
 
-.slug-input input {
-  flex: 1;
+.banner .list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1.25rem;
 }
 
-.radio-row {
+.banner .row {
   border: none;
   padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.6rem;
 }
 
-.radio {
-  flex-direction: row;
+/* Toolbar: search + filters */
+.toolbar {
+  display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 1rem;
+  padding: 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.toolbar .search {
+  position: relative;
+  flex: 1;
+  min-width: 200px;
+}
+
+.toolbar .search input {
+  padding-left: 2.2rem;
+  background: var(--bg);
+}
+
+.toolbar .search svg {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+@media (max-width: 640px) {
+  .toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Room grid */
+.room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.room-card {
+  display: block;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  transition: transform 150ms, border-color 150ms, box-shadow 150ms;
+}
+
+.room-card:hover {
+  color: var(--text);
+  border-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-2);
+}
+
+.room-card-media {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: var(--bg);
+}
+
+.room-card-media img,
+.room-card-media video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.room-card-media video {
+  opacity: 0;
+  transition: opacity 200ms;
+  pointer-events: none;
+}
+
+.room-card-media video.visible {
+  opacity: 1;
+}
+
+.room-card-media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(11, 13, 18, 0) 55%, rgba(11, 13, 18, 0.85));
+  pointer-events: none;
+}
+
+.room-card-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  background: radial-gradient(ellipse at 50% 30%, var(--surface-3), var(--bg));
+}
+
+.room-card-top {
+  position: absolute;
+  top: 0.55rem;
+  left: 0.55rem;
+  right: 0.55rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.4rem;
+  z-index: 1;
+}
+
+.room-card-top .badge {
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  background: rgba(11, 13, 18, 0.65);
+}
+
+.room-card-top .badge.live {
+  color: var(--live);
+}
+
+.room-card-duration {
+  position: absolute;
+  bottom: 0.55rem;
+  right: 0.55rem;
+  z-index: 1;
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  padding: 0.1rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(11, 13, 18, 0.75);
   color: var(--text);
 }
 
-button.danger {
-  background: var(--error);
-  color: #fff;
+.room-card-body {
+  padding: 0.7rem 0.85rem 0.85rem;
 }
 
-.player-placeholder {
-  min-height: 200px;
+.room-card-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-card-meta {
   display: flex;
-  flex-direction: column;
   align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.2rem;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.room-card-meta > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pager {
+  display: flex;
   justify-content: center;
-  text-align: center;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1.25rem;
 }
 
-.form .form {
-  padding: 0;
-  border: none;
-  margin-top: 1rem;
-}
-
-p.card {
-  margin: 0;
-}
-
-/* --- room layout ------------------------------------------------------- */
+/* ==========================================================================
+   Room
+   ========================================================================== */
 
 .room-layout {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
   gap: 1.25rem;
   align-items: start;
 }
@@ -270,19 +889,22 @@ p.card {
   gap: 1rem;
 }
 
-.page.wide {
-  max-width: 1400px;
+.room-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1rem;
 }
 
-.small {
-  font-size: 0.85rem;
+.room-header p {
+  margin: 0;
 }
 
-/* --- player ------------------------------------------------------------ */
+/* --- player --------------------------------------------------------------- */
 
 .player {
   background: #000;
-  border-radius: 10px;
+  border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid var(--border);
 }
@@ -307,7 +929,7 @@ p.card {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(11, 13, 18, 0.55);
   color: var(--text);
   text-align: center;
   padding: 1rem;
@@ -323,10 +945,10 @@ p.card {
   left: 0.5rem;
   margin: 0;
   padding: 0.4rem 0.6rem;
-  background: rgba(0, 0, 0, 0.7);
-  color: #9be9a8;
-  font-size: 0.75rem;
-  border-radius: 6px;
+  background: rgba(11, 13, 18, 0.75);
+  color: var(--ok);
+  font-size: var(--fs-xs);
+  border-radius: var(--radius-sm);
 }
 
 .controls {
@@ -337,23 +959,19 @@ p.card {
   background: var(--surface);
 }
 
-.controls .icon {
-  background: none;
-  border: none;
-  color: var(--text);
-  font-size: 1rem;
-  padding: 0.25rem 0.4rem;
-  cursor: pointer;
-}
-
 .controls .icon:disabled {
   opacity: 0.4;
   cursor: default;
+  background: none;
+}
+
+.controls .icon.dim {
+  opacity: 0.45;
 }
 
 .controls .time {
   font-variant-numeric: tabular-nums;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
   color: var(--muted);
   min-width: 3.2rem;
   text-align: center;
@@ -370,16 +988,17 @@ p.card {
 }
 
 .controls .quality {
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  width: auto;
   padding: 0.25rem 0.4rem;
-  font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--fs-sm);
+  background: var(--bg);
 }
 
-/* --- queue ------------------------------------------------------------- */
+progress {
+  accent-color: var(--accent);
+}
+
+/* --- queue ---------------------------------------------------------------- */
 
 .add-form {
   display: flex;
@@ -403,7 +1022,11 @@ p.card {
 }
 
 .queue-item.current {
-  background: linear-gradient(90deg, rgba(242, 165, 65, 0.08), transparent);
+  margin: 0 -0.75rem;
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+  background: linear-gradient(90deg, var(--accent-soft), transparent);
+  border-radius: var(--radius-sm);
 }
 
 .thumb {
@@ -416,7 +1039,7 @@ p.card {
   width: 96px;
   height: 54px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--bg);
 }
 
@@ -433,7 +1056,7 @@ p.card {
 }
 
 .queue-meta {
-  font-size: 0.8rem;
+  font-size: var(--fs-xs);
 }
 
 .queue-body progress {
@@ -444,40 +1067,17 @@ p.card {
 
 .queue-actions {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.35rem;
   flex-wrap: wrap;
   justify-content: flex-end;
-  font-size: 0.85rem;
-}
-
-.badge {
-  font-size: 0.75rem;
-  padding: 0.05rem 0.4rem;
-  border-radius: 999px;
-  background: var(--border);
-}
-
-.status-ready {
-  background: rgba(76, 175, 80, 0.25);
-}
-
-.status-failed {
-  background: rgba(229, 72, 77, 0.3);
+  font-size: var(--fs-sm);
 }
 
 .vote.voted {
   color: var(--ok);
 }
 
-.danger-text {
-  color: var(--error);
-}
-
-.list.compact .row {
-  padding: 0.3rem 0;
-}
-
-/* --- chat -------------------------------------------------------------- */
+/* --- chat ----------------------------------------------------------------- */
 
 .chat-list {
   list-style: none;
@@ -488,7 +1088,7 @@ p.card {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
-  font-size: 0.9rem;
+  font-size: var(--fs-sm);
 }
 
 .chat-line {
@@ -498,7 +1098,7 @@ p.card {
 }
 
 .chat-time {
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
   flex: none;
 }
 
@@ -516,7 +1116,7 @@ p.card {
 
 .chat-delete {
   flex: none;
-  font-size: 0.75rem;
+  font-size: var(--fs-xs);
 }
 
 .chat-form {
@@ -528,7 +1128,7 @@ p.card {
   flex: 1;
 }
 
-/* --- votes & options --------------------------------------------------- */
+/* --- votes & options ------------------------------------------------------ */
 
 .vote-panel {
   display: flex;
@@ -539,7 +1139,7 @@ p.card {
 }
 
 .vote-panel button.voted {
-  background: var(--border);
+  background: var(--surface-3);
   color: var(--text);
 }
 
@@ -550,82 +1150,22 @@ p.card {
 }
 
 .options select {
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  width: auto;
   padding: 0.25rem 0.4rem;
-  font: inherit;
 }
 
-/* --- admin & dialogs --------------------------------------------------- */
-
-.tabs {
+.player-placeholder {
+  min-height: 200px;
   display: flex;
-  gap: 0.25rem;
-  border-bottom: 1px solid var(--border);
-}
-
-.tab {
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  color: var(--muted);
-  padding: 0.5rem 0.9rem;
-  font-weight: 500;
-}
-
-.tab.active {
-  color: var(--text);
-  border-bottom-color: var(--accent);
-}
-
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 1rem;
-}
-
-.stat-value {
-  font-size: 1.8rem;
-  font-weight: 700;
-}
-
-.report {
-  padding: 0.75rem 0;
-  border-top: 1px solid var(--border);
-}
-
-.report:first-of-type {
-  border-top: none;
-}
-
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  z-index: 10;
+  text-align: center;
 }
 
-.modal {
-  width: min(420px, 90vw);
-}
-
-.modal select,
-.card select {
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 0.45rem 0.6rem;
-  font: inherit;
-}
-
-/* --- fullscreen stage -------------------------------------------------- */
+/* ==========================================================================
+   Fullscreen stage
+   ========================================================================== */
 
 .stage {
   position: relative;
@@ -655,20 +1195,19 @@ p.card {
   object-fit: contain;
 }
 
-/* Controls float over the bottom edge and fade out when the pointer idles.
-   Same treatment as the overlay panels: surface colour, translucent at
-   rest, denser with a blur while hovered. */
+/* Controls float over the bottom edge, same treatment as the overlay panels:
+   surface colour, translucent at rest, denser with a blur while hovered. */
 .stage.fullscreen .controls {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(23, 26, 33, 0.25);
+  background: var(--overlay);
   transition: opacity 200ms, background 150ms;
 }
 
 .stage.fullscreen .controls:hover {
-  background: rgba(23, 26, 33, 0.78);
+  background: var(--overlay-strong);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
@@ -682,11 +1221,7 @@ p.card {
   cursor: none;
 }
 
-.controls .icon.dim {
-  opacity: 0.45;
-}
-
-/* Overlay panels: translucent at rest, opaque while hovered or focused.
+/* Overlay panels: translucent at rest, denser while hovered or focused.
    Chat sits on the right, the queue on the left. */
 .fs-panel {
   position: absolute;
@@ -705,8 +1240,6 @@ p.card {
   left: 0;
 }
 
-/* Even when "opaque" the panels stay partly see-through: the video is
-   the point; blur keeps the text readable over moving footage. */
 .fs-panel > .card {
   flex: 1;
   display: flex;
@@ -714,7 +1247,8 @@ p.card {
   min-height: 0;
   border: none;
   border-radius: 0;
-  background: rgba(0, 0, 0, 0.25);
+  box-shadow: none;
+  background: var(--overlay);
   transition: background 150ms, backdrop-filter 150ms;
   padding: 0.75rem;
 }
@@ -725,7 +1259,7 @@ p.card {
 
 .fs-panel:hover > .card,
 .fs-panel:focus-within > .card {
-  background: rgba(23, 26, 33, 0.78);
+  background: var(--overlay-strong);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
 }
@@ -735,16 +1269,21 @@ p.card {
   min-height: 0;
 }
 
-.fs-queue .queue-item {
+.fs-queue .queue-item,
+.fs-chat .chat-line {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
 .fs-queue:hover .queue-item,
-.fs-queue:focus-within .queue-item {
+.fs-queue:focus-within .queue-item,
+.fs-chat .chat:hover .chat-line,
+.fs-chat .chat:focus-within .chat-line {
   text-shadow: none;
 }
 
-.fs-queue .queue-actions {
+.fs-queue .queue-actions,
+.fs-chat .chat-form,
+.fs-chat .chat-delete {
   transition: opacity 200ms;
 }
 
@@ -753,41 +1292,8 @@ p.card {
   max-height: none;
 }
 
-.fs-chat .chat-line {
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
-}
-
 .fs-chat .chat-form input {
-  background: rgba(0, 0, 0, 0.5);
-}
-
-.fs-chat .chat:hover .chat-line,
-.fs-chat .chat:focus-within .chat-line {
-  text-shadow: none;
-}
-
-/* Idle: the chat stays readable as a "ghost" — recent messages over the
-   video without background or input. Keystrokes reset idle, so typing
-   keeps the panel; a focused but silent input does not. */
-.stage.fullscreen.idle .fs-panel:not(:hover) {
-  pointer-events: none;
-}
-
-.stage.fullscreen.idle .fs-panel:not(:hover) > .card {
-  background: transparent;
-}
-
-.stage.fullscreen.idle .fs-chat:not(:hover) .chat-form,
-.stage.fullscreen.idle .fs-chat:not(:hover) .chat-delete,
-.stage.fullscreen.idle .fs-chat:not(:hover) .chat-line.stale,
-.stage.fullscreen.idle .fs-queue:not(:hover) .queue-actions,
-.stage.fullscreen.idle .fs-queue:not(:hover) .queue-item:not(.current) .thumb {
-  opacity: 0;
-}
-
-.fs-chat .chat-form,
-.fs-chat .chat-delete {
-  transition: opacity 200ms;
+  background: rgba(11, 13, 18, 0.5);
 }
 
 .fs-chat .chat-line {
@@ -806,137 +1312,89 @@ p.card {
   }
 }
 
-/* --- public rooms directory ------------------------------------------- */
-
-.directory-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
-}
-
-.directory-head h2 {
-  margin: 0;
-  font-size: 1.2rem;
-}
-
-.directory-controls {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-}
-
-.directory-controls input[type="search"] {
-  padding: 0.45rem 0.7rem;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--text);
-  font: inherit;
-  min-width: 220px;
-}
-
-.room-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 1rem;
-}
-
-.room-card {
-  display: block;
-  color: var(--text);
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  overflow: hidden;
-  transition: border-color 150ms;
-}
-
-.room-card:hover {
-  border-color: var(--accent);
-}
-
-.room-card-media {
-  position: relative;
-  aspect-ratio: 16 / 9;
-  background: #000;
-}
-
-.room-card-media img,
-.room-card-media video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.room-card-media video {
-  opacity: 0;
-  transition: opacity 200ms;
+/* Idle: panels become "ghosts" — content over the video without background
+   or inputs. Keystrokes reset idle, so typing keeps the panel; a focused but
+   silent input does not. */
+.stage.fullscreen.idle .fs-panel:not(:hover) {
   pointer-events: none;
 }
 
-.room-card-media video.visible {
-  opacity: 1;
+.stage.fullscreen.idle .fs-panel:not(:hover) > .card {
+  background: transparent;
 }
 
-.room-card-empty {
-  position: absolute;
-  inset: 0;
+.stage.fullscreen.idle .fs-chat:not(:hover) .chat-form,
+.stage.fullscreen.idle .fs-chat:not(:hover) .chat-delete,
+.stage.fullscreen.idle .fs-chat:not(:hover) .chat-line.stale,
+.stage.fullscreen.idle .fs-queue:not(:hover) .queue-actions,
+.stage.fullscreen.idle .fs-queue:not(:hover) .queue-item:not(.current) .thumb {
+  opacity: 0;
+}
+
+/* ==========================================================================
+   Admin & dialogs
+   ========================================================================== */
+
+.tabs {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted);
-  font-size: 0.85rem;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border);
 }
 
-.room-card-live,
-.room-card-badge,
-.room-card-duration {
-  position: absolute;
-  font-size: 0.72rem;
-  padding: 0.1rem 0.45rem;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.7);
+.tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--muted);
+  padding: 0.6rem 0.9rem;
+  font-weight: 500;
+}
+
+.tab:hover {
+  background: none;
   color: var(--text);
 }
 
-.room-card-live {
-  top: 0.5rem;
-  left: 0.5rem;
-  color: #ff6b6b;
+.tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
 }
 
-
-.room-card-badge {
-  top: 0.5rem;
-  right: 0.5rem;
-}
-
-.room-card-duration {
-  bottom: 0.5rem;
-  right: 0.5rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.room-card-body {
-  padding: 0.6rem 0.75rem 0.75rem;
-}
-
-.room-card-title {
-  font-weight: 600;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pager {
-  display: flex;
-  justify-content: center;
-  align-items: center;
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 1rem;
-  margin-top: 1rem;
+}
+
+.stat-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.report {
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.report:first-of-type {
+  border-top: none;
+}
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+
+.modal {
+  width: min(420px, 90vw);
+  box-shadow: var(--shadow-2);
 }

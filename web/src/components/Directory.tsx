@@ -3,7 +3,8 @@ import { createEffect, createResource, createSignal, For, on, onCleanup, Show, t
 
 import RoomCard from "~/components/RoomCard";
 import { rooms } from "~/lib/rooms";
-import type { Directory } from "~/lib/types";
+import type { Directory as DirectoryData } from "~/lib/types";
+import { auth } from "~/store/auth";
 
 const CARD_MIN_WIDTH = 240; // keep in sync with .room-grid minmax
 const GRID_GAP = 16;
@@ -12,14 +13,21 @@ const MAX_PER_PAGE = 48;
 const REFRESH_MS = 30_000;
 const SEARCH_DEBOUNCE_MS = 300;
 
-// PublicRooms is the directory on the home page. Search, the live filter
-// and the page live in the URL so links are shareable and back works.
-const PublicRooms: Component = () => {
-  const [params, setParams] = useSearchParams<{ q?: string; live?: string; page?: string }>();
+type Params = { q?: string; live?: string; private?: string; mine?: string; page?: string };
+
+// Directory lists every room the visitor may open: public rooms plus the
+// private rooms they belong to. Search, the filter chips and the page live
+// in the URL so links are shareable and back works.
+const Directory: Component = () => {
+  const [params, setParams] = useSearchParams<Params>();
 
   const q = () => params.q ?? "";
-  const live = () => params.live === "1";
+  const flag = (name: "live" | "private" | "mine") => params[name] === "1";
   const page = () => Math.max(1, Number(params.page) || 1);
+  const signedIn = () => auth.user() !== null;
+
+  const toggle = (name: "live" | "private" | "mine") =>
+    setParams({ ...params, [name]: flag(name) ? undefined : "1", page: undefined });
 
   // Local input state is debounced into the URL.
   const [input, setInput] = createSignal(q());
@@ -46,9 +54,18 @@ const PublicRooms: Component = () => {
 
   const [receivedAt, setReceivedAt] = createSignal(Date.now());
   const [dir, { refetch }] = createResource(
-    () => ({ q: q(), live: live(), page: page(), perPage: perPage() }),
+    () => ({
+      q: q(),
+      live: flag("live"),
+      private: signedIn() && flag("private"),
+      mine: signedIn() && flag("mine"),
+      page: page(),
+      perPage: perPage(),
+      // Re-fetch when the session changes: private rooms appear/disappear.
+      user: auth.user()?.id ?? null,
+    }),
     async (p) => {
-      const d = await rooms.public(p);
+      const d = await rooms.directory(p);
       setReceivedAt(Date.now());
       return d;
     },
@@ -64,44 +81,59 @@ const PublicRooms: Component = () => {
 
   // Clamp an out-of-range page from the URL.
   createEffect(
-    on(dir, (d: Directory | undefined) => {
+    on(dir, (d: DirectoryData | undefined) => {
       if (d && d.rooms.length === 0 && d.total > 0 && page() > 1) setParams({ page: undefined });
     }),
   );
 
+  const filtered = () => Boolean(q() || flag("live") || flag("private") || flag("mine"));
+
   return (
-    <section
-      class="directory"
-      ref={(el) => observer.observe(el)}
-    >
-      <header class="directory-head">
-        <h2>Public rooms</h2>
-        <div class="directory-controls">
-          <input type="search" placeholder="Search rooms" value={input()} onInput={(e) => onSearchInput(e.currentTarget.value)} />
-          <label class="radio">
-            <input type="checkbox" checked={live()} onChange={(e) => setParams({ live: e.currentTarget.checked ? "1" : undefined, page: undefined })} />
-            Live only
-          </label>
+    <section class="directory" ref={(el) => observer.observe(el)}>
+      <div class="toolbar">
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <path d="m20 20-3.5-3.5" />
+          </svg>
+          <input type="search" placeholder="Search rooms" value={input()} onInput={(e) => onSearchInput(e.currentTarget.value)} aria-label="Search rooms" />
         </div>
-      </header>
+        <div class="chips" role="group" aria-label="Filters">
+          <button type="button" class="chip" aria-pressed={flag("live")} onClick={() => toggle("live")}>
+            <span class="dot" />
+            Live
+          </button>
+          <Show when={signedIn()}>
+            <button type="button" class="chip" aria-pressed={flag("private")} onClick={() => toggle("private")}>
+              Private
+            </button>
+            <button type="button" class="chip" aria-pressed={flag("mine")} onClick={() => toggle("mine")}>
+              Mine
+            </button>
+          </Show>
+        </div>
+      </div>
 
       <Show when={dir()} fallback={<p class="muted">Loading…</p>}>
         {(d) => (
           <>
-            <Show when={d().rooms.length > 0} fallback={<p class="muted">{live() || q() ? "No rooms match." : "No public rooms yet."}</p>}>
+            <Show
+              when={d().rooms.length > 0}
+              fallback={<div class="empty">{filtered() ? "No rooms match these filters." : "No rooms yet — create the first one."}</div>}
+            >
               <div class="room-grid">
                 <For each={d().rooms}>{(room) => <RoomCard room={room} serverOffsetMs={serverOffsetMs()} />}</For>
               </div>
             </Show>
             <Show when={pages() > 1}>
               <nav class="pager">
-                <button type="button" class="link" disabled={page() <= 1} onClick={() => setParams({ page: page() - 1 > 1 ? String(page() - 1) : undefined })}>
+                <button type="button" class="ghost" disabled={page() <= 1} onClick={() => setParams({ page: page() - 1 > 1 ? String(page() - 1) : undefined })}>
                   ‹ Prev
                 </button>
                 <span class="muted small">
                   page {page()} of {pages()} · {d().total} rooms
                 </span>
-                <button type="button" class="link" disabled={page() >= pages()} onClick={() => setParams({ page: String(page() + 1) })}>
+                <button type="button" class="ghost" disabled={page() >= pages()} onClick={() => setParams({ page: String(page() + 1) })}>
                   Next ›
                 </button>
               </nav>
@@ -113,4 +145,4 @@ const PublicRooms: Component = () => {
   );
 };
 
-export default PublicRooms;
+export default Directory;

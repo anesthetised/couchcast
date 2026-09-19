@@ -451,6 +451,10 @@ func (s *Server) handleDeleteRoom(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleMyRooms lists the rooms the caller belongs to.
+//
+// Deprecated: superseded by GET /api/v1/rooms?mine=1 (the directory). Kept
+// for compatibility; the SPA no longer calls it.
 func (s *Server) handleMyRooms(w http.ResponseWriter, r *http.Request) {
 	user := auth.UserFrom(r.Context())
 	rooms, err := s.deps.Rooms.ListRoomsForUser(r.Context(), user.ID)

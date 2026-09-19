@@ -9,13 +9,15 @@ import (
 
 	"uuid"
 
+	"github.com/anesthetised/couchcast/internal/auth"
+	"github.com/anesthetised/couchcast/internal/entity"
 	"github.com/anesthetised/couchcast/internal/protocol"
 	"github.com/anesthetised/couchcast/internal/repository"
 )
 
-// DirectoryStore lists public rooms.
+// DirectoryStore lists rooms visible to a viewer.
 type DirectoryStore interface {
-	ListPublicRooms(ctx context.Context, q repository.PublicRoomsQuery) ([]repository.PublicRoom, int, error)
+	ListDirectory(ctx context.Context, q repository.DirectoryQuery) ([]repository.DirectoryRoom, int, error)
 }
 
 // LiveRooms exposes what the room manager knows about loaded rooms.
@@ -49,6 +51,8 @@ type directoryRoom struct {
 	Slug        string             `json:"slug"`
 	Name        string             `json:"name"`
 	Owner       string             `json:"owner"`
+	Visibility  entity.Visibility  `json:"visibility"`
+	MyRole      entity.RoomRole    `json:"myRole,omitempty"`
 	Viewers     int                `json:"viewers"`
 	MemberCount int                `json:"memberCount"`
 	Live        bool               `json:"live"`
@@ -64,18 +68,19 @@ type directoryResponse struct {
 	Rooms       []directoryRoom `json:"rooms"`
 }
 
-// handlePublicRooms serves the directory on the home page: public rooms
-// with what is playing, viewer counts, search, a live filter (a ready
-// video is playing, watched or not) and pagination. Anonymous access is
-// intended.
-func (s *Server) handlePublicRooms(w http.ResponseWriter, r *http.Request) {
+// handleDirectory serves the home page directory: public rooms plus the
+// private rooms the caller belongs to, with what is playing, viewer
+// counts, search, filters (live: a ready video is playing; private; mine)
+// and pagination. Anonymous access is intended.
+func (s *Server) handleDirectory(w http.ResponseWriter, r *http.Request) {
 	qs := r.URL.Query()
+	user := auth.UserFrom(r.Context())
 
 	search := strings.TrimSpace(qs.Get("q"))
 	if len(search) > directoryMaxSearch {
 		search = search[:directoryMaxSearch]
 	}
-	live := qs.Get("live") == "1" || qs.Get("live") == "true"
+	flag := func(name string) bool { v := qs.Get(name); return v == "1" || v == "true" }
 	page, _ := strconv.Atoi(qs.Get("page"))
 	if page < 1 {
 		page = 1
@@ -88,7 +93,13 @@ func (s *Server) handlePublicRooms(w http.ResponseWriter, r *http.Request) {
 		perPage = directoryMaxPerPage
 	}
 
-	query := repository.PublicRoomsQuery{Search: search, OnlyLive: live, Offset: (page - 1) * perPage, Limit: perPage}
+	query := repository.DirectoryQuery{
+		Search: search, OnlyLive: flag("live"), OnlyPrivate: flag("private"), OnlyMine: flag("mine"),
+		Offset: (page - 1) * perPage, Limit: perPage,
+	}
+	if user != nil {
+		query.ViewerID = &user.ID
+	}
 	if s.deps.Live != nil {
 		for id, n := range s.deps.Live.LiveCounts() {
 			query.LiveIDs = append(query.LiveIDs, id)
@@ -96,16 +107,19 @@ func (s *Server) handlePublicRooms(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rooms, total, err := s.deps.Directory.ListPublicRooms(r.Context(), query)
+	rooms, total, err := s.deps.Directory.ListDirectory(r.Context(), query)
 	if err != nil {
-		s.internalError(w, r, "list public rooms", err)
+		s.internalError(w, r, "list directory", err)
 		return
 	}
 
 	now := time.Now()
 	resp := directoryResponse{ServerNowMs: now.UnixMilli(), Page: page, PerPage: perPage, Total: total, Rooms: make([]directoryRoom, 0, len(rooms))}
 	for _, pr := range rooms {
-		dr := directoryRoom{Slug: pr.Room.Slug, Name: pr.Room.Name, Owner: pr.Owner, Viewers: pr.Viewers, MemberCount: pr.MemberCount, Live: pr.Live}
+		dr := directoryRoom{
+			Slug: pr.Room.Slug, Name: pr.Room.Name, Owner: pr.Owner, Visibility: pr.Room.Visibility, MyRole: pr.MyRole,
+			Viewers: pr.Viewers, MemberCount: pr.MemberCount, Live: pr.Live,
+		}
 		if pr.Media != nil {
 			m := &directoryMedia{ID: pr.Media.ID, Title: pr.Media.Title, ThumbnailURL: pr.Media.ThumbnailURL, DurationMs: pr.Media.DurationMs}
 			if pr.Media.IsReady() && s.deps.Signer != nil {

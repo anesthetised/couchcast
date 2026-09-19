@@ -131,7 +131,7 @@ func New(deps Deps) *Server {
 		r.Route("/rooms", func(r chi.Router) {
 			r.With(auth.RequireUser).Post("/", s.handleCreateRoom)
 			if deps.Directory != nil {
-				r.Get("/public", s.handlePublicRooms) // before /{slug}; "public" is a reserved slug
+				r.Get("/", s.handleDirectory)
 			}
 			r.Route("/{slug}", func(r chi.Router) {
 				r.Get("/", s.handleGetRoom)

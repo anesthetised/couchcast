@@ -78,6 +78,13 @@ const RoomCard: Component<Props> = (props) => {
 
   onCleanup(stopPreview);
 
+  const status = () => {
+    if (!media()) return null;
+    if (!playable()) return "preparing…";
+    if (props.room.playback && !props.room.playback.playing) return "paused";
+    return null;
+  };
+
   return (
     <a class="room-card" href={`/r/${props.room.slug}`} onMouseEnter={onEnter} onMouseLeave={stopPreview}>
       <div class="room-card-media">
@@ -85,23 +92,34 @@ const RoomCard: Component<Props> = (props) => {
           {(src) => <img src={src()} alt="" loading="lazy" />}
         </Show>
         <video ref={video} muted playsinline autoplay={props.room.playback?.playing ?? false} classList={{ visible: previewing() }} />
-        <Show when={props.room.live}>
-          <span class="room-card-live">● live</span>
-        </Show>
-
-        <Show when={media() && props.room.playback && !props.room.playback.playing}>
-          <span class="room-card-badge">paused</span>
-        </Show>
-        <Show when={media() && !playable()}>
-          <span class="room-card-badge">preparing…</span>
-        </Show>
+        <div class="room-card-top">
+          <span class="actions" style={{ gap: "0.3rem" }}>
+            <Show when={props.room.live}>
+              <span class="badge live">live</span>
+            </Show>
+            <Show when={status()}>{(s) => <span class="badge">{s()}</span>}</Show>
+          </span>
+          <span class="actions" style={{ gap: "0.3rem" }}>
+            <Show when={props.room.myRole && props.room.myRole !== "member"}>
+              <span class="badge role">{props.room.myRole === "moderator" ? "mod" : props.room.myRole}</span>
+            </Show>
+            <Show when={props.room.visibility === "private"}>
+              <span class="badge private">🔒 private</span>
+            </Show>
+          </span>
+        </div>
         <Show when={media()?.durationMs}>{(d) => <span class="room-card-duration">{formatTime(d())}</span>}</Show>
       </div>
       <div class="room-card-body">
         <div class="room-card-title">{media()?.title || props.room.name}</div>
-        <div class="muted small">
-          <Show when={media()}>{props.room.name} · </Show>
-          by {props.room.owner} · {props.room.viewers} watching
+        <div class="room-card-meta">
+          <Show when={media()}>
+            <span>{props.room.name}</span>
+            <span>·</span>
+          </Show>
+          <span>{props.room.owner}</span>
+          <span>·</span>
+          <span>{props.room.viewers} watching</span>
         </div>
       </div>
     </a>

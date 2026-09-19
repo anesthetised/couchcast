@@ -38,7 +38,9 @@ const ReportDialog: Component<Props> = (props) => {
             </select>
           </label>
           <label>
-            Comment <span class="muted">(optional)</span>
+            <span>
+              Comment <span class="muted">(optional)</span>
+            </span>
             <input type="text" maxLength={500} value={comment()} onInput={(e) => setComment(e.currentTarget.value)} />
           </label>
           <Show when={error()}>{(m) => <p class="error">{m()}</p>}</Show>

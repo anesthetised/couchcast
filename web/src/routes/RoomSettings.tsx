@@ -203,7 +203,9 @@ const RoomSettings: Component = () => {
                   <input type="text" required value={banName()} onInput={(e) => setBanName(e.currentTarget.value)} />
                 </label>
                 <label>
-                  Reason <span class="muted">(optional)</span>
+                  <span>
+                    Reason <span class="muted">(optional)</span>
+                  </span>
                   <input type="text" maxLength={200} value={banReason()} onInput={(e) => setBanReason(e.currentTarget.value)} />
                 </label>
                 <button type="submit" class="danger">

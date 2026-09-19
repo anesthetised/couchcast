@@ -101,6 +101,13 @@ and a production image build.
 - Go: standard library first, few dependencies; raw SQL with `pgx`
   (`const q = ...`), consumer-side interfaces, `log/slog`, `testify` in tests.
   Reuse helpers from `github.com/anesthetised/toolkit` before adding deps.
-- Frontend: plain CSS (dark theme in `web/src/styles.css`), no UI framework;
-  wire types in `web/src/protocol.ts` mirror `internal/protocol`.
+- Frontend: plain CSS, no UI framework. `web/src/styles.css` is a small
+  design system: tokens in `:root` (surfaces, text, amber accent, statuses,
+  radii, shadows, focus ring) and shared components (`button` variants
+  `ghost`/`danger`/`link`, `.chip`, `.card`, `.badge`, `.toolbar`, `.hero`,
+  `.collapse`). Never hard-code colours in components; add a token.
+  Wire types in `web/src/protocol.ts` mirror `internal/protocol`.
+- `GET /api/v1/rooms` is the directory (public rooms plus the caller's
+  private rooms; `live`/`private`/`mine` filters, search, pagination).
+  `GET /api/v1/me/rooms` is deprecated and unused by the SPA.
 - Keep `AGENTS.md` and `README.md` current when commands or layout change.

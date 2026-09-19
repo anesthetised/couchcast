@@ -56,6 +56,8 @@ export interface DirectoryRoom {
   slug: string;
   name: string;
   owner: string;
+  visibility: Visibility;
+  myRole?: RoomRole;
   viewers: number;
   memberCount: number;
   live: boolean;

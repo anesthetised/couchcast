@@ -265,7 +265,9 @@ const BlocklistTab: Component<{ run: Runner }> = (props) => {
       </ul>
       <form class="form" onSubmit={(e) => { e.preventDefault(); void props.run(() => admin.block(key(), reason()), () => { setKey(""); setReason(""); void refetch(); }); }}>
         <label>
-          Source key <span class="muted">(e.g. youtube:dQw4w9WgXcQ)</span>
+          <span>
+            Source key <span class="muted">(e.g. youtube:dQw4w9WgXcQ)</span>
+          </span>
           <input type="text" required value={key()} onInput={(e) => setKey(e.currentTarget.value)} />
         </label>
         <label>

@@ -11,15 +11,18 @@ export const rooms = {
   update: (slug: string, patch: { name?: string; slug?: string; visibility?: Visibility }) =>
     api<Room>(`/api/v1/rooms/${slug}`, { method: "PATCH", body: JSON.stringify(patch) }),
   remove: (slug: string) => api<void>(`/api/v1/rooms/${slug}`, { method: "DELETE" }),
+  /** @deprecated superseded by `directory({ mine: true })`; the endpoint stays for compatibility. */
   mine: () => api<Room[]>("/api/v1/me/rooms"),
-  public: (params: { q?: string; live?: boolean; page?: number; perPage?: number }) => {
+  directory: (params: { q?: string; live?: boolean; private?: boolean; mine?: boolean; page?: number; perPage?: number }) => {
     const qs = new URLSearchParams();
     if (params.q) qs.set("q", params.q);
     if (params.live) qs.set("live", "1");
+    if (params.private) qs.set("private", "1");
+    if (params.mine) qs.set("mine", "1");
     if (params.page && params.page > 1) qs.set("page", String(params.page));
     if (params.perPage) qs.set("perPage", String(params.perPage));
     const suffix = qs.toString();
-    return api<Directory>(`/api/v1/rooms/public${suffix ? `?${suffix}` : ""}`);
+    return api<Directory>(`/api/v1/rooms${suffix ? `?${suffix}` : ""}`);
   },
 
   members: (slug: string) => api<Member[]>(`/api/v1/rooms/${slug}/members`),

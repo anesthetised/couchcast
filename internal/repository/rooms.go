@@ -185,39 +185,48 @@ func (r *Repo) CountMembers(ctx context.Context, roomID uuid.UUID) (int, error) 
 	return n, wrapErr(err)
 }
 
-// PublicRoom is a directory entry: the room, its current media (nil when
-// nothing is queued) and counts.
-type PublicRoom struct {
+// DirectoryRoom is a directory entry: the room, its current media (nil
+// when nothing is queued), counts and the viewer's own role.
+type DirectoryRoom struct {
 	Room        entity.Room
 	Owner       string
 	Media       *entity.Media
 	MemberCount int
 	Viewers     int
-	Live        bool // a ready video is playing right now
+	Live        bool            // a ready video is playing right now
+	MyRole      entity.RoomRole // "" when the viewer is not a member
 }
 
-// PublicRoomsQuery selects and pages the public directory. A room is live
-// when a ready video is playing in it, whoever is watching. Viewer counts
-// come from the in-memory room manager and are passed in so that ordering
-// and pagination all happen in one SQL query.
-type PublicRoomsQuery struct {
-	Search     string
-	LiveIDs    []uuid.UUID
-	LiveCounts []int
-	OnlyLive   bool
-	Offset     int
-	Limit      int
+// DirectoryQuery selects and pages the room directory. Public rooms are
+// always listed; private rooms only when ViewerID is a member; rooms the
+// viewer is banned from never. A room is live when a ready video is
+// playing in it, whoever is watching. Viewer counts come from the
+// in-memory room manager and are passed in so ordering and pagination
+// happen in one SQL query.
+type DirectoryQuery struct {
+	ViewerID    *uuid.UUID
+	Search      string
+	LiveIDs     []uuid.UUID
+	LiveCounts  []int
+	OnlyLive    bool
+	OnlyPrivate bool // requires ViewerID
+	OnlyMine    bool // requires ViewerID
+	Offset      int
+	Limit       int
 }
 
-// ListPublicRooms returns one page of public rooms (live first, then by
-// viewers, then rooms with something queued, then by recency) and the
-// total match count.
-func (r *Repo) ListPublicRooms(ctx context.Context, q PublicRoomsQuery) ([]PublicRoom, int, error) {
+// ListDirectory returns one page of rooms visible to the viewer (live
+// first, then by viewers, then rooms with something queued, then by
+// recency) and the total match count.
+func (r *Repo) ListDirectory(ctx context.Context, q DirectoryQuery) ([]DirectoryRoom, int, error) {
 	if q.LiveIDs == nil {
 		q.LiveIDs = []uuid.UUID{}
 	}
 	if q.LiveCounts == nil {
 		q.LiveCounts = []int{}
+	}
+	if q.ViewerID == nil {
+		q.OnlyPrivate, q.OnlyMine = false, false
 	}
 
 	const sql = `
@@ -227,35 +236,41 @@ func (r *Repo) ListPublicRooms(ctx context.Context, q PublicRoomsQuery) ([]Publi
 		       (SELECT count(*) FROM room_members m WHERE m.room_id = r.id),
 		       coalesce(v.viewers, 0),
 		       (r.playing AND m.status = 'ready') AS live,
+		       coalesce(me.role, ''),
 		       m.id, coalesce(m.source_key, ''), coalesce(m.source_url, ''), coalesce(m.title, ''), coalesce(m.duration_ms, 0), coalesce(m.thumbnail_url, ''),
 		       m.status, m.progress, coalesce(m.error, ''), coalesce(m.size_bytes, 0), m.renditions, coalesce(m.s3_prefix, ''),
 		       m.created_at, m.updated_at, m.last_accessed_at,
 		       count(*) OVER()
 		FROM rooms r
 		JOIN users u ON u.id = r.owner_id
+		LEFT JOIN room_members me ON me.room_id = r.id AND me.user_id = $7
 		LEFT JOIN unnest($1::uuid[], $2::int[]) AS v(id, viewers) ON v.id = r.id
 		LEFT JOIN queue_items qi ON qi.id = r.current_item_id
 		LEFT JOIN media m ON m.id = qi.media_id
-		WHERE r.visibility = 'public'
+		WHERE (r.visibility = 'public' OR me.user_id IS NOT NULL)
+		  AND ($7::uuid IS NULL OR NOT EXISTS (SELECT 1 FROM room_bans b WHERE b.room_id = r.id AND b.user_id = $7))
 		  AND ($3 = '' OR r.name ILIKE '%' || $3 || '%' ESCAPE '\' OR r.slug ILIKE '%' || $3 || '%' ESCAPE '\')
 		  AND (NOT $4 OR (r.playing AND m.status = 'ready'))
+		  AND (NOT $8 OR r.visibility = 'private')
+		  AND (NOT $9 OR me.user_id IS NOT NULL)
 		ORDER BY (r.playing AND m.status = 'ready') DESC, coalesce(v.viewers, 0) DESC,
 		         (r.current_item_id IS NOT NULL) DESC, r.updated_at DESC
 		OFFSET $5 LIMIT $6
 	`
-	rows, err := r.pool.Query(ctx, sql, q.LiveIDs, q.LiveCounts, escapeLike(q.Search), q.OnlyLive, q.Offset, q.Limit)
+	rows, err := r.pool.Query(ctx, sql, q.LiveIDs, q.LiveCounts, escapeLike(q.Search), q.OnlyLive, q.Offset, q.Limit,
+		q.ViewerID, q.OnlyPrivate, q.OnlyMine)
 	if err != nil {
 		return nil, 0, wrapErr(err)
 	}
 	defer rows.Close()
 
 	var (
-		out   []PublicRoom
+		out   []DirectoryRoom
 		total int
 	)
 	for rows.Next() {
 		var (
-			pr                            PublicRoom
+			dr                            DirectoryRoom
 			settings                      []byte
 			mediaID                       *uuid.UUID
 			m                             entity.Media
@@ -264,10 +279,10 @@ func (r *Repo) ListPublicRooms(ctx context.Context, q PublicRoomsQuery) ([]Publi
 			mRend                         []byte
 			mCreated, mUpdated, mAccessed *time.Time
 		)
-		rm := &pr.Room
+		rm := &dr.Room
 		if err := rows.Scan(&rm.ID, &rm.Slug, &rm.Name, &rm.OwnerID, &rm.Visibility, &settings, &rm.CurrentItemID,
 			&rm.Playing, &rm.PositionMs, &rm.PositionAt, &rm.CreatedAt, &rm.UpdatedAt,
-			&pr.Owner, &pr.MemberCount, &pr.Viewers, &pr.Live,
+			&dr.Owner, &dr.MemberCount, &dr.Viewers, &dr.Live, &dr.MyRole,
 			&mediaID, &m.SourceKey, &m.SourceURL, &m.Title, &m.DurationMs, &m.ThumbnailURL,
 			&mStatus, &mProg, &m.Error, &m.SizeBytes, &mRend, &m.S3Prefix,
 			&mCreated, &mUpdated, &mAccessed,
@@ -289,9 +304,9 @@ func (r *Repo) ListPublicRooms(ctx context.Context, q PublicRoomsQuery) ([]Publi
 				_ = json.Unmarshal(mRend, &m.Renditions)
 			}
 			media := m
-			pr.Media = &media
+			dr.Media = &media
 		}
-		out = append(out, pr)
+		out = append(out, dr)
 	}
 	return out, total, rows.Err()
 }

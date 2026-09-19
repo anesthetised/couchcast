@@ -34,7 +34,7 @@ func (f *fakeLive) Playback(id uuid.UUID) (protocol.Playback, bool) {
 	return pb, ok
 }
 
-func TestPublicRoomsDirectory(t *testing.T) {
+func TestDirectory(t *testing.T) {
 	repo := repository.New(repotest.Pool(t))
 	ctx := context.Background()
 	signer := mediastore.NewSigner("0123456789abcdef0123456789abcdef", time.Hour)
@@ -73,7 +73,7 @@ func TestPublicRoomsDirectory(t *testing.T) {
 
 	// Anonymous, default page: the playing room is live and comes first,
 	// then the watched-but-pending room, then fillers; 32 total.
-	rec := anon.do(http.MethodGet, "/api/v1/rooms/public", nil)
+	rec := anon.do(http.MethodGet, "/api/v1/rooms", nil)
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	resp := decodeBody[directoryResponse](t, rec)
 	assert.Equal(t, 32, resp.Total)
@@ -107,28 +107,55 @@ func TestPublicRoomsDirectory(t *testing.T) {
 	}
 
 	// Pagination and bounds normalisation.
-	rec = anon.do(http.MethodGet, "/api/v1/rooms/public?page=2&perPage=999", nil)
+	rec = anon.do(http.MethodGet, "/api/v1/rooms?page=2&perPage=999", nil)
 	require.Equal(t, http.StatusOK, rec.Code)
 	resp = decodeBody[directoryResponse](t, rec)
 	assert.Equal(t, 48, resp.PerPage)
 	assert.Equal(t, 2, resp.Page)
 	assert.Empty(t, resp.Rooms, "page 2 of 48 is past the end")
-	rec = anon.do(http.MethodGet, "/api/v1/rooms/public?page=0&perPage=10", nil)
+	rec = anon.do(http.MethodGet, "/api/v1/rooms?page=0&perPage=10", nil)
 	resp = decodeBody[directoryResponse](t, rec)
 	assert.Equal(t, 1, resp.Page)
 	assert.Len(t, resp.Rooms, 10)
 
 	// Search and live filter.
-	rec = anon.do(http.MethodGet, "/api/v1/rooms/public?q=READY", nil)
+	rec = anon.do(http.MethodGet, "/api/v1/rooms?q=READY", nil)
 	resp = decodeBody[directoryResponse](t, rec)
 	assert.Equal(t, 1, resp.Total)
-	rec = anon.do(http.MethodGet, "/api/v1/rooms/public?live=1", nil)
+	rec = anon.do(http.MethodGet, "/api/v1/rooms?live=1", nil)
 	resp = decodeBody[directoryResponse](t, rec)
 	assert.Equal(t, 1, resp.Total)
 	assert.Equal(t, "ready-room", resp.Rooms[0].Slug)
 
-	// "public" never resolves as a room slug.
-	assert.Equal(t, http.StatusNotFound, anon.do(http.MethodGet, "/api/v1/rooms/public/members", nil).Code)
+	// Signed-in members see their private rooms and their role; anonymous
+	// visitors never do, and private/mine are ignored for them.
+	_, err = repo.CreateRoom(ctx, "secret-two", "Secret two", owner.ID, entity.VisibilityPrivate, entity.DefaultSettings())
+	require.NoError(t, err)
+	member := &dbEnv{&testEnv{t: t, handler: srv.Handler()}}
+	member.register("member")
+	memberUser, _ := repo.GetUserByUsername(ctx, "member")
+	secret, _ := repo.GetRoomBySlug(ctx, "secret-room")
+	require.NoError(t, repo.UpsertMember(ctx, secret.ID, memberUser.ID, entity.RoomRoleMember))
+
+	rec = member.do(http.MethodGet, "/api/v1/rooms?private=1", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	resp = decodeBody[directoryResponse](t, rec)
+	require.Equal(t, 1, resp.Total)
+	assert.Equal(t, "secret-room", resp.Rooms[0].Slug)
+	assert.Equal(t, "private", string(resp.Rooms[0].Visibility))
+	assert.Equal(t, "member", string(resp.Rooms[0].MyRole))
+
+	rec = member.do(http.MethodGet, "/api/v1/rooms?mine=1", nil)
+	resp = decodeBody[directoryResponse](t, rec)
+	assert.Equal(t, 1, resp.Total)
+
+	rec = anon.do(http.MethodGet, "/api/v1/rooms?private=1&mine=1", nil)
+	resp = decodeBody[directoryResponse](t, rec)
+	assert.Equal(t, 32, resp.Total, "filters requiring a viewer are ignored for anonymous")
+	for _, rm := range resp.Rooms {
+		assert.Equal(t, "public", string(rm.Visibility))
+		assert.Empty(t, rm.MyRole)
+	}
 }
 
 func itoa(i int) string {
