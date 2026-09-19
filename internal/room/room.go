@@ -525,6 +525,15 @@ func (r *Room) Kick(userID uuid.UUID, reason string) {
 	r.broadcastLocked()
 }
 
+// Playback returns the live authoritative clock.
+func (r *Room) Playback() protocol.Playback {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	pb := r.playbackLocked()
+	pb.Type = ""
+	return pb
+}
+
 // Viewers returns the number of connections.
 func (r *Room) Viewers() int {
 	r.mu.Lock()

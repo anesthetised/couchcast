@@ -12,6 +12,7 @@ import (
 
 	"github.com/anesthetised/couchcast/internal/ingest"
 	"github.com/anesthetised/couchcast/internal/jobs"
+	"github.com/anesthetised/couchcast/internal/protocol"
 )
 
 // Manager loads rooms on demand, keeps them while viewers are connected and
@@ -61,6 +62,34 @@ func (m *Manager) Peek(id uuid.UUID) (*Room, bool) {
 	defer m.mu.Unlock()
 	r, ok := m.rooms[id]
 	return r, ok
+}
+
+// LiveCounts returns connection counts for loaded rooms that have at
+// least one viewer.
+func (m *Manager) LiveCounts() map[uuid.UUID]int {
+	m.mu.Lock()
+	rooms := make([]*Room, 0, len(m.rooms))
+	for _, r := range m.rooms {
+		rooms = append(rooms, r)
+	}
+	m.mu.Unlock()
+
+	out := make(map[uuid.UUID]int, len(rooms))
+	for _, r := range rooms {
+		if n := r.Viewers(); n > 0 {
+			out[r.ID()] = n
+		}
+	}
+	return out
+}
+
+// Playback returns the live clock of a loaded room.
+func (m *Manager) Playback(roomID uuid.UUID) (protocol.Playback, bool) {
+	r, ok := m.Peek(roomID)
+	if !ok {
+		return protocol.Playback{}, false
+	}
+	return r.Playback(), true
 }
 
 // Loaded returns the number of rooms in memory.

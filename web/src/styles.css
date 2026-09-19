@@ -805,3 +805,137 @@ p.card {
     transform: none;
   }
 }
+
+/* --- public rooms directory ------------------------------------------- */
+
+.directory-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.directory-head h2 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.directory-controls {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.directory-controls input[type="search"] {
+  padding: 0.45rem 0.7rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  min-width: 220px;
+}
+
+.room-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+}
+
+.room-card {
+  display: block;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  transition: border-color 150ms;
+}
+
+.room-card:hover {
+  border-color: var(--accent);
+}
+
+.room-card-media {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #000;
+}
+
+.room-card-media img,
+.room-card-media video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.room-card-media video {
+  opacity: 0;
+  transition: opacity 200ms;
+  pointer-events: none;
+}
+
+.room-card-media video.visible {
+  opacity: 1;
+}
+
+.room-card-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.room-card-live,
+.room-card-badge,
+.room-card-duration {
+  position: absolute;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.7);
+  color: var(--text);
+}
+
+.room-card-live {
+  top: 0.5rem;
+  left: 0.5rem;
+  color: #ff6b6b;
+}
+
+.room-card-badge {
+  top: 0.5rem;
+  right: 0.5rem;
+}
+
+.room-card-duration {
+  bottom: 0.5rem;
+  right: 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.room-card-body {
+  padding: 0.6rem 0.75rem 0.75rem;
+}
+
+.room-card-title {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pager {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}

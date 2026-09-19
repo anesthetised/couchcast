@@ -20,6 +20,7 @@ import (
 	"github.com/anesthetised/couchcast/internal/access"
 	"github.com/anesthetised/couchcast/internal/auth"
 	"github.com/anesthetised/couchcast/internal/entity"
+	"github.com/anesthetised/couchcast/internal/mediastore"
 	"github.com/anesthetised/couchcast/internal/metrics"
 	"github.com/anesthetised/couchcast/internal/ratelimit"
 )
@@ -46,6 +47,12 @@ type Deps struct {
 	Rooms    RoomStore
 	Admin    AdminStore // nil disables reports and the admin API (tests)
 	Sessions *auth.Sessions
+
+	// Directory, Live and Signer serve the public rooms listing; nil
+	// Directory disables the route (tests).
+	Directory DirectoryStore
+	Live      LiveRooms
+	Signer    *mediastore.Signer
 
 	// MediaObjects deletes packaged media when an administrator removes it.
 	MediaObjects MediaDeleter
@@ -118,6 +125,9 @@ func New(deps Deps) *Server {
 
 		r.Route("/rooms", func(r chi.Router) {
 			r.With(auth.RequireUser).Post("/", s.handleCreateRoom)
+			if deps.Directory != nil {
+				r.Get("/public", s.handlePublicRooms) // before /{slug}; "public" is a reserved slug
+			}
 			r.Route("/{slug}", func(r chi.Router) {
 				r.Get("/", s.handleGetRoom)
 				r.Get("/members", s.handleListMembers)

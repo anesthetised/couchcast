@@ -52,4 +52,29 @@ export interface Invite {
   createdAt: string;
 }
 
+export interface DirectoryRoom {
+  slug: string;
+  name: string;
+  owner: string;
+  viewers: number;
+  memberCount: number;
+  media: {
+    id: string;
+    title: string;
+    thumbnailUrl: string;
+    durationMs: number;
+    manifest?: string;
+    token?: string;
+  } | null;
+  playback: { playing: boolean; positionMs: number; atServerMs: number } | null;
+}
+
+export interface Directory {
+  serverNowMs: number;
+  page: number;
+  perPage: number;
+  total: number;
+  rooms: DirectoryRoom[];
+}
+
 export const isModerator = (role?: RoomRole) => role === "owner" || role === "moderator";

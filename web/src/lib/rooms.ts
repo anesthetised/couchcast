@@ -1,6 +1,6 @@
 // REST calls for rooms, members, bans and invites.
 import { api } from "~/lib/api";
-import type { Ban, Invite, Member, Room, Visibility } from "~/lib/types";
+import type { Ban, Directory, Invite, Member, Room, Visibility } from "~/lib/types";
 
 const json = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) });
 
@@ -12,6 +12,15 @@ export const rooms = {
     api<Room>(`/api/v1/rooms/${slug}`, { method: "PATCH", body: JSON.stringify(patch) }),
   remove: (slug: string) => api<void>(`/api/v1/rooms/${slug}`, { method: "DELETE" }),
   mine: () => api<Room[]>("/api/v1/me/rooms"),
+  public: (params: { q?: string; live?: boolean; page?: number; perPage?: number }) => {
+    const qs = new URLSearchParams();
+    if (params.q) qs.set("q", params.q);
+    if (params.live) qs.set("live", "1");
+    if (params.page && params.page > 1) qs.set("page", String(params.page));
+    if (params.perPage) qs.set("perPage", String(params.perPage));
+    const suffix = qs.toString();
+    return api<Directory>(`/api/v1/rooms/public${suffix ? `?${suffix}` : ""}`);
+  },
 
   members: (slug: string) => api<Member[]>(`/api/v1/rooms/${slug}/members`),
   addModerator: (slug: string, username: string) =>

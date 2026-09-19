@@ -14,12 +14,15 @@ export class Player {
   onTracks: (tracks: QualityOption[], active: number | null) => void = () => {};
   onError: (message: string) => void = () => {};
 
-  constructor(private readonly video: HTMLVideoElement) {
+  constructor(
+    private readonly video: HTMLVideoElement,
+    options: { maxHeight?: number } = {},
+  ) {
     shaka.polyfill.installAll();
     this.shaka = new shaka.Player();
     this.shaka.configure({
       streaming: { bufferingGoal: 20, rebufferingGoal: 2 },
-      abr: { enabled: true },
+      abr: { enabled: true, restrictions: options.maxHeight ? { maxHeight: options.maxHeight } : {} },
     });
     this.shaka.getNetworkingEngine()?.registerRequestFilter((_type, request) => {
       request.uris = request.uris.map((u) => (u.includes("?t=") ? u : `${u}?t=${this.token}`));

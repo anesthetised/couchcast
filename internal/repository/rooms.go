@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	"uuid"
 
@@ -161,4 +163,117 @@ func (r *Repo) CountMembers(ctx context.Context, roomID uuid.UUID) (int, error) 
 	var n int
 	err := r.pool.QueryRow(ctx, q, roomID).Scan(&n)
 	return n, wrapErr(err)
+}
+
+// PublicRoom is a directory entry: the room, its current media (nil when
+// nothing is queued) and counts.
+type PublicRoom struct {
+	Room        entity.Room
+	Owner       string
+	Media       *entity.Media
+	MemberCount int
+	Viewers     int
+}
+
+// PublicRoomsQuery selects and pages the public directory. Live viewer
+// counts come from the in-memory room manager and are passed in so that
+// filtering, ordering and pagination all happen in one SQL query.
+type PublicRoomsQuery struct {
+	Search     string
+	LiveIDs    []uuid.UUID
+	LiveCounts []int
+	OnlyLive   bool
+	Offset     int
+	Limit      int
+}
+
+// ListPublicRooms returns one page of public rooms (live rooms first, then
+// rooms with something playing, then by recency) and the total match count.
+func (r *Repo) ListPublicRooms(ctx context.Context, q PublicRoomsQuery) ([]PublicRoom, int, error) {
+	if q.LiveIDs == nil {
+		q.LiveIDs = []uuid.UUID{}
+	}
+	if q.LiveCounts == nil {
+		q.LiveCounts = []int{}
+	}
+
+	const sql = `
+		SELECT r.id, r.slug, r.name, r.owner_id, r.visibility, r.settings, r.current_item_id,
+		       r.playing, r.position_ms, r.position_at, r.created_at, r.updated_at,
+		       u.username,
+		       (SELECT count(*) FROM room_members m WHERE m.room_id = r.id),
+		       coalesce(v.viewers, 0),
+		       m.id, coalesce(m.source_key, ''), coalesce(m.source_url, ''), coalesce(m.title, ''), coalesce(m.duration_ms, 0), coalesce(m.thumbnail_url, ''),
+		       m.status, m.progress, coalesce(m.error, ''), coalesce(m.size_bytes, 0), m.renditions, coalesce(m.s3_prefix, ''),
+		       m.created_at, m.updated_at, m.last_accessed_at,
+		       count(*) OVER()
+		FROM rooms r
+		JOIN users u ON u.id = r.owner_id
+		LEFT JOIN unnest($1::uuid[], $2::int[]) AS v(id, viewers) ON v.id = r.id
+		LEFT JOIN queue_items qi ON qi.id = r.current_item_id
+		LEFT JOIN media m ON m.id = qi.media_id
+		WHERE r.visibility = 'public'
+		  AND ($3 = '' OR r.name ILIKE '%' || $3 || '%' ESCAPE '\' OR r.slug ILIKE '%' || $3 || '%' ESCAPE '\')
+		  AND (NOT $4 OR v.id IS NOT NULL)
+		ORDER BY coalesce(v.viewers, 0) DESC, (r.current_item_id IS NOT NULL) DESC, r.updated_at DESC
+		OFFSET $5 LIMIT $6
+	`
+	rows, err := r.pool.Query(ctx, sql, q.LiveIDs, q.LiveCounts, escapeLike(q.Search), q.OnlyLive, q.Offset, q.Limit)
+	if err != nil {
+		return nil, 0, wrapErr(err)
+	}
+	defer rows.Close()
+
+	var (
+		out   []PublicRoom
+		total int
+	)
+	for rows.Next() {
+		var (
+			pr                            PublicRoom
+			settings                      []byte
+			mediaID                       *uuid.UUID
+			m                             entity.Media
+			mStatus                       *entity.MediaStatus
+			mProg                         *float32
+			mRend                         []byte
+			mCreated, mUpdated, mAccessed *time.Time
+		)
+		rm := &pr.Room
+		if err := rows.Scan(&rm.ID, &rm.Slug, &rm.Name, &rm.OwnerID, &rm.Visibility, &settings, &rm.CurrentItemID,
+			&rm.Playing, &rm.PositionMs, &rm.PositionAt, &rm.CreatedAt, &rm.UpdatedAt,
+			&pr.Owner, &pr.MemberCount, &pr.Viewers,
+			&mediaID, &m.SourceKey, &m.SourceURL, &m.Title, &m.DurationMs, &m.ThumbnailURL,
+			&mStatus, &mProg, &m.Error, &m.SizeBytes, &mRend, &m.S3Prefix,
+			&mCreated, &mUpdated, &mAccessed,
+			&total); err != nil {
+			return nil, 0, err
+		}
+		rm.Settings = entity.DefaultSettings()
+		if len(settings) > 0 {
+			if err := json.Unmarshal(settings, &rm.Settings); err != nil {
+				return nil, 0, err
+			}
+		}
+		if mediaID != nil {
+			m.ID = *mediaID
+			m.Status = *mStatus
+			m.Progress = *mProg
+			m.CreatedAt, m.UpdatedAt, m.LastAccessedAt = *mCreated, *mUpdated, *mAccessed
+			if len(mRend) > 0 {
+				_ = json.Unmarshal(mRend, &m.Renditions)
+			}
+			media := m
+			pr.Media = &media
+		}
+		out = append(out, pr)
+	}
+	return out, total, rows.Err()
+}
+
+// escapeLike makes user input literal inside an ILIKE pattern.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `%`, `\%`)
+	return strings.ReplaceAll(s, `_`, `\_`)
 }
