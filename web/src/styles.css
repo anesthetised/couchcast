@@ -648,7 +648,6 @@ input[type="radio"] {
 .collapse .card {
   margin-top: 0.25rem;
   border-color: var(--border-strong);
-  background: linear-gradient(180deg, var(--surface-2), var(--surface));
 }
 
 .create-grid {
@@ -688,15 +687,11 @@ input[type="radio"] {
   gap: 0.6rem;
 }
 
-/* Toolbar: search + filters */
+/* Toolbar: search + filters, laid straight on the page. */
 .toolbar {
   display: flex;
   align-items: center;
   gap: 1rem;
-  padding: 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
 }
 
 .toolbar .search {
@@ -707,7 +702,6 @@ input[type="radio"] {
 
 .toolbar .search input {
   padding-left: 2.2rem;
-  background: var(--bg);
 }
 
 .toolbar .search svg {
@@ -777,14 +771,6 @@ input[type="radio"] {
   opacity: 1;
 }
 
-.room-card-media::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(11, 13, 18, 0) 55%, rgba(11, 13, 18, 0.85));
-  pointer-events: none;
-}
-
 .room-card-empty {
   position: absolute;
   inset: 0;
@@ -793,7 +779,7 @@ input[type="radio"] {
   justify-content: center;
   color: var(--muted);
   font-size: var(--fs-sm);
-  background: radial-gradient(ellipse at 50% 30%, var(--surface-3), var(--bg));
+  background: var(--surface-2);
 }
 
 .room-card-top {
