@@ -5,7 +5,15 @@ import { Player as ShakaPlayer, type QualityOption } from "~/lib/player";
 import { Synchronizer, type SyncDebug } from "~/lib/sync";
 import type { RoomStore } from "~/store/room";
 
-type Props = { room: RoomStore };
+type Props = {
+  room: RoomStore;
+  // Fullscreen is owned by the stage container so the chat overlay can
+  // live inside it; the player only renders the buttons.
+  onFullscreen?: () => void;
+  isFullscreen?: boolean;
+  chatVisible?: boolean;
+  onToggleChat?: () => void;
+};
 
 // Player renders the video, custom controls and the quality menu. Native
 // controls are off: every interaction goes through the server so all
@@ -134,6 +142,10 @@ const Player: Component<Props> = (props) => {
   };
 
   const fullscreen = () => {
+    if (props.onFullscreen) {
+      props.onFullscreen();
+      return;
+    }
     const el = video.parentElement;
     if (!el) return;
     if (document.fullscreenElement) void document.exitFullscreen();
@@ -199,7 +211,12 @@ const Player: Component<Props> = (props) => {
         <button type="button" class="icon" onClick={() => setShowDebug(!showDebug())} title="Sync debug">
           ⓘ
         </button>
-        <button type="button" class="icon" onClick={fullscreen} title="Fullscreen">
+        <Show when={props.isFullscreen && props.onToggleChat}>
+          <button type="button" class={`icon ${props.chatVisible ? "" : "dim"}`} onClick={props.onToggleChat} title={props.chatVisible ? "Hide chat" : "Show chat"}>
+            💬
+          </button>
+        </Show>
+        <button type="button" class="icon" onClick={fullscreen} title={props.isFullscreen ? "Exit fullscreen" : "Fullscreen"}>
           ⛶
         </button>
       </div>

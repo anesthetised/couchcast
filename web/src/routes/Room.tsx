@@ -1,5 +1,5 @@
 import { useParams } from "@solidjs/router";
-import { createResource, Show, type Component } from "solid-js";
+import { createResource, createSignal, Show, type Component } from "solid-js";
 
 import AddToQueue from "~/components/AddToQueue";
 import Chat from "~/components/Chat";
@@ -9,6 +9,7 @@ import Queue from "~/components/Queue";
 import RoomOptions from "~/components/RoomOptions";
 import VotePanel from "~/components/VotePanel";
 import { ApiError } from "~/lib/api";
+import { createFullscreen, readFullscreenChat, storeFullscreenChat } from "~/lib/fullscreen";
 import { rooms } from "~/lib/rooms";
 import { isModerator } from "~/lib/types";
 import { createRoomStore } from "~/store/room";
@@ -36,6 +37,14 @@ const Room: Component = () => {
 
 const LiveRoom: Component<{ slug: string; name: string; canSettings: boolean }> = (props) => {
   const store = createRoomStore(props.slug);
+  let stage: HTMLDivElement | undefined;
+  const fs = createFullscreen(() => stage);
+  const [chatInFullscreen, setChatInFullscreen] = createSignal(readFullscreenChat());
+  const toggleChat = () => {
+    const next = !chatInFullscreen();
+    setChatInFullscreen(next);
+    storeFullscreenChat(next);
+  };
 
   return (
     <div class="room-layout">
@@ -55,7 +64,26 @@ const LiveRoom: Component<{ slug: string; name: string; canSettings: boolean }> 
           </Show>
         </header>
         <Show when={store.lastError()}>{(e) => <p class="card error">{e()}</p>}</Show>
-        <Player room={store} />
+        <div
+          class={`stage ${fs.active() ? "fullscreen" : ""} ${fs.idle() ? "idle" : ""}`}
+          ref={stage}
+          onMouseMove={fs.touch}
+          onClick={fs.touch}
+          onKeyDown={fs.touch}
+        >
+          <Player
+            room={store}
+            onFullscreen={fs.toggle}
+            isFullscreen={fs.active()}
+            chatVisible={chatInFullscreen()}
+            onToggleChat={toggleChat}
+          />
+          <Show when={fs.active() && chatInFullscreen()}>
+            <div class="fs-chat">
+              <Chat room={store} />
+            </div>
+          </Show>
+        </div>
         <VotePanel room={store} />
         <AddToQueue room={store} />
       </div>

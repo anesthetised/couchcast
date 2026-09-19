@@ -624,3 +624,111 @@ p.card {
   padding: 0.45rem 0.6rem;
   font: inherit;
 }
+
+/* --- fullscreen stage -------------------------------------------------- */
+
+.stage {
+  position: relative;
+}
+
+.stage.fullscreen {
+  background: #000;
+  width: 100%;
+  height: 100%;
+}
+
+.stage.fullscreen .player {
+  height: 100%;
+  border: none;
+  border-radius: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.stage.fullscreen .video-wrap {
+  flex: 1;
+  aspect-ratio: auto;
+  min-height: 0;
+}
+
+.stage.fullscreen .video-wrap video {
+  object-fit: contain;
+}
+
+/* Controls float over the bottom edge and fade out when the pointer idles. */
+.stage.fullscreen .controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.75));
+  transition: opacity 200ms;
+}
+
+.stage.fullscreen.idle .controls {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.stage.fullscreen.idle {
+  cursor: none;
+}
+
+.controls .icon.dim {
+  opacity: 0.45;
+}
+
+/* Chat overlay: translucent at rest, opaque while hovered or focused. */
+.fs-chat {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 56px;
+  width: min(340px, 40vw);
+  display: flex;
+  transition: opacity 200ms;
+}
+
+.fs-chat .chat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  border: none;
+  border-radius: 0;
+  background: rgba(0, 0, 0, 0.35);
+  transition: background 150ms;
+  padding: 0.75rem;
+}
+
+.fs-chat .chat h2 {
+  display: none;
+}
+
+.fs-chat .chat-list {
+  flex: 1;
+  max-height: none;
+}
+
+.fs-chat .chat-line {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
+}
+
+.fs-chat .chat-form input {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.fs-chat .chat:hover,
+.fs-chat .chat:focus-within {
+  background: var(--surface);
+}
+
+.fs-chat .chat:hover .chat-line,
+.fs-chat .chat:focus-within .chat-line {
+  text-shadow: none;
+}
+
+/* Idle: hide the chat unless someone is typing in it. */
+.stage.fullscreen.idle .fs-chat:not(:focus-within):not(:hover) {
+  opacity: 0;
+  pointer-events: none;
+}
