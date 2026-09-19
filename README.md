@@ -6,10 +6,6 @@ the same frame.
 
 [![CI](https://github.com/anesthetised/couchcast/actions/workflows/ci.yml/badge.svg)](https://github.com/anesthetised/couchcast/actions/workflows/ci.yml)
 
-> Status: early development. See the
-> [phase issues](https://github.com/anesthetised/couchcast/issues?q=label%3Aphase)
-> for the roadmap.
-
 ## How it works
 
 - **Ingest** — a separate worker process downloads the selected renditions
