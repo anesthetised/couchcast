@@ -72,9 +72,10 @@ dev:
 
 # --- code ------------------------------------------------------------------
 
+# Packages run serially (-p 1): integration tests share one database.
 [group('code')]
 test *args:
-    {{compose}} run --rm web go test ./... {{args}}
+    {{compose}} run --rm web go test -p 1 ./... {{args}}
 
 [group('code')]
 lint:

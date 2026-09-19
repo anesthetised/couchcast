@@ -15,6 +15,7 @@ import (
 	"github.com/anesthetised/couchcast/internal/apihttp"
 	"github.com/anesthetised/couchcast/internal/auth"
 	"github.com/anesthetised/couchcast/internal/config"
+	"github.com/anesthetised/couchcast/internal/mediastore"
 	"github.com/anesthetised/couchcast/internal/metrics"
 	"github.com/anesthetised/couchcast/internal/ratelimit"
 	"github.com/anesthetised/couchcast/internal/repository"
@@ -32,8 +33,15 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	defer pool.Close()
 
+	store, err := connectStore(ctx, cfg.S3, logger)
+	if err != nil {
+		return err
+	}
+
 	m := metrics.New("web")
 	repo := repository.New(pool)
+	signer := mediastore.NewSigner(cfg.Web.MediaTokenSecret, cfg.Web.MediaTokenTTL)
+	mediaHandler := mediastore.NewHandler(store, signer, repo, logger, m.MediaProxied)
 	sessions := auth.NewSessions(repo, cfg.Web.SessionTTL, cfg.Web.SecureCookies)
 
 	authLimiter := ratelimit.New(float64(cfg.Web.AuthRatePerMinute), cfg.Web.AuthRatePerMinute)
@@ -48,6 +56,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Users:        repo,
 		Rooms:        repo,
 		Sessions:     sessions,
+		Media:        mediaHandler,
 		AuthLimiter:  authLimiter,
 		LoginLimiter: loginLimiter,
 		TrustProxy:   cfg.Web.TrustProxy,

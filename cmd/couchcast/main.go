@@ -25,6 +25,10 @@ commands:
   serve                  run the web server (default)
   ingest                 run the ingest worker
   admin grant <username> grant site administrator role to a user
+  media enqueue <url>    queue a url for ingest (development helper)
+  media retry <id>       re-queue a failed media item
+  media show <id>        print a media row
+  media token <id>       print a signed manifest path for a media id
   version                print the build version
 `
 
@@ -54,9 +58,11 @@ func run(ctx context.Context, args []string) error {
 	case "serve":
 		return serve(ctx, cfg, logger)
 	case "ingest":
-		return ingest(ctx, cfg, logger)
+		return ingestCmd(ctx, cfg, logger)
 	case "admin":
 		return admin(ctx, cfg, logger, args)
+	case "media":
+		return mediaCmd(ctx, cfg, logger, args)
 	case "version", "-v", "--version":
 		fmt.Println("couchcast", version)
 		return nil

@@ -20,6 +20,10 @@ type Metrics struct {
 
 	httpRequests *prometheus.CounterVec
 	httpDuration *prometheus.HistogramVec
+
+	ingestJobs     *prometheus.CounterVec
+	ingestStep     *prometheus.HistogramVec
+	mediaProxyByte prometheus.Counter
 }
 
 // New creates a registry with process/Go collectors and the application
@@ -52,9 +56,44 @@ func New(process string) *Metrics {
 			Buckets:     prometheus.DefBuckets,
 		}, []string{"route", "method"}),
 	}
-	reg.MustRegister(m.httpRequests, m.httpDuration)
+	m.ingestJobs = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "couchcast", Subsystem: "ingest", Name: "jobs_total",
+		Help: "Ingest jobs by final result.", ConstLabels: labels,
+	}, []string{"result"})
+	m.ingestStep = prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "couchcast", Subsystem: "ingest", Name: "step_duration_seconds",
+		Help: "Duration of each ingest step.", ConstLabels: labels,
+		Buckets: []float64{1, 5, 15, 30, 60, 120, 300, 600, 1800},
+	}, []string{"step"})
+	m.mediaProxyByte = prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "couchcast", Subsystem: "media", Name: "proxied_bytes_total",
+		Help: "Bytes served from object storage to viewers.", ConstLabels: labels,
+	})
+	reg.MustRegister(m.httpRequests, m.httpDuration, m.ingestJobs, m.ingestStep, m.mediaProxyByte)
 
 	return m
+}
+
+// IngestJob counts a finished job; result is "done" or "failed". Safe on
+// a nil receiver so components can run without metrics in tests.
+func (m *Metrics) IngestJob(result string) {
+	if m != nil {
+		m.ingestJobs.WithLabelValues(result).Inc()
+	}
+}
+
+// IngestStep records how long one pipeline step took.
+func (m *Metrics) IngestStep(step string, d time.Duration) {
+	if m != nil {
+		m.ingestStep.WithLabelValues(step).Observe(d.Seconds())
+	}
+}
+
+// MediaProxied adds bytes served by the media proxy.
+func (m *Metrics) MediaProxied(n int64) {
+	if m != nil {
+		m.mediaProxyByte.Add(float64(n))
+	}
 }
 
 // Registry exposes the underlying registry for components that register

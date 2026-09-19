@@ -39,6 +39,9 @@ type Deps struct {
 	Rooms    RoomStore
 	Sessions *auth.Sessions
 
+	// Media serves /media/{id}/{file}; nil disables the route (tests).
+	Media http.Handler
+
 	// OnBan is invoked after a room ban so the WebSocket hub (phase 5) can
 	// disconnect the user. Optional.
 	OnBan func(roomID, userID uuid.UUID)
@@ -69,6 +72,9 @@ func New(deps Deps) *Server {
 
 	r.Get("/healthz", s.handleHealthz)
 	r.Method(http.MethodGet, "/metrics", deps.Metrics.Handler())
+	if deps.Media != nil {
+		r.Handle("/media/*", deps.Media)
+	}
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(deps.Sessions.Middleware(deps.Logger))

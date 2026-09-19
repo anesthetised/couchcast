@@ -26,8 +26,8 @@ commands run from the repo root via `just` (see `justfile`):
 - `just dev` — run web server (hot reload), ingest worker and Vite dev server
   (http://localhost:5173 proxies `/api`, `/media`, `/healthz` to :8080)
 - `just server` / `just ingest` / `just web` — the same, one service at a time
-- `just test` — `go test ./...` in the dev container (integration tests use
-  `COUCHCAST_TEST_DATABASE_URL`, skipped when unset)
+- `just test` — `go test -p 1 ./...` in the dev container (integration
+  tests share `COUCHCAST_TEST_DATABASE_URL`, hence serial; skipped when unset)
 - `just lint` — golangci-lint; `just check` — TypeScript type check
 - `just build` — production image; `just prod-up` — run the base compose file
 
@@ -54,8 +54,20 @@ Run `just test` and `just lint` before opening a PR.
   holds only a placeholder and Vite serves the app.
 - Permissions are a single function (`internal/access`, phase 3); do not
   scatter role checks across handlers.
-- The ingest worker talks to the web server only through Postgres (job
-  queue with `SKIP LOCKED`, `LISTEN/NOTIFY` for progress) and S3.
+- The ingest worker (`couchcast ingest`) talks to the web server only
+  through Postgres and S3: `internal/jobs` is the queue (`SKIP LOCKED`
+  claims, `LISTEN/NOTIFY` wake-ups, backoff, stale-lock recovery),
+  `internal/ingest` runs probe → download → package → upload and publishes
+  progress on the `media_progress` channel.
+- `internal/source` abstracts extractors; `source/ytdlp` shells out to
+  yt-dlp (fixture in `testdata/`). `source.SelectFormats` picks one codec
+  family and the best format per ladder height — never transcode.
+- `internal/packager` builds the ffmpeg `-c copy -f dash` command;
+  `internal/mediastore` uploads to S3, signs HMAC media tokens and proxies
+  `/media/{id}/{file}?t=` with Range support.
+- Developer helpers: `couchcast media enqueue <url>`, `media show <id>`,
+  `media retry <id>`, `media token <id>` (run via `just sh` or
+  `{{compose}} run --rm web go run ./cmd/couchcast media ...`).
 
 ## Conventions
 
