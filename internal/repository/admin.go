@@ -3,17 +3,66 @@ package repository
 import (
 	"context"
 	"encoding/json"
+	"errors"
 
 	"uuid"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/anesthetised/couchcast/internal/entity"
 )
 
 // CreateReport files a report; one per user per media (ErrConflict).
-func (r *Repo) CreateReport(ctx context.Context, mediaID, reporterID uuid.UUID, reason entity.ReportReason, comment string) error {
-	const q = `INSERT INTO media_reports (media_id, reporter_id, reason, comment) VALUES ($1, $2, $3, $4)`
-	_, err := r.pool.Exec(ctx, q, mediaID, reporterID, reason, comment)
+// roomID and addedBy record where it was seen and who queued it there.
+func (r *Repo) CreateReport(ctx context.Context, mediaID, reporterID uuid.UUID, roomID, addedBy *uuid.UUID, reason entity.ReportReason, comment string) error {
+	const q = `
+		INSERT INTO media_reports (media_id, reporter_id, room_id, added_by, reason, comment)
+		VALUES ($1, $2, $3, $4, $5, $6)
+	`
+	_, err := r.pool.Exec(ctx, q, mediaID, reporterID, roomID, addedBy, reason, comment)
 	return wrapErr(err)
+}
+
+// QueueAdderInRoom returns who added the media to the room's queue, if it
+// is queued there.
+func (r *Repo) QueueAdderInRoom(ctx context.Context, roomID, mediaID uuid.UUID) (*uuid.UUID, bool, error) {
+	const q = `SELECT added_by FROM queue_items WHERE room_id = $1 AND media_id = $2 ORDER BY created_at LIMIT 1`
+	var addedBy *uuid.UUID
+	err := r.pool.QueryRow(ctx, q, roomID, mediaID).Scan(&addedBy)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, wrapErr(err)
+	}
+	return addedBy, true, nil
+}
+
+// ListPlacements returns the rooms currently queuing the media.
+func (r *Repo) ListPlacements(ctx context.Context, mediaID uuid.UUID) ([]entity.Placement, error) {
+	const q = `
+		SELECT DISTINCT ON (rm.id) rm.id, rm.slug, rm.name, coalesce(u.username, '')
+		FROM queue_items qi
+		JOIN rooms rm ON rm.id = qi.room_id
+		LEFT JOIN users u ON u.id = qi.added_by
+		WHERE qi.media_id = $1
+		ORDER BY rm.id, qi.created_at
+	`
+	rows, err := r.pool.Query(ctx, q, mediaID)
+	if err != nil {
+		return nil, wrapErr(err)
+	}
+	defer rows.Close()
+
+	var out []entity.Placement
+	for rows.Next() {
+		var p entity.Placement
+		if err := rows.Scan(&p.RoomID, &p.RoomSlug, &p.RoomName, &p.AddedBy); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
 }
 
 // ListReportedMedia returns media with open reports, most reported first.
@@ -58,14 +107,23 @@ func (r *Repo) ListReportedMedia(ctx context.Context, limit int) ([]entity.Repor
 			return nil, err
 		}
 		out[i].Reports = reports
+		placements, err := r.ListPlacements(ctx, out[i].Media.ID)
+		if err != nil {
+			return nil, err
+		}
+		out[i].Placements = placements
 	}
 	return out, nil
 }
 
 func (r *Repo) listOpenReports(ctx context.Context, mediaID uuid.UUID) ([]entity.MediaReport, error) {
 	const q = `
-		SELECT mr.id, mr.media_id, mr.reporter_id, u.username, mr.reason, coalesce(mr.comment, ''), mr.created_at
-		FROM media_reports mr JOIN users u ON u.id = mr.reporter_id
+		SELECT mr.id, mr.media_id, mr.reporter_id, u.username, mr.room_id, coalesce(rm.slug, ''), coalesce(rm.name, ''),
+		       coalesce(a.username, ''), mr.reason, coalesce(mr.comment, ''), mr.created_at
+		FROM media_reports mr
+		JOIN users u ON u.id = mr.reporter_id
+		LEFT JOIN rooms rm ON rm.id = mr.room_id
+		LEFT JOIN users a ON a.id = mr.added_by
 		WHERE mr.media_id = $1 AND mr.resolved_at IS NULL
 		ORDER BY mr.created_at
 	`
@@ -78,7 +136,8 @@ func (r *Repo) listOpenReports(ctx context.Context, mediaID uuid.UUID) ([]entity
 	var out []entity.MediaReport
 	for rows.Next() {
 		var rep entity.MediaReport
-		if err := rows.Scan(&rep.ID, &rep.MediaID, &rep.ReporterID, &rep.Reporter, &rep.Reason, &rep.Comment, &rep.CreatedAt); err != nil {
+		if err := rows.Scan(&rep.ID, &rep.MediaID, &rep.ReporterID, &rep.Reporter, &rep.RoomID, &rep.RoomSlug, &rep.RoomName,
+			&rep.AddedBy, &rep.Reason, &rep.Comment, &rep.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, rep)

@@ -99,7 +99,14 @@ const Queue: Component<Props> = (props) => {
         </For>
       </ul>
       <Show when={reporting()}>
-        {(item) => <ReportDialog mediaId={item().media.id} title={item().media.title || item().media.sourceUrl} onClose={() => setReporting(null)} />}
+        {(item) => (
+          <ReportDialog
+            mediaId={item().media.id}
+            title={item().media.title || item().media.sourceUrl}
+            roomSlug={props.room.state.snapshot?.room.slug ?? ""}
+            onClose={() => setReporting(null)}
+          />
+        )}
       </Show>
     </section>
   );

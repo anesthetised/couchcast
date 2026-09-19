@@ -31,17 +31,30 @@ type MediaReport struct {
 	MediaID    uuid.UUID
 	ReporterID uuid.UUID
 	Reporter   string // username, populated by queries
+	RoomID     *uuid.UUID
+	RoomSlug   string // populated by queries; empty when the room is gone
+	RoomName   string
+	AddedBy    string // username of whoever queued it there, if known
 	Reason     ReportReason
 	Comment    string
 	CreatedAt  time.Time
 	ResolvedAt *time.Time
 }
 
+// Placement is a room whose queue currently holds a media item.
+type Placement struct {
+	RoomID   uuid.UUID
+	RoomSlug string
+	RoomName string
+	AddedBy  string
+}
+
 // ReportedMedia aggregates open reports per media for the admin panel.
 type ReportedMedia struct {
-	Media   Media
-	Count   int
-	Reports []MediaReport
+	Media      Media
+	Count      int
+	Reports    []MediaReport
+	Placements []Placement
 }
 
 // BlocklistEntry is a source key administrators refuse to ingest.

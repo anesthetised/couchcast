@@ -121,6 +121,20 @@ const ReportsTab: Component<{ run: Runner }> = (props) => {
                 <div class="muted small">
                   {rm.count} report{rm.count === 1 ? "" : "s"} · {rm.media.sourceKey} · {rm.media.status} · {fmtBytes(rm.media.sizeBytes)}
                 </div>
+                <div class="muted small">
+                  <Show when={rm.placements.length > 0} fallback={<>not queued anywhere right now</>}>
+                    queued in{" "}
+                    <For each={rm.placements}>
+                      {(p, i) => (
+                        <>
+                          {i() > 0 ? ", " : ""}
+                          <a href={`/r/${p.roomSlug}`}>{p.roomName}</a>
+                          <Show when={p.addedBy}> (added by {p.addedBy})</Show>
+                        </>
+                      )}
+                    </For>
+                  </Show>
+                </div>
               </div>
               <span class="actions">
                 <button type="button" class="link" onClick={() => void props.run(() => admin.dismiss(rm.media.id), () => void refetch())}>
@@ -140,6 +154,12 @@ const ReportsTab: Component<{ run: Runner }> = (props) => {
                   <li class="row small">
                     <span>
                       <strong>{r.reporter}</strong> · {r.reason} <span class="muted">{r.comment}</span>
+                      <Show when={r.roomSlug}>
+                        <span class="muted">
+                          {" "}· in <a href={`/r/${r.roomSlug}`}>{r.roomName || r.roomSlug}</a>
+                          <Show when={r.addedBy}>, added by {r.addedBy}</Show>
+                        </span>
+                      </Show>
                     </span>
                     <span class="muted">{new Date(r.createdAt).toLocaleString()}</span>
                   </li>

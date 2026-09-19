@@ -74,6 +74,10 @@ CREATE TABLE media_reports (
     id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     media_id    uuid        NOT NULL REFERENCES media (id) ON DELETE CASCADE,
     reporter_id uuid        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    -- Where the report was filed from and who had queued the video there,
+    -- captured at report time so they survive later queue changes.
+    room_id     uuid, -- FK added after rooms is defined below
+    added_by    uuid        REFERENCES users (id) ON DELETE SET NULL,
     reason      text        NOT NULL,
     comment     text,
     created_at  timestamptz NOT NULL DEFAULT now(),
@@ -110,6 +114,10 @@ CREATE TABLE rooms (
 
 CREATE UNIQUE INDEX rooms_slug_idx ON rooms (slug);
 CREATE INDEX rooms_owner_id_idx ON rooms (owner_id);
+
+ALTER TABLE media_reports
+    ADD CONSTRAINT media_reports_room_fk
+    FOREIGN KEY (room_id) REFERENCES rooms (id) ON DELETE SET NULL;
 
 CREATE TABLE room_members (
     room_id   uuid        NOT NULL REFERENCES rooms (id) ON DELETE CASCADE,

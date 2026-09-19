@@ -31,7 +31,17 @@ export interface AdminUser {
 export interface ReportedMedia {
   media: { id: string; sourceKey: string; sourceUrl: string; title: string; status: string; sizeBytes: number; thumbnailUrl: string };
   count: number;
-  reports: { id: string; reporter: string; reason: ReportReason; comment: string; createdAt: string }[];
+  reports: {
+    id: string;
+    reporter: string;
+    roomSlug?: string;
+    roomName?: string;
+    addedBy?: string;
+    reason: ReportReason;
+    comment: string;
+    createdAt: string;
+  }[];
+  placements: { roomSlug: string; roomName: string; addedBy: string }[];
 }
 
 export interface BlocklistEntry {
@@ -55,8 +65,8 @@ export interface AuditEntry {
 const post = (body?: unknown) => ({ method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
 
 export const reports = {
-  create: (mediaId: string, reason: ReportReason, comment: string) =>
-    api<void>(`/api/v1/media/${mediaId}/reports`, post({ reason, comment })),
+  create: (mediaId: string, reason: ReportReason, comment: string, roomSlug?: string) =>
+    api<void>(`/api/v1/media/${mediaId}/reports`, post({ reason, comment, roomSlug })),
 };
 
 export const admin = {

@@ -64,7 +64,7 @@ func TestAdminAPI(t *testing.T) {
 	// Reports.
 	assert.Equal(t, http.StatusBadRequest, user.do(http.MethodPost, "/api/v1/media/"+media.ID.String()+"/reports", reportRequest{Reason: "meh"}).Code)
 	assert.Equal(t, http.StatusNotFound, user.do(http.MethodPost, "/api/v1/media/"+uuid.New().String()+"/reports", reportRequest{Reason: "nsfw"}).Code)
-	assert.Equal(t, http.StatusNoContent, user.do(http.MethodPost, "/api/v1/media/"+media.ID.String()+"/reports", reportRequest{Reason: "nsfw", Comment: "ew"}).Code)
+	assert.Equal(t, http.StatusNoContent, user.do(http.MethodPost, "/api/v1/media/"+media.ID.String()+"/reports", reportRequest{Reason: "nsfw", Comment: "ew", RoomSlug: "reported-room"}).Code)
 	assert.Equal(t, http.StatusConflict, user.do(http.MethodPost, "/api/v1/media/"+media.ID.String()+"/reports", reportRequest{Reason: "other"}).Code)
 
 	rec := admin.do(http.MethodGet, "/api/v1/admin/reports", nil)
@@ -73,6 +73,10 @@ func TestAdminAPI(t *testing.T) {
 	require.Len(t, reports, 1)
 	assert.Equal(t, 1, reports[0].Count)
 	assert.Equal(t, "alice", reports[0].Reports[0].Reporter)
+	assert.Equal(t, "reported-room", reports[0].Reports[0].RoomSlug)
+	assert.Equal(t, "R", reports[0].Reports[0].RoomName)
+	require.Len(t, reports[0].Placements, 1)
+	assert.Equal(t, "reported-room", reports[0].Placements[0].RoomSlug)
 
 	rec = admin.do(http.MethodGet, "/api/v1/admin/stats", nil)
 	require.Equal(t, http.StatusOK, rec.Code)

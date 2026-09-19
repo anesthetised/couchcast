@@ -19,7 +19,8 @@ import (
 // AdminStore is what the report and admin handlers need.
 type AdminStore interface {
 	GetMedia(ctx context.Context, id uuid.UUID) (*entity.Media, error)
-	CreateReport(ctx context.Context, mediaID, reporterID uuid.UUID, reason entity.ReportReason, comment string) error
+	CreateReport(ctx context.Context, mediaID, reporterID uuid.UUID, roomID, addedBy *uuid.UUID, reason entity.ReportReason, comment string) error
+	QueueAdderInRoom(ctx context.Context, roomID, mediaID uuid.UUID) (*uuid.UUID, bool, error)
 	ListReportedMedia(ctx context.Context, limit int) ([]entity.ReportedMedia, error)
 	ResolveReports(ctx context.Context, mediaID, resolvedBy uuid.UUID) (int64, error)
 	DeleteMedia(ctx context.Context, id uuid.UUID) error
@@ -45,8 +46,9 @@ type MediaDeleter interface {
 // --- reports (any user) ------------------------------------------------------
 
 type reportRequest struct {
-	Reason  entity.ReportReason `json:"reason"`
-	Comment string              `json:"comment"`
+	Reason   entity.ReportReason `json:"reason"`
+	Comment  string              `json:"comment"`
+	RoomSlug string              `json:"roomSlug"` // where the reporter saw it; optional
 }
 
 func (s *Server) handleCreateReport(w http.ResponseWriter, r *http.Request) {
@@ -79,7 +81,18 @@ func (s *Server) handleCreateReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = s.deps.Admin.CreateReport(r.Context(), id, user.ID, req.Reason, strings.TrimSpace(req.Comment))
+	// Capture the room and who queued the video there, when the slug is
+	// known and the media is actually in that queue.
+	var roomID, addedBy *uuid.UUID
+	if slug := strings.TrimSpace(req.RoomSlug); slug != "" {
+		if room, err := s.deps.Admin.GetRoomBySlug(r.Context(), slug); err == nil {
+			if adder, queued, err := s.deps.Admin.QueueAdderInRoom(r.Context(), room.ID, id); err == nil && queued {
+				roomID, addedBy = &room.ID, adder
+			}
+		}
+	}
+
+	err = s.deps.Admin.CreateReport(r.Context(), id, user.ID, roomID, addedBy, req.Reason, strings.TrimSpace(req.Comment))
 	switch {
 	case errors.Is(err, repository.ErrConflict):
 		writeError(w, http.StatusConflict, "you have already reported this video")
@@ -260,15 +273,25 @@ func (s *Server) handleAdminDeleteRoom(w http.ResponseWriter, r *http.Request) {
 type reportResponse struct {
 	ID        uuid.UUID           `json:"id"`
 	Reporter  string              `json:"reporter"`
+	RoomSlug  string              `json:"roomSlug,omitempty"`
+	RoomName  string              `json:"roomName,omitempty"`
+	AddedBy   string              `json:"addedBy,omitempty"`
 	Reason    entity.ReportReason `json:"reason"`
 	Comment   string              `json:"comment"`
 	CreatedAt time.Time           `json:"createdAt"`
 }
 
+type placementResponse struct {
+	RoomSlug string `json:"roomSlug"`
+	RoomName string `json:"roomName"`
+	AddedBy  string `json:"addedBy"`
+}
+
 type reportedMediaResponse struct {
-	Media   adminMediaResponse `json:"media"`
-	Count   int                `json:"count"`
-	Reports []reportResponse   `json:"reports"`
+	Media      adminMediaResponse  `json:"media"`
+	Count      int                 `json:"count"`
+	Reports    []reportResponse    `json:"reports"`
+	Placements []placementResponse `json:"placements"`
 }
 
 type adminMediaResponse struct {
@@ -291,12 +314,19 @@ func (s *Server) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 	for _, rm := range list {
 		m := rm.Media
 		resp := reportedMediaResponse{
-			Media:   adminMediaResponse{ID: m.ID, SourceKey: m.SourceKey, SourceURL: m.SourceURL, Title: m.Title, Status: m.Status, SizeBytes: m.SizeBytes, Thumbnail: m.ThumbnailURL},
-			Count:   rm.Count,
-			Reports: make([]reportResponse, 0, len(rm.Reports)),
+			Media:      adminMediaResponse{ID: m.ID, SourceKey: m.SourceKey, SourceURL: m.SourceURL, Title: m.Title, Status: m.Status, SizeBytes: m.SizeBytes, Thumbnail: m.ThumbnailURL},
+			Count:      rm.Count,
+			Reports:    make([]reportResponse, 0, len(rm.Reports)),
+			Placements: make([]placementResponse, 0, len(rm.Placements)),
 		}
 		for _, rep := range rm.Reports {
-			resp.Reports = append(resp.Reports, reportResponse{ID: rep.ID, Reporter: rep.Reporter, Reason: rep.Reason, Comment: rep.Comment, CreatedAt: rep.CreatedAt})
+			resp.Reports = append(resp.Reports, reportResponse{
+				ID: rep.ID, Reporter: rep.Reporter, RoomSlug: rep.RoomSlug, RoomName: rep.RoomName, AddedBy: rep.AddedBy,
+				Reason: rep.Reason, Comment: rep.Comment, CreatedAt: rep.CreatedAt,
+			})
+		}
+		for _, p := range rm.Placements {
+			resp.Placements = append(resp.Placements, placementResponse{RoomSlug: p.RoomSlug, RoomName: p.RoomName, AddedBy: p.AddedBy})
 		}
 		out = append(out, resp)
 	}

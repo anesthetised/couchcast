@@ -2,7 +2,7 @@ import { createSignal, Show, type Component } from "solid-js";
 
 import { reports, type ReportReason } from "~/lib/admin";
 
-type Props = { mediaId: string; title: string; onClose: () => void };
+type Props = { mediaId: string; title: string; roomSlug: string; onClose: () => void };
 
 // ReportDialog files a complaint about a media item.
 const ReportDialog: Component<Props> = (props) => {
@@ -15,7 +15,7 @@ const ReportDialog: Component<Props> = (props) => {
     e.preventDefault();
     setError(null);
     try {
-      await reports.create(props.mediaId, reason(), comment().trim());
+      await reports.create(props.mediaId, reason(), comment().trim(), props.roomSlug);
       setDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
