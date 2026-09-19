@@ -16,6 +16,7 @@ import (
 	"uuid"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/time/rate"
 
 	"github.com/anesthetised/couchcast/internal/access"
 	"github.com/anesthetised/couchcast/internal/entity"
@@ -57,6 +58,7 @@ type Conn interface {
 // Deps are shared by every room.
 type Deps struct {
 	Store  Store
+	Chat   ChatStore // nil disables chat
 	Admit  Admitter
 	Signer *mediastore.Signer
 	Logger *slog.Logger
@@ -108,8 +110,9 @@ type Room struct {
 	positionAt time.Time
 	seq        uint64
 
-	viewers   map[Conn]*viewer
-	skipVotes map[uuid.UUID]struct{}
+	viewers    map[Conn]*viewer
+	skipVotes  map[uuid.UUID]struct{}
+	chatLimits map[uuid.UUID]*rate.Limiter
 
 	advance     *time.Timer
 	lastPersist time.Time
@@ -134,6 +137,7 @@ func load(ctx context.Context, deps Deps, id uuid.UUID) (*Room, error) {
 		media:      map[uuid.UUID]*entity.Media{},
 		viewers:    map[Conn]*viewer{},
 		skipVotes:  map[uuid.UUID]struct{}{},
+		chatLimits: map[uuid.UUID]*rate.Limiter{},
 		current:    info.CurrentItemID,
 		playing:    info.Playing,
 		positionMs: info.PositionMs,
@@ -449,8 +453,11 @@ func (r *Room) votesFor(v *viewer) map[uuid.UUID]bool {
 
 // --- viewers -----------------------------------------------------------------
 
-// Join registers a connection and sends it the welcome message.
-func (r *Room) Join(conn Conn, actor access.Actor, messages []protocol.ChatMessage) {
+// Join registers a connection and sends it the welcome message with the
+// chat backlog.
+func (r *Room) Join(ctx context.Context, conn Conn, actor access.Actor) {
+	messages := r.recentMessages(ctx)
+
 	r.mu.Lock()
 	defer r.mu.Unlock()
 

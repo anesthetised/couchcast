@@ -127,7 +127,7 @@ func (c *conn) run(parent context.Context) {
 
 	go c.writeLoop(ctx)
 
-	c.room.Join(c, c.actor, nil)
+	c.room.Join(ctx, c, c.actor)
 	defer c.room.Leave(c)
 
 	c.readLoop(ctx)
@@ -248,6 +248,10 @@ func (c *conn) dispatch(ctx context.Context, data []byte) {
 		err = c.room.QueueMove(cmdCtx, actor, m.ItemID, m.AfterID)
 	case protocol.TypeQueueRetry:
 		err = c.room.QueueRetry(cmdCtx, actor, msg.(*protocol.ItemRef).ItemID)
+	case protocol.TypeChatSend:
+		err = c.room.ChatSend(cmdCtx, actor, msg.(*protocol.ChatSend).Body)
+	case protocol.TypeChatDelete:
+		err = c.room.ChatDelete(cmdCtx, actor, msg.(*protocol.ChatDelete).ID)
 	default:
 		c.sendError(protocol.CodeInvalid, "unsupported command: "+typ)
 		return

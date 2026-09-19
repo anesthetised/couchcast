@@ -58,7 +58,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	queue := jobs.New(pool)
 	admit := ingest.NewService(repo, queue, ytdlp.New(cfg.Ingest.YTDLPPath, cfg.Ingest.YTDLPExtraArgs, logger))
-	rooms := room.NewManager(room.Deps{Store: repo, Admit: admit, Signer: signer, Logger: logger})
+	rooms := room.NewManager(room.Deps{Store: repo, Chat: repo, Admit: admit, Signer: signer, Logger: logger})
 	m.RegisterRoomsLoaded(func() float64 { return float64(rooms.Loaded()) })
 
 	apihttp.SetVersion(version)
@@ -121,6 +121,15 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 				logger.Warn("delete expired sessions", "error", err)
 			} else if n > 0 {
 				logger.Info("deleted expired sessions", "count", n)
+			}
+			if cfg.Web.ChatRetentionDays > 0 {
+				cutoff := time.Now().AddDate(0, 0, -cfg.Web.ChatRetentionDays)
+				n, err := repo.PurgeMessagesBefore(ctx, cutoff)
+				if err != nil {
+					logger.Warn("purge old messages", "error", err)
+				} else if n > 0 {
+					logger.Info("purged old messages", "count", n)
+				}
 			}
 		})
 	})

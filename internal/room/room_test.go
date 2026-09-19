@@ -103,7 +103,7 @@ func newFixture(t *testing.T) *fixture {
 	require.NoError(t, err)
 
 	f.deps = Deps{
-		Store: repo, Admit: f.admit, Signer: mediastore.NewSigner("0123456789abcdef0123456789abcdef", time.Hour),
+		Store: repo, Chat: repo, Admit: f.admit, Signer: mediastore.NewSigner("0123456789abcdef0123456789abcdef", time.Hour),
 		Logger: slog.New(slog.DiscardHandler), Now: func() time.Time { return f.now }, PersistEvery: 5 * time.Second,
 	}
 	f.owner = access.Actor{User: owner, Member: &entity.RoomMember{Role: entity.RoomRoleOwner}}
@@ -131,7 +131,7 @@ func TestQueueAddStartsPlayback(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	conn := &fakeConn{}
-	f.room.Join(conn, f.owner, nil)
+	f.room.Join(ctx, conn, f.owner)
 
 	// Media not ready: current is set but paused.
 	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a"))
@@ -165,7 +165,7 @@ func TestPlaybackClock(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	conn := &fakeConn{}
-	f.room.Join(conn, f.owner, nil)
+	f.room.Join(ctx, conn, f.owner)
 	f.ready("https://a", 100_000)
 	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a"))
 	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://b"))
@@ -224,7 +224,7 @@ func TestQueueRemoveMoveJumpRetry(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	conn := &fakeConn{}
-	f.room.Join(conn, f.owner, nil)
+	f.room.Join(ctx, conn, f.owner)
 	for _, u := range []string{"https://a", "https://b", "https://c", "https://d"} {
 		f.ready(u, 10_000)
 		require.NoError(t, f.room.QueueAdd(ctx, f.owner, u))
@@ -290,7 +290,7 @@ func TestAutoAdvance(t *testing.T) {
 	room, err := load(ctx, f.deps, f.room.ID())
 	require.NoError(t, err)
 	conn := &fakeConn{}
-	room.Join(conn, f.owner, nil)
+	room.Join(ctx, conn, f.owner)
 	require.NoError(t, room.QueueAdd(ctx, f.owner, "https://short"))
 	require.NoError(t, room.QueueAdd(ctx, f.owner, "https://next"))
 
@@ -302,10 +302,11 @@ func TestAutoAdvance(t *testing.T) {
 
 func TestPresenceAndKick(t *testing.T) {
 	f := newFixture(t)
+	ctx := context.Background()
 	c1, c2, anon := &fakeConn{}, &fakeConn{}, &fakeConn{}
-	f.room.Join(c1, f.owner, nil)
-	f.room.Join(c2, f.guest, nil)
-	f.room.Join(anon, access.Actor{}, nil)
+	f.room.Join(ctx, c1, f.owner)
+	f.room.Join(ctx, c2, f.guest)
+	f.room.Join(ctx, anon, access.Actor{})
 
 	w := c1.msgs[0].(protocol.Welcome)
 	assert.Equal(t, "owner", *w.Me)

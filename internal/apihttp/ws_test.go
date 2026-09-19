@@ -106,7 +106,9 @@ func TestWebSocketRoom(t *testing.T) {
 	owner, ownerResp, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: http.Header{"Cookie": {cookie.String()}}})
 	require.NoError(t, err)
 	defer func() { _ = owner.CloseNow() }()
-	_ = ownerResp.Body.Close()
+	if ownerResp != nil && ownerResp.Body != nil {
+		_ = ownerResp.Body.Close()
+	}
 
 	welcome := readMessage(t, ctx, owner)
 	assert.Equal(t, "welcome", welcome["type"])
@@ -117,7 +119,9 @@ func TestWebSocketRoom(t *testing.T) {
 	anon, anonResp, err := websocket.Dial(ctx, wsURL, nil)
 	require.NoError(t, err)
 	defer func() { _ = anon.CloseNow() }()
-	_ = anonResp.Body.Close()
+	if anonResp != nil && anonResp.Body != nil {
+		_ = anonResp.Body.Close()
+	}
 	aw := readMessage(t, ctx, anon)
 	assert.Nil(t, aw["me"])
 	readUntil(t, ctx, owner, "room.state") // presence update

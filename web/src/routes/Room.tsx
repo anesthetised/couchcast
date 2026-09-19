@@ -2,6 +2,7 @@ import { useParams } from "@solidjs/router";
 import { createResource, Show, type Component } from "solid-js";
 
 import AddToQueue from "~/components/AddToQueue";
+import Chat from "~/components/Chat";
 import Members from "~/components/Members";
 import Player from "~/components/Player";
 import Queue from "~/components/Queue";
@@ -57,6 +58,7 @@ const LiveRoom: Component<{ slug: string; name: string; canSettings: boolean }> 
       </div>
       <aside class="room-side">
         <Queue room={store} />
+        <Chat room={store} />
         <Members room={store} />
       </aside>
     </div>
