@@ -91,7 +91,9 @@ Run `just test` and `just lint` before opening a PR.
 
 - Code, comments, commit messages, issues and docs are in English.
 - Conventional Commits (`feat(room): ...`, `fix(ingest): ...`, `chore: ...`),
-  referencing the phase issue (`#3`) when applicable.
+  referencing the related issue (`#3`). When a commit completes an issue,
+  say so in the commit body with `Closes #N`; close the issue with a comment
+  `<commit link> — <what was delivered>`.
 - Go: standard library first, few dependencies; raw SQL with `pgx`
   (`const q = ...`), consumer-side interfaces, `log/slog`, `testify` in tests.
   Reuse helpers from `github.com/anesthetised/toolkit` before adding deps.
