@@ -656,13 +656,21 @@ p.card {
 }
 
 /* Controls float over the bottom edge and fade out when the pointer idles.
-   Same surface colour as the inline player, for consistency. */
+   Same treatment as the overlay panels: surface colour, translucent at
+   rest, denser with a blur while hovered. */
 .stage.fullscreen .controls {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  transition: opacity 200ms;
+  background: rgba(23, 26, 33, 0.25);
+  transition: opacity 200ms, background 150ms;
+}
+
+.stage.fullscreen .controls:hover {
+  background: rgba(23, 26, 33, 0.78);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
 }
 
 .stage.fullscreen.idle .controls {
