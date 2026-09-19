@@ -31,6 +31,9 @@ type bucket struct {
 // idleTTL is how long an unused bucket is kept before the janitor drops it.
 const idleTTL = 10 * time.Minute
 
+// PerHour is New for hourly budgets.
+func PerHour(perHour float64, burst int) *Limiter { return New(perHour/60, burst) }
+
 // New creates a limiter allowing perMinute events sustained with the given
 // burst per key.
 func New(perMinute float64, burst int) *Limiter {

@@ -71,6 +71,9 @@ func (s *Server) handleCreateReport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "comment must be at most 500 characters")
 		return
 	}
+	if !allowUser(w, s.deps.ReportLimiter, user.ID) {
+		return
+	}
 
 	if _, err := s.deps.Admin.GetMedia(r.Context(), id); err != nil {
 		if errors.Is(err, repository.ErrNotFound) {

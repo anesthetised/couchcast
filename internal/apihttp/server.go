@@ -76,6 +76,11 @@ type Deps struct {
 	AuthLimiter  *ratelimit.Limiter
 	LoginLimiter *ratelimit.Limiter
 	TrustProxy   bool
+
+	// Per-user budgets for actions that create rows. Nil disables.
+	RoomCreateLimiter *ratelimit.Limiter
+	InviteLimiter     *ratelimit.Limiter
+	ReportLimiter     *ratelimit.Limiter
 }
 
 // Server owns the chi router.
@@ -237,6 +242,17 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
 			writeError(w, http.StatusBadRequest, "malformed JSON: "+err.Error())
 		}
 	}
+	return false
+}
+
+// allowUser charges one event to the user's budget on the limiter and
+// answers 429 when it is exhausted. A nil limiter always allows.
+func allowUser(w http.ResponseWriter, l *ratelimit.Limiter, userID uuid.UUID) bool {
+	if l == nil || l.Allow(userID.String()) {
+		return true
+	}
+	w.Header().Set("Retry-After", "60")
+	writeError(w, http.StatusTooManyRequests, "you are doing that too often; try again later")
 	return false
 }
 

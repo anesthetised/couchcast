@@ -23,10 +23,11 @@ type dbEnv struct {
 	*testEnv
 }
 
-func newDBEnvs(t *testing.T, n int) []*dbEnv {
+// newDBHandler builds the router over the real repository.
+func newDBHandler(t *testing.T, opts ...func(*Deps)) http.Handler {
 	t.Helper()
 	repo := repository.New(repotest.Pool(t))
-	srv := New(Deps{
+	deps := Deps{
 		Logger:       slog.New(slog.DiscardHandler),
 		DB:           repo,
 		Metrics:      metrics.New("test"),
@@ -36,10 +37,19 @@ func newDBEnvs(t *testing.T, n int) []*dbEnv {
 		Sessions:     auth.NewSessions(repo, time.Hour, false),
 		AuthLimiter:  ratelimit.New(6000, 1000),
 		LoginLimiter: ratelimit.New(6000, 1000),
-	})
+	}
+	for _, opt := range opts {
+		opt(&deps)
+	}
+	return New(deps).Handler()
+}
+
+func newDBEnvs(t *testing.T, n int) []*dbEnv {
+	t.Helper()
+	handler := newDBHandler(t)
 	out := make([]*dbEnv, n)
 	for i := range out {
-		out[i] = &dbEnv{&testEnv{t: t, handler: srv.Handler()}}
+		out[i] = &dbEnv{&testEnv{t: t, handler: handler}}
 	}
 	return out
 }

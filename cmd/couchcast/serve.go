@@ -55,10 +55,14 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	authLimiter := ratelimit.New(float64(cfg.Web.AuthRatePerMinute), cfg.Web.AuthRatePerMinute)
 	loginLimiter := ratelimit.New(5, 5)
+	roomCreateLimiter := ratelimit.PerHour(10, 10)
+	inviteLimiter := ratelimit.PerHour(30, 30)
+	reportLimiter := ratelimit.PerHour(10, 10)
+	queueAddLimiter := ratelimit.New(10, 5)
 
 	queue := jobs.New(pool)
 	admit := ingest.NewService(repo, queue, ytdlp.New(cfg.Ingest.YTDLPPath, cfg.Ingest.YTDLPExtraArgs, logger))
-	rooms := room.NewManager(room.Deps{Store: repo, Chat: repo, Admit: admit, Signer: signer, Logger: logger})
+	rooms := room.NewManager(room.Deps{Store: repo, Chat: repo, Admit: admit, Signer: signer, Logger: logger, QueueAddLimiter: queueAddLimiter})
 	m.RegisterRoomsLoaded(func() float64 { return float64(rooms.Loaded()) })
 
 	apihttp.SetVersion(version)
@@ -96,9 +100,12 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 			defer cancel()
 			rooms.MediaDeleted(rctx, mediaID)
 		},
-		AuthLimiter:  authLimiter,
-		LoginLimiter: loginLimiter,
-		TrustProxy:   cfg.Web.TrustProxy,
+		AuthLimiter:       authLimiter,
+		LoginLimiter:      loginLimiter,
+		TrustProxy:        cfg.Web.TrustProxy,
+		RoomCreateLimiter: roomCreateLimiter,
+		InviteLimiter:     inviteLimiter,
+		ReportLimiter:     reportLimiter,
 	})
 
 	srv := &http.Server{
@@ -140,6 +147,12 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		loginLimiter.Run(ctx.Done())
 		return nil
 	})
+	for _, l := range []*ratelimit.Limiter{roomCreateLimiter, inviteLimiter, reportLimiter, queueAddLimiter} {
+		g.Go(func() error {
+			l.Run(ctx.Done())
+			return nil
+		})
+	}
 	g.Go(func() error {
 		return runPeriodic(ctx, time.Hour, func(ctx context.Context) {
 			n, err := repo.DeleteExpiredSessions(ctx, time.Now())

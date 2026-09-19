@@ -316,6 +316,10 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !allowUser(w, s.deps.RoomCreateLimiter, user.ID) {
+		return
+	}
+
 	custom := strings.TrimSpace(req.Slug) != ""
 	slug := generateSlug()
 	if custom {
@@ -672,6 +676,9 @@ func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 
 	var req inviteRequest
 	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if !allowUser(w, s.deps.InviteLimiter, rc.actor.User.ID) {
 		return
 	}
 	target, err := s.deps.Users.GetUserByUsername(r.Context(), strings.TrimSpace(req.Username))

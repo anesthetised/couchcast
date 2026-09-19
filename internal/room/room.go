@@ -22,6 +22,7 @@ import (
 	"github.com/anesthetised/couchcast/internal/entity"
 	"github.com/anesthetised/couchcast/internal/mediastore"
 	"github.com/anesthetised/couchcast/internal/protocol"
+	"github.com/anesthetised/couchcast/internal/ratelimit"
 	"github.com/anesthetised/couchcast/internal/repository"
 )
 
@@ -66,6 +67,8 @@ type Deps struct {
 	Now    func() time.Time
 	// Persist bounds how often playback position is written while playing.
 	PersistEvery time.Duration
+	// QueueAddLimiter budgets queue.add per user across rooms. Nil disables.
+	QueueAddLimiter *ratelimit.Limiter
 }
 
 // Error is a command rejection with a protocol error code.
@@ -692,6 +695,9 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string) 
 	}
 	if len(r.queue) >= 200 {
 		return invalid("queue is full")
+	}
+	if r.deps.QueueAddLimiter != nil && actor.User != nil && !r.deps.QueueAddLimiter.Allow(actor.User.ID.String()) {
+		return &Error{Code: protocol.CodeRateLimit, Message: "you are adding videos too quickly"}
 	}
 
 	tx, err := r.deps.Store.Pool().Begin(ctx)

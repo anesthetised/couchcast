@@ -5,7 +5,10 @@ import RoomCard from "~/components/RoomCard";
 import { rooms } from "~/lib/rooms";
 import type { Directory } from "~/lib/types";
 
-const PER_PAGE = 24;
+const CARD_MIN_WIDTH = 240; // keep in sync with .room-grid minmax
+const GRID_GAP = 16;
+const ROWS_PER_PAGE = 5;
+const MAX_PER_PAGE = 48;
 const REFRESH_MS = 30_000;
 const SEARCH_DEBOUNCE_MS = 300;
 
@@ -30,17 +33,28 @@ const PublicRooms: Component = () => {
     if (debounce !== null) window.clearTimeout(debounce);
   });
 
+  // Page size follows the grid: whole rows only, so the last row is never
+  // ragged. Columns are derived from the container width the same way the
+  // CSS auto-fill does.
+  const [columns, setColumns] = createSignal(4);
+  const observer = new ResizeObserver((entries) => {
+    const width = entries[0]?.contentRect.width ?? 0;
+    setColumns(Math.max(1, Math.floor((width + GRID_GAP) / (CARD_MIN_WIDTH + GRID_GAP))));
+  });
+  onCleanup(() => observer.disconnect());
+  const perPage = () => Math.min(MAX_PER_PAGE, columns() * ROWS_PER_PAGE);
+
   const [receivedAt, setReceivedAt] = createSignal(Date.now());
   const [dir, { refetch }] = createResource(
-    () => ({ q: q(), live: live(), page: page() }),
+    () => ({ q: q(), live: live(), page: page(), perPage: perPage() }),
     async (p) => {
-      const d = await rooms.public({ ...p, perPage: PER_PAGE });
+      const d = await rooms.public(p);
       setReceivedAt(Date.now());
       return d;
     },
   );
   const serverOffsetMs = () => (dir()?.serverNowMs ?? receivedAt()) - receivedAt();
-  const pages = () => Math.max(1, Math.ceil((dir()?.total ?? 0) / PER_PAGE));
+  const pages = () => Math.max(1, Math.ceil((dir()?.total ?? 0) / perPage()));
 
   // Keep the page fresh while it is visible.
   const tick = window.setInterval(() => {
@@ -56,7 +70,10 @@ const PublicRooms: Component = () => {
   );
 
   return (
-    <section class="directory">
+    <section
+      class="directory"
+      ref={(el) => observer.observe(el)}
+    >
       <header class="directory-head">
         <h2>Public rooms</h2>
         <div class="directory-controls">
