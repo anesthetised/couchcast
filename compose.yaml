@@ -1,0 +1,117 @@
+# Base stack, used as-is in production (`just prod-up`) and extended by
+# compose.dev.yaml for development. Values with ${VAR:-default} can be
+# overridden from .env (see .env.example).
+
+name: couchcast
+
+x-app-env: &app-env
+  COUCHCAST_LOG_LEVEL: ${COUCHCAST_LOG_LEVEL:-info}
+  COUCHCAST_DATABASE_URL: postgres://${POSTGRES_USER:-couchcast}:${POSTGRES_PASSWORD:-couchcast}@postgres:5432/${POSTGRES_DB:-couchcast}?sslmode=disable
+  COUCHCAST_S3_ENDPOINT: minio:9000
+  COUCHCAST_S3_BUCKET: ${S3_BUCKET:-couchcast}
+  COUCHCAST_S3_ACCESS_KEY: ${MINIO_ROOT_USER:-couchcast}
+  COUCHCAST_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-couchcast-dev-secret}
+  COUCHCAST_S3_USE_SSL: "false"
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-couchcast}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-couchcast}
+      POSTGRES_DB: ${POSTGRES_DB:-couchcast}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./deploy/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-couchcast} -d ${POSTGRES_DB:-couchcast}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-couchcast}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-couchcast-dev-secret}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  # One-shot: creates the bucket, then exits.
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      sh -c "mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-couchcast} ${MINIO_ROOT_PASSWORD:-couchcast-dev-secret}
+      && mc mb --ignore-existing local/${S3_BUCKET:-couchcast}"
+
+  # Schema migrations. Started explicitly via `just migrate*`, never on boot.
+  atlas:
+    image: arigaio/atlas:1.3.0-community
+    profiles: [tools]
+    working_dir: /src
+    volumes:
+      - ./:/src
+    environment:
+      COUCHCAST_DATABASE_URL: postgres://${POSTGRES_USER:-couchcast}:${POSTGRES_PASSWORD:-couchcast}@postgres:5432/${POSTGRES_DB:-couchcast}?sslmode=disable
+      ATLAS_DEV_URL: postgres://${POSTGRES_USER:-couchcast}:${POSTGRES_PASSWORD:-couchcast}@postgres:5432/atlas_dev?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    build:
+      context: .
+      target: runtime
+    image: ghcr.io/anesthetised/couchcast:${TAG:-dev}
+    command: serve
+    environment:
+      <<: *app-env
+      COUCHCAST_ADDR: ":8080"
+      COUCHCAST_SECURE_COOKIES: ${COUCHCAST_SECURE_COOKIES:-true}
+      # Required in production; the server refuses to start with a short secret.
+      COUCHCAST_MEDIA_TOKEN_SECRET: ${COUCHCAST_MEDIA_TOKEN_SECRET:-}
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ingest:
+    build:
+      context: .
+      target: runtime
+    image: ghcr.io/anesthetised/couchcast:${TAG:-dev}
+    command: ingest
+    environment:
+      <<: *app-env
+      COUCHCAST_INGEST_WORKERS: ${COUCHCAST_INGEST_WORKERS:-2}
+      COUCHCAST_INGEST_METRICS_ADDR: ":9090"
+      COUCHCAST_WORK_DIR: /tmp/couchcast
+      COUCHCAST_YTDLP_EXTRA_ARGS: ${COUCHCAST_YTDLP_EXTRA_ARGS:-}
+    volumes:
+      - ingestwork:/tmp/couchcast
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  miniodata:
+  ingestwork:

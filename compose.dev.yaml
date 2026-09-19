@@ -1,0 +1,64 @@
+# Development override: hot reload for Go, Vite dev server for the frontend,
+# published ports for local tools. Applied by every `just` recipe.
+
+services:
+  postgres:
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  minio:
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+
+  web:
+    build:
+      target: dev
+    image: couchcast-dev
+    command: ["air", "-c", ".air.web.toml"]
+    environment:
+      COUCHCAST_LOG_LEVEL: ${COUCHCAST_LOG_LEVEL:-debug}
+      COUCHCAST_SECURE_COOKIES: "false"
+      COUCHCAST_MEDIA_TOKEN_SECRET: ${COUCHCAST_MEDIA_TOKEN_SECRET:-dev-only-media-token-secret-not-for-prod}
+      COUCHCAST_TEST_DATABASE_URL: postgres://${POSTGRES_USER:-couchcast}:${POSTGRES_PASSWORD:-couchcast}@postgres:5432/couchcast_test?sslmode=disable
+    volumes:
+      - ./:/src
+      - gomod:/go/pkg/mod
+      - gobuild:/root/.cache/go-build
+    restart: "no"
+
+  ingest:
+    build:
+      target: dev
+    image: couchcast-dev
+    command: ["air", "-c", ".air.ingest.toml"]
+    environment:
+      COUCHCAST_LOG_LEVEL: ${COUCHCAST_LOG_LEVEL:-debug}
+    volumes:
+      - ./:/src
+      - gomod:/go/pkg/mod
+      - gobuild:/root/.cache/go-build
+      - ingestwork:/tmp/couchcast
+    ports:
+      - "${INGEST_METRICS_PORT:-9090}:9090"
+    restart: "no"
+
+  frontend:
+    image: node:22-alpine
+    working_dir: /src/web
+    command: ["sh", "-c", "corepack enable && pnpm install && pnpm dev --host 0.0.0.0 --port 5173"]
+    environment:
+      VITE_API_TARGET: http://web:8080
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    volumes:
+      - ./web:/src/web
+      - webmodules:/src/web/node_modules
+      # pnpm keeps its store next to node_modules (web/.pnpm-store, git-ignored)
+      # so that packages are hard-linked instead of copied.
+    ports:
+      - "${FRONTEND_PORT:-5173}:5173"
+
+volumes:
+  gomod:
+  gobuild:
+  webmodules:

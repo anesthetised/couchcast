@@ -1,0 +1,9 @@
+/bin/
+/tmp/
+/data/
+/web/dist/*
+!/web/dist/.gitkeep
+/web/node_modules/
+.env
+*.log
+/web/.pnpm-store/

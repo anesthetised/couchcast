@@ -1,0 +1,12 @@
+.git
+.github
+.idea
+.vscode
+bin
+tmp
+data
+web/node_modules
+web/dist
+*.md
+.env
+web/.pnpm-store
