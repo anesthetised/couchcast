@@ -17,7 +17,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/anesthetised/couchcast/internal/access"
 	"github.com/anesthetised/couchcast/internal/auth"
+	"github.com/anesthetised/couchcast/internal/entity"
 	"github.com/anesthetised/couchcast/internal/metrics"
 	"github.com/anesthetised/couchcast/internal/ratelimit"
 )
@@ -25,6 +27,11 @@ import (
 // Pinger reports whether a dependency is reachable. *pgxpool.Pool satisfies it.
 type Pinger interface {
 	Ping(ctx context.Context) error
+}
+
+// WebSocketServer upgrades a room connection (implemented by hub.Hub).
+type WebSocketServer interface {
+	Serve(w http.ResponseWriter, r *http.Request, rm *entity.Room, actor access.Actor)
 }
 
 // Deps lists everything the router needs. Later phases add repositories,
@@ -41,10 +48,13 @@ type Deps struct {
 
 	// Media serves /media/{id}/{file}; nil disables the route (tests).
 	Media http.Handler
+	// WS serves the room WebSocket; nil disables the route (tests).
+	WS WebSocketServer
 
-	// OnBan is invoked after a room ban so the WebSocket hub (phase 5) can
-	// disconnect the user. Optional.
-	OnBan func(roomID, userID uuid.UUID)
+	// Hooks let the live room layer react to REST changes. All optional.
+	OnBan         func(roomID, userID uuid.UUID)
+	OnRoomChanged func(roomID uuid.UUID)
+	OnRoomDeleted func(roomID uuid.UUID)
 
 	// AuthLimiter is applied per client IP to register/login; LoginLimiter
 	// per username to login. Either may be nil to disable.
@@ -103,6 +113,9 @@ func New(deps Deps) *Server {
 			r.Route("/{slug}", func(r chi.Router) {
 				r.Get("/", s.handleGetRoom)
 				r.Get("/members", s.handleListMembers)
+				if deps.WS != nil {
+					r.Get("/ws", s.handleWS)
+				}
 
 				r.Group(func(r chi.Router) {
 					r.Use(auth.RequireUser)

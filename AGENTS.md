@@ -65,6 +65,18 @@ Run `just test` and `just lint` before opening a PR.
 - `internal/packager` builds the ffmpeg `-c copy -f dash` command;
   `internal/mediastore` uploads to S3, signs HMAC media tokens and proxies
   `/media/{id}/{file}?t=` with Range support.
+- `internal/room` is the live room: one mutex-guarded `Room` per loaded
+  room holds the authoritative clock (`positionMs` at `positionAt`, plus a
+  `seq`), the queue, presence and votes; every mutation ends in a broadcast.
+  `Manager` loads rooms lazily, persists positions every 5 s, unloads idle
+  rooms and relays `media_progress` notifications.
+- `internal/hub` owns WebSocket connections (`coder/websocket`): decodes
+  `internal/protocol` messages, re-resolves the actor's role/ban on every
+  mutating command, and fans broadcasts out through a bounded send buffer.
+- Frontend sync lives in `web/src/lib`: `clock.ts` (ping/pong offset,
+  median of samples), `sync.ts` (deadband 50 ms, `playbackRate` nudge up
+  to 1 s, seek beyond), `player.ts` (Shaka + token request filter).
+  `store/room.ts` wraps the socket in a Solid store.
 - Developer helpers: `couchcast media enqueue <url>`, `media show <id>`,
   `media retry <id>`, `media token <id>` (run via `just sh` or
   `{{compose}} run --rm web go run ./cmd/couchcast media ...`).

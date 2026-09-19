@@ -11,6 +11,9 @@ importers:
       '@solidjs/router':
         specifier: ^1.0.0
         version: 1.0.0(solid-js@1.9.15)
+      shaka-player:
+        specifier: ^5.2.11
+        version: 5.2.11
       solid-js:
         specifier: ^1.9.15
         version: 1.9.15
@@ -469,6 +472,10 @@ packages:
   seroval@1.5.6:
     resolution: {integrity: sha512-rVQVWjjSvlINzaQPZH5JFqsqEsIWdTxY3iJZCnTL/5gQbXIRooVZKI60tVCkOVfzcRPejboxO2t0P89dg5mQaA==}
     engines: {node: '>=10'}
+
+  shaka-player@5.2.11:
+    resolution: {integrity: sha512-C9WvYtH5cWKBCUXWFzbKWcgMYSRviGPd+1WWYjS55dXGHyMHeD5mub3vvjOzX2Q6o/bu4N5xlXOnVeg9ajp+Sw==}
+    engines: {node: '>=18'}
 
   solid-js@1.9.15:
     resolution: {integrity: sha512-EeiY2xfpZJqPLjXspVEKjAII4yv8NyG//NxZ3IpOFHdUNnnTyL0uJOeS9LWGvA7cFCz5y94cjFwYlmw5Luncsg==}
@@ -942,6 +949,8 @@ snapshots:
       seroval: 1.5.6
 
   seroval@1.5.6: {}
+
+  shaka-player@5.2.11: {}
 
   solid-js@1.9.15:
     dependencies:

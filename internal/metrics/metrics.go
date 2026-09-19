@@ -24,6 +24,9 @@ type Metrics struct {
 	ingestJobs     *prometheus.CounterVec
 	ingestStep     *prometheus.HistogramVec
 	mediaProxyByte prometheus.Counter
+
+	wsConnections prometheus.Gauge
+	roomsLoaded   prometheus.GaugeFunc
 }
 
 // New creates a registry with process/Go collectors and the application
@@ -69,9 +72,32 @@ func New(process string) *Metrics {
 		Namespace: "couchcast", Subsystem: "media", Name: "proxied_bytes_total",
 		Help: "Bytes served from object storage to viewers.", ConstLabels: labels,
 	})
-	reg.MustRegister(m.httpRequests, m.httpDuration, m.ingestJobs, m.ingestStep, m.mediaProxyByte)
+	m.wsConnections = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: "couchcast", Subsystem: "ws", Name: "connections",
+		Help: "Open WebSocket connections.", ConstLabels: labels,
+	})
+	reg.MustRegister(m.httpRequests, m.httpDuration, m.ingestJobs, m.ingestStep, m.mediaProxyByte, m.wsConnections)
 
 	return m
+}
+
+// WSConnectionDelta adjusts the open-connection gauge by +1 or -1.
+func (m *Metrics) WSConnectionDelta(d float64) {
+	if m != nil {
+		m.wsConnections.Add(d)
+	}
+}
+
+// RegisterRoomsLoaded exposes the number of rooms held in memory.
+func (m *Metrics) RegisterRoomsLoaded(fn func() float64) {
+	if m == nil {
+		return
+	}
+	m.roomsLoaded = prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Namespace: "couchcast", Subsystem: "rooms", Name: "loaded",
+		Help: "Rooms currently held in memory.",
+	}, fn)
+	m.registry.MustRegister(m.roomsLoaded)
 }
 
 // IngestJob counts a finished job; result is "done" or "failed". Safe on

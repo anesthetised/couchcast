@@ -277,6 +277,19 @@ func (s *Server) roomResponse(ctx context.Context, rc roomCtx) (roomResponse, er
 	}, nil
 }
 
+// ActorFor exposes actor resolution to the WebSocket hub.
+func (s *Server) ActorFor(ctx context.Context, room *entity.Room, user *entity.User) (access.Actor, error) {
+	return s.actorFor(ctx, room, user)
+}
+
+func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
+	rc, ok := s.loadRoom(w, r)
+	if !ok || !s.require(w, rc, access.ViewRoom) {
+		return
+	}
+	s.deps.WS.Serve(w, r, rc.room, rc.actor)
+}
+
 // --- rooms -------------------------------------------------------------------
 
 type createRoomRequest struct {
@@ -406,6 +419,9 @@ func (s *Server) handleUpdateRoom(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, "room.update", "room", room.ID.String(), room, map[string]any{
 		"name": name, "slug": slug, "visibility": visibility,
 	})
+	if s.deps.OnRoomChanged != nil {
+		s.deps.OnRoomChanged(room.ID)
+	}
 
 	rc.room = room
 	resp, err := s.roomResponse(r.Context(), rc)
@@ -426,6 +442,9 @@ func (s *Server) handleDeleteRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "room.delete", "room", rc.room.ID.String(), nil, map[string]any{"slug": rc.room.Slug, "name": rc.room.Name})
+	if s.deps.OnRoomDeleted != nil {
+		s.deps.OnRoomDeleted(rc.room.ID)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -545,6 +564,9 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "member.remove", "user", target.ID.String(), rc.room, map[string]any{"username": target.Username, "role": role})
+	if s.deps.OnBan != nil && !rc.room.IsPublic() {
+		s.deps.OnBan(rc.room.ID, target.ID)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

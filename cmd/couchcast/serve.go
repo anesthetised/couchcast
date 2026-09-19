@@ -8,17 +8,26 @@ import (
 	"net/http"
 	"time"
 
+	"uuid"
+
 	tkhttp "github.com/anesthetised/toolkit/net/http"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/anesthetised/couchcast/internal/access"
 	"github.com/anesthetised/couchcast/internal/apihttp"
 	"github.com/anesthetised/couchcast/internal/auth"
 	"github.com/anesthetised/couchcast/internal/config"
+	"github.com/anesthetised/couchcast/internal/entity"
+	"github.com/anesthetised/couchcast/internal/hub"
+	"github.com/anesthetised/couchcast/internal/ingest"
+	"github.com/anesthetised/couchcast/internal/jobs"
 	"github.com/anesthetised/couchcast/internal/mediastore"
 	"github.com/anesthetised/couchcast/internal/metrics"
 	"github.com/anesthetised/couchcast/internal/ratelimit"
 	"github.com/anesthetised/couchcast/internal/repository"
+	"github.com/anesthetised/couchcast/internal/room"
+	"github.com/anesthetised/couchcast/internal/source/ytdlp"
 	"github.com/anesthetised/couchcast/web"
 )
 
@@ -47,19 +56,37 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	authLimiter := ratelimit.New(float64(cfg.Web.AuthRatePerMinute), cfg.Web.AuthRatePerMinute)
 	loginLimiter := ratelimit.New(5, 5)
 
+	queue := jobs.New(pool)
+	admit := ingest.NewService(repo, queue, ytdlp.New(cfg.Ingest.YTDLPPath, cfg.Ingest.YTDLPExtraArgs, logger))
+	rooms := room.NewManager(room.Deps{Store: repo, Admit: admit, Signer: signer, Logger: logger})
+	m.RegisterRoomsLoaded(func() float64 { return float64(rooms.Loaded()) })
+
 	apihttp.SetVersion(version)
-	api := apihttp.New(apihttp.Deps{
-		Logger:       logger,
-		DB:           pool,
-		Metrics:      m,
-		Static:       web.Dist(),
-		Users:        repo,
-		Rooms:        repo,
-		Sessions:     sessions,
-		Media:        mediaHandler,
-		AuthLimiter:  authLimiter,
-		LoginLimiter: loginLimiter,
-		TrustProxy:   cfg.Web.TrustProxy,
+	var api *apihttp.Server
+	wsHub := hub.New(rooms, func(ctx context.Context, rm *entity.Room, u *entity.User) (access.Actor, error) {
+		return api.ActorFor(ctx, rm, u)
+	}, logger, m)
+
+	api = apihttp.New(apihttp.Deps{
+		Logger:   logger,
+		DB:       pool,
+		Metrics:  m,
+		Static:   web.Dist(),
+		Users:    repo,
+		Rooms:    repo,
+		Sessions: sessions,
+		Media:    mediaHandler,
+		WS:       wsHub,
+		OnBan:    func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "removed from room") },
+		OnRoomChanged: func(roomID uuid.UUID) {
+			rctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			rooms.Refresh(rctx, roomID)
+		},
+		OnRoomDeleted: func(roomID uuid.UUID) { rooms.Unload(roomID, "room deleted") },
+		AuthLimiter:   authLimiter,
+		LoginLimiter:  loginLimiter,
+		TrustProxy:    cfg.Web.TrustProxy,
 	})
 
 	srv := &http.Server{
@@ -75,6 +102,9 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		logger.Info("web server listening", "addr", cfg.Web.Addr)
 		return tkhttp.ListenAndServe(ctx, srv)
 	})
+
+	g.Go(func() error { return rooms.Run(ctx) })
+	g.Go(func() error { return rooms.ListenProgress(ctx, pool) })
 
 	g.Go(func() error {
 		authLimiter.Run(ctx.Done())

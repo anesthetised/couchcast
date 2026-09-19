@@ -17,7 +17,7 @@ const Layout: Component<RouteSectionProps> = (props) => (
       </a>
       <UserMenu />
     </header>
-    <main class="page">{props.children}</main>
+    <main class="page wide">{props.children}</main>
   </>
 );
 
