@@ -92,6 +92,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		RoomsLoaded:  rooms.Loaded,
 		WS:           wsHub,
 		OnBan:        func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "removed from room") },
+		OnLeave:      func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "left") },
 		OnRoomChanged: func(roomID uuid.UUID) {
 			rctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()

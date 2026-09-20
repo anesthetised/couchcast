@@ -43,12 +43,13 @@ func DefaultSettings() Settings {
 // Room is a watch-together room. Playback state columns are read and
 // written by the room manager (phase 5) and ignored elsewhere.
 type Room struct {
-	ID         uuid.UUID
-	Slug       string
-	Name       string
-	OwnerID    uuid.UUID
-	Visibility Visibility
-	Settings   Settings
+	ID          uuid.UUID
+	Slug        string
+	Name        string
+	OwnerID     uuid.UUID
+	Visibility  Visibility
+	Description string
+	Settings    Settings
 
 	CurrentItemID *uuid.UUID
 	Playing       bool

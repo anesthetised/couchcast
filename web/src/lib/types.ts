@@ -42,6 +42,7 @@ export interface Room {
   visibility: Visibility;
   settings: Settings;
   owner: string;
+  description: string;
   memberCount: number;
   myRole?: RoomRole;
   createdAt: string;
@@ -73,6 +74,7 @@ export interface DirectoryRoom {
   name: string;
   owner: string;
   visibility: Visibility;
+  description?: string;
   myRole?: RoomRole;
   viewers: number;
   memberCount: number;

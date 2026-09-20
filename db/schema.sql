@@ -102,6 +102,7 @@ CREATE TABLE rooms (
     name            text        NOT NULL,
     owner_id        uuid        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
     visibility      text        NOT NULL DEFAULT 'public',
+    description     text        NOT NULL DEFAULT '',
     settings        jsonb       NOT NULL DEFAULT '{}'::jsonb,
     current_item_id uuid,
     playing         boolean     NOT NULL DEFAULT false,

@@ -25,6 +25,7 @@ const NewRoom: Component = () => {
   const [slug, setSlug] = createSignal("");
   const [slugState, setSlugState] = createSignal<SlugState>("idle");
   const [visibility, setVisibility] = createSignal<Visibility>("public");
+  const [description, setDescription] = createSignal("");
   const [firstUrl, setFirstUrl] = createSignal("");
   const [voteMode, setVoteMode] = createSignal(false);
   const [viewersCanAdd, setViewersCanAdd] = createSignal(true);
@@ -65,6 +66,7 @@ const NewRoom: Component = () => {
         name: name().trim(),
         slug: slug().trim() || undefined,
         visibility: visibility(),
+        description: description().trim() || undefined,
         firstUrl: firstUrl().trim() || undefined,
         settings: { voteMode: voteMode(), viewersCanAdd: viewersCanAdd() },
         invites: visibility() === "private" ? invites() : undefined,
@@ -105,6 +107,12 @@ const NewRoom: Component = () => {
               {slugState() === "taken" && "already taken"}
               {slugState() === "invalid" && "3–32 letters, digits or hyphens"}
             </span>
+          </label>
+          <label>
+            <span>
+              Description <span class="muted">(optional)</span>
+            </span>
+            <textarea rows={2} maxLength={300} placeholder="What this room is for, when you watch" value={description()} onInput={(e) => setDescription(e.currentTarget.value)} />
           </label>
           <fieldset class="radio-row">
             <label class="radio">

@@ -84,6 +84,7 @@ type Deps struct {
 
 	// Hooks let the live room layer react to REST changes. All optional.
 	OnBan          func(roomID, userID uuid.UUID)
+	OnLeave        func(roomID, userID uuid.UUID)
 	OnRoomChanged  func(roomID uuid.UUID)
 	OnRoomDeleted  func(roomID uuid.UUID)
 	OnUserBanned   func(userID uuid.UUID)
@@ -166,6 +167,7 @@ func New(deps Deps) *Server {
 					r.Put("/moderators/{username}", s.handleAddModerator)
 					r.Delete("/moderators/{username}", s.handleRemoveModerator)
 					r.Delete("/members/{username}", s.handleRemoveMember)
+					r.Post("/owner", s.handleTransferOwnership)
 					r.Get("/bans", s.handleListBans)
 					r.Put("/bans/{username}", s.handleBan)
 					r.Delete("/bans/{username}", s.handleUnban)

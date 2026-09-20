@@ -428,3 +428,32 @@ func TestQueueHistoryAndLoop(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, played)
 }
+
+func TestEndSession(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	c1, c2 := &fakeConn{}, &fakeConn{}
+	f.room.Join(ctx, c1, f.owner)
+	f.room.Join(ctx, c2, f.guest)
+	f.ready("https://a", 10_000)
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://b", false))
+
+	assert.Error(t, f.room.EndSession(ctx, f.guest))
+	require.NoError(t, f.room.EndSession(ctx, f.owner))
+	assert.Equal(t, "session ended", c1.closed)
+	assert.Equal(t, "session ended", c2.closed)
+	assert.Equal(t, 0, f.room.Viewers())
+
+	// Everything went to the history and nothing plays; the room remains.
+	c3 := &fakeConn{}
+	f.room.Join(ctx, c3, f.owner)
+	snap := c3.lastSnapshot()
+	assert.Empty(t, snap.Queue)
+	assert.Len(t, snap.Played, 2)
+	assert.Nil(t, snap.Playback.ItemID)
+	assert.False(t, snap.Playback.Playing)
+	saved, err := f.repo.GetRoomByID(ctx, f.room.ID())
+	require.NoError(t, err)
+	assert.Nil(t, saved.CurrentItemID)
+}

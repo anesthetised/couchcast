@@ -52,6 +52,7 @@ type directoryRoom struct {
 	Name        string             `json:"name"`
 	Owner       string             `json:"owner"`
 	Visibility  entity.Visibility  `json:"visibility"`
+	Description string             `json:"description,omitempty"`
 	MyRole      entity.RoomRole    `json:"myRole,omitempty"`
 	Viewers     int                `json:"viewers"`
 	MemberCount int                `json:"memberCount"`
@@ -117,7 +118,7 @@ func (s *Server) handleDirectory(w http.ResponseWriter, r *http.Request) {
 	resp := directoryResponse{ServerNowMs: now.UnixMilli(), Page: page, PerPage: perPage, Total: total, Rooms: make([]directoryRoom, 0, len(rooms))}
 	for _, pr := range rooms {
 		dr := directoryRoom{
-			Slug: pr.Room.Slug, Name: pr.Room.Name, Owner: pr.Owner, Visibility: pr.Room.Visibility, MyRole: pr.MyRole,
+			Slug: pr.Room.Slug, Name: pr.Room.Name, Owner: pr.Owner, Visibility: pr.Room.Visibility, Description: pr.Room.Description, MyRole: pr.MyRole,
 			Viewers: pr.Viewers, MemberCount: pr.MemberCount, Live: pr.Live,
 		}
 		if pr.Media != nil {

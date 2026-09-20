@@ -31,6 +31,7 @@ type Store interface {
 	Pool() *pgxpool.Pool
 	GetRoomByID(ctx context.Context, id uuid.UUID) (*entity.Room, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
+	GetMember(ctx context.Context, roomID, userID uuid.UUID) (*entity.RoomMember, error)
 	ListQueue(ctx context.Context, roomID uuid.UUID) ([]entity.QueueItem, error)
 	GetMediaBatch(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*entity.Media, error)
 	GetMedia(ctx context.Context, id uuid.UUID) (*entity.Media, error)
@@ -430,7 +431,7 @@ func (r *Room) snapshotLocked() protocol.Snapshot {
 		Type: protocol.TypeRoomState,
 		Room: protocol.RoomInfo{
 			ID: r.info.ID, Slug: r.info.Slug, Name: r.info.Name, Visibility: r.info.Visibility,
-			Settings: r.info.Settings, Owner: r.owner,
+			Settings: r.info.Settings, Owner: r.owner, Description: r.info.Description,
 		},
 		Playback: r.playbackLocked(),
 		Queue:    make([]protocol.QueueEntry, 0, len(r.queue)),
@@ -1118,11 +1119,59 @@ func (r *Room) Refresh(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	owner, err := r.deps.Store.GetUserByID(ctx, info.OwnerID)
+	if err != nil {
+		return err
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	info.CurrentItemID, info.Playing, info.PositionMs, info.PositionAt = r.current, r.playing, r.positionMs, r.positionAt
 	r.info = info
+	r.owner = owner.Username
+	// Roles may have changed under connected viewers (ownership transfer).
+	for _, v := range r.viewers {
+		if v.user == nil {
+			continue
+		}
+		m, err := r.deps.Store.GetMember(ctx, r.info.ID, v.user.ID)
+		switch {
+		case err == nil:
+			v.role = m.Role
+		case errors.Is(err, repository.ErrNotFound):
+			v.role = ""
+		}
+	}
 	r.broadcastLocked()
+	return nil
+}
+
+// EndSession stops playback, moves the whole queue into the history and
+// disconnects everyone; the room itself stays.
+func (r *Room) EndSession(ctx context.Context, actor access.Actor) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.requireLocked(actor, access.ManageSettings); err != nil {
+		return err
+	}
+	ids := make([]uuid.UUID, 0, len(r.queue))
+	for _, it := range r.queue {
+		ids = append(ids, it.ID)
+	}
+	for _, id := range ids {
+		if err := r.markPlayedLocked(ctx, id); err != nil {
+			return err
+		}
+	}
+	r.setCurrentLocked(nil)
+	if err := r.persistLocked(ctx); err != nil {
+		return err
+	}
+	r.logLocked(ctx, actor.User.Username+" ended the session")
+	for c := range r.viewers {
+		delete(r.viewers, c)
+		c.Send(protocol.Kicked{Type: protocol.TypeKicked, Reason: "session ended"})
+		c.Close("session ended")
+	}
 	return nil
 }
 

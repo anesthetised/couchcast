@@ -69,9 +69,10 @@ func TestRoomsMembersBans(t *testing.T) {
 	assert.ErrorIs(t, repo.DeleteBan(ctx, room.ID, bob.ID), ErrNotFound)
 
 	// Update and settings.
-	updated, err := repo.UpdateRoom(ctx, room.ID, "film-night", "Film night", entity.VisibilityPublic)
+	updated, err := repo.UpdateRoom(ctx, room.ID, "film-night", "Film night", entity.VisibilityPublic, "Fridays")
 	require.NoError(t, err)
 	assert.Equal(t, "film-night", updated.Slug)
+	assert.Equal(t, "Fridays", updated.Description)
 	require.NoError(t, repo.UpdateRoomSettings(ctx, room.ID, entity.Settings{VoteMode: true, SkipThreshold: 0.7}))
 	got, err := repo.GetRoomBySlug(ctx, "film-night")
 	require.NoError(t, err)

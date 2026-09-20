@@ -9,14 +9,17 @@ export const rooms = {
     name: string;
     slug?: string;
     visibility: Visibility;
+    description?: string;
     firstUrl?: string;
     settings?: { voteMode?: boolean; viewersCanAdd?: boolean };
     invites?: string[];
   }) => api<Room & { warnings?: string[] }>("/api/v1/rooms", json(input)),
   get: (slug: string) => api<Room>(`/api/v1/rooms/${slug}`),
-  update: (slug: string, patch: { name?: string; slug?: string; visibility?: Visibility }) =>
+  update: (slug: string, patch: { name?: string; slug?: string; visibility?: Visibility; description?: string }) =>
     api<Room>(`/api/v1/rooms/${slug}`, { method: "PATCH", body: JSON.stringify(patch) }),
   remove: (slug: string) => api<void>(`/api/v1/rooms/${slug}`, { method: "DELETE" }),
+  leave: (slug: string, username: string) => api<void>(`/api/v1/rooms/${slug}/members/${username}`, { method: "DELETE" }),
+  transfer: (slug: string, username: string) => api<void>(`/api/v1/rooms/${slug}/owner`, json({ username })),
   /** @deprecated superseded by `directory({ mine: true })`; the endpoint stays for compatibility. */
   mine: () => api<Room[]>("/api/v1/me/rooms"),
   directory: (params: { q?: string; live?: boolean; private?: boolean; mine?: boolean; page?: number; perPage?: number }) => {

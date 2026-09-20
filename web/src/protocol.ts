@@ -50,6 +50,7 @@ export interface RoomInfo {
   visibility: Visibility;
   settings: Settings;
   owner: string;
+  description?: string;
 }
 
 export interface Playback {
@@ -143,6 +144,7 @@ export type ClientMessage =
   | { type: "queue.retry"; itemId: string }
   | { type: "queue.vote"; itemId: string }
   | { type: "skip.vote" }
+  | { type: "session.end" }
   | { type: "settings.set"; voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean; loop?: boolean }
   | { type: "chat.send"; body: string }
   | { type: "chat.delete"; id: number }

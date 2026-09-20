@@ -14,14 +14,14 @@ import (
 	"github.com/anesthetised/couchcast/internal/entity"
 )
 
-const roomColumns = `id, slug, name, owner_id, visibility, settings, current_item_id, playing, position_ms, position_at, created_at, updated_at`
+const roomColumns = `id, slug, name, owner_id, visibility, description, settings, current_item_id, playing, position_ms, position_at, created_at, updated_at`
 
 func scanRoom(row pgx.Row) (*entity.Room, error) {
 	var (
 		r        entity.Room
 		settings []byte
 	)
-	err := row.Scan(&r.ID, &r.Slug, &r.Name, &r.OwnerID, &r.Visibility, &settings,
+	err := row.Scan(&r.ID, &r.Slug, &r.Name, &r.OwnerID, &r.Visibility, &r.Description, &settings,
 		&r.CurrentItemID, &r.Playing, &r.PositionMs, &r.PositionAt, &r.CreatedAt, &r.UpdatedAt)
 	if err != nil {
 		return nil, wrapErr(err)
@@ -86,12 +86,40 @@ func (r *Repo) GetRoomByID(ctx context.Context, id uuid.UUID) (*entity.Room, err
 }
 
 // UpdateRoom changes the fields an owner may edit.
-func (r *Repo) UpdateRoom(ctx context.Context, id uuid.UUID, slug, name string, visibility entity.Visibility) (*entity.Room, error) {
+func (r *Repo) UpdateRoom(ctx context.Context, id uuid.UUID, slug, name string, visibility entity.Visibility, description string) (*entity.Room, error) {
 	const q = `
-		UPDATE rooms SET slug = $2, name = $3, visibility = $4, updated_at = now()
+		UPDATE rooms SET slug = $2, name = $3, visibility = $4, description = $5, updated_at = now()
 		WHERE id = $1
 		RETURNING ` + roomColumns
-	return scanRoom(r.pool.QueryRow(ctx, q, id, slug, name, visibility))
+	return scanRoom(r.pool.QueryRow(ctx, q, id, slug, name, visibility, description))
+}
+
+// TransferOwnership makes a member the owner and demotes the previous
+// owner to moderator; ErrNotFound when the target is not a member.
+func (r *Repo) TransferOwnership(ctx context.Context, roomID, from, to uuid.UUID) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
+
+	const promote = `UPDATE room_members SET role = 'owner' WHERE room_id = $1 AND user_id = $2`
+	tag, err := tx.Exec(ctx, promote, roomID, to)
+	if err != nil {
+		return wrapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	const demote = `UPDATE room_members SET role = 'moderator' WHERE room_id = $1 AND user_id = $2`
+	if _, err := tx.Exec(ctx, demote, roomID, from); err != nil {
+		return wrapErr(err)
+	}
+	const owner = `UPDATE rooms SET owner_id = $2, updated_at = now() WHERE id = $1`
+	if _, err := tx.Exec(ctx, owner, roomID, to); err != nil {
+		return wrapErr(err)
+	}
+	return tx.Commit(ctx)
 }
 
 // UpdateRoomSettings replaces the settings document.
@@ -121,7 +149,7 @@ type RoomWithRole struct {
 // membership first.
 func (r *Repo) ListRoomsForUser(ctx context.Context, userID uuid.UUID) ([]RoomWithRole, error) {
 	const q = `
-		SELECT r.id, r.slug, r.name, r.owner_id, r.visibility, r.settings, r.current_item_id,
+		SELECT r.id, r.slug, r.name, r.owner_id, r.visibility, r.description, r.settings, r.current_item_id,
 		       r.playing, r.position_ms, r.position_at, r.created_at, r.updated_at, m.role
 		FROM room_members m
 		JOIN rooms r ON r.id = m.room_id
@@ -141,7 +169,7 @@ func (r *Repo) ListRoomsForUser(ctx context.Context, userID uuid.UUID) ([]RoomWi
 			settings []byte
 		)
 		rm := &item.Room
-		if err := rows.Scan(&rm.ID, &rm.Slug, &rm.Name, &rm.OwnerID, &rm.Visibility, &settings, &rm.CurrentItemID,
+		if err := rows.Scan(&rm.ID, &rm.Slug, &rm.Name, &rm.OwnerID, &rm.Visibility, &rm.Description, &settings, &rm.CurrentItemID,
 			&rm.Playing, &rm.PositionMs, &rm.PositionAt, &rm.CreatedAt, &rm.UpdatedAt, &item.Role); err != nil {
 			return nil, err
 		}

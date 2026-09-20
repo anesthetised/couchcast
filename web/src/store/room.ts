@@ -121,7 +121,7 @@ export function createRoomStore(slug: string) {
         setPending((p) => p.slice(0, -1));
         break;
       case "kicked":
-        setEnded({ kind: "kicked", reason: msg.reason });
+        setEnded(msg.reason === "room deleted" ? { kind: "gone" } : { kind: "kicked", reason: msg.reason });
         break;
     }
   });
@@ -168,6 +168,7 @@ export function createRoomStore(slug: string) {
       retry: (itemId: string) => send({ type: "queue.retry", itemId }),
       vote: (itemId: string) => send({ type: "queue.vote", itemId }),
       skipVote: () => send({ type: "skip.vote" }),
+      endSession: () => send({ type: "session.end" }),
       settings: (patch: { voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean; loop?: boolean }) =>
         send({ type: "settings.set", ...patch }),
       chat: (body: string) => send({ type: "chat.send", body }),

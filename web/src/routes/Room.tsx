@@ -1,4 +1,4 @@
-import { useLocation, useParams } from "@solidjs/router";
+import { useLocation, useNavigate, useParams } from "@solidjs/router";
 import { createEffect, createResource, createSignal, For, on, onCleanup, onMount, Show, type Component } from "solid-js";
 
 import AddToQueue from "~/components/AddToQueue";
@@ -30,14 +30,20 @@ const Room: Component = () => {
   return (
     <Show when={!room.error} fallback={<div class="empty">{errorMessage()}</div>}>
       <Show when={room()} fallback={<p class="muted">Loading…</p>}>
-        {(r) => <LiveRoom slug={r().slug} name={r().name} visibility={r().visibility} canSettings={isModerator(r().myRole)} />}
+        {(r) => <LiveRoom slug={r().slug} name={r().name} visibility={r().visibility} description={r().description} canSettings={isModerator(r().myRole)} />}
       </Show>
     </Show>
   );
 };
 
-const LiveRoom: Component<{ slug: string; name: string; visibility: string; canSettings: boolean }> = (props) => {
+const LiveRoom: Component<{ slug: string; name: string; visibility: string; description: string; canSettings: boolean }> = (props) => {
+  const navigate = useNavigate();
   const store = createRoomStore(props.slug);
+  // Leaving on purpose ends at the directory, not on an end screen.
+  createEffect(() => {
+    const e = store.ended();
+    if (e?.kind === "kicked" && e.reason === "left") navigate("/", { replace: true });
+  });
   let stage: HTMLDivElement | undefined;
   const fs = createFullscreen(() => stage);
   const usePanel = (panel: FullscreenPanel) => {
@@ -93,7 +99,16 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; canS
   return (
     <div class="room">
       <div class="room-main">
-        <RoomHeader store={store} slug={props.slug} name={snap()?.room.name ?? props.name} visibility={snap()?.room.visibility ?? props.visibility} live={live()} viewers={viewers()} canSettings={props.canSettings} />
+        <RoomHeader
+          store={store}
+          slug={props.slug}
+          name={snap()?.room.name ?? props.name}
+          visibility={snap()?.room.visibility ?? props.visibility}
+          description={snap()?.room.description ?? props.description}
+          live={live()}
+          viewers={viewers()}
+          canSettings={props.canSettings}
+        />
 
         <Show when={notices().length > 0}>
           <div class="banner">
@@ -175,11 +190,27 @@ const RoomHeader: Component<{
   slug: string;
   name: string;
   visibility: string;
+  description: string;
   live: boolean;
   viewers: number;
   canSettings: boolean;
 }> = (props) => {
   const settings = () => props.store.state.snapshot?.room.settings;
+  const me = () => props.store.state.me;
+  const canLeave = () => me() !== null && props.store.state.role !== undefined && props.store.state.role !== "owner";
+
+  const leave = async () => {
+    if (!confirm("Leave this room?")) return;
+    try {
+      await rooms.leave(props.slug, me()!);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), "error");
+    }
+  };
+  const endSession = () => {
+    if (!confirm("End the session? Playback stops, the queue moves to Played and everyone is disconnected.")) return;
+    props.store.commands.endSession();
+  };
 
   return (
     <header class="room-head">
@@ -200,6 +231,9 @@ const RoomHeader: Component<{
             {props.viewers} watching
           </span>
         </div>
+        <Show when={props.description}>
+          <p class="room-description">{props.description}</p>
+        </Show>
       </div>
       <div class="actions">
         <Show when={props.store.isModerator() && settings()}>
@@ -228,9 +262,18 @@ const RoomHeader: Component<{
                   <input type="checkbox" checked={s().loop} onChange={(e) => props.store.commands.settings({ loop: e.currentTarget.checked })} />
                   Loop queue
                 </label>
+                <div class="menu-sep" />
+                <button type="button" class="link danger-text" onClick={endSession}>
+                  End session
+                </button>
               </div>
             </details>
           )}
+        </Show>
+        <Show when={canLeave()}>
+          <button type="button" class="ghost" onClick={() => void leave()}>
+            Leave
+          </button>
         </Show>
         <Show when={props.canSettings}>
           <a class="button ghost" href={`/r/${props.slug}/settings`}>
@@ -249,6 +292,8 @@ function endTitle(end: RoomEnd): string {
       return "You have been banned";
     case "removed from room":
       return "You were removed from this room";
+    case "session ended":
+      return "Session ended";
     default:
       return "Disconnected";
   }
@@ -260,6 +305,8 @@ function endDetail(end: RoomEnd): string {
     case "banned":
     case "removed from room":
       return "A moderator ended your access.";
+    case "session ended":
+      return "A moderator closed the session; the room is still here for next time.";
     default:
       return end.reason;
   }

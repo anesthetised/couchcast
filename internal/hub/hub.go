@@ -257,6 +257,8 @@ func (c *conn) dispatch(ctx context.Context, data []byte) {
 		err = c.room.QueueVote(cmdCtx, actor, msg.(*protocol.ItemRef).ItemID)
 	case protocol.TypeSkipVote:
 		err = c.room.SkipVote(cmdCtx, actor)
+	case protocol.TypeSessionEnd:
+		err = c.room.EndSession(cmdCtx, actor)
 	case protocol.TypeSettingsSet:
 		err = c.room.SettingsSet(cmdCtx, actor, *msg.(*protocol.SettingsSet))
 	case protocol.TypeChatSend:

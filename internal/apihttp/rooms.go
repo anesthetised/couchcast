@@ -23,7 +23,8 @@ import (
 type RoomStore interface {
 	CreateRoom(ctx context.Context, slug, name string, ownerID uuid.UUID, visibility entity.Visibility, settings entity.Settings) (*entity.Room, error)
 	GetRoomBySlug(ctx context.Context, slug string) (*entity.Room, error)
-	UpdateRoom(ctx context.Context, id uuid.UUID, slug, name string, visibility entity.Visibility) (*entity.Room, error)
+	UpdateRoom(ctx context.Context, id uuid.UUID, slug, name string, visibility entity.Visibility, description string) (*entity.Room, error)
+	TransferOwnership(ctx context.Context, roomID, from, to uuid.UUID) error
 	DeleteRoom(ctx context.Context, id uuid.UUID) error
 	ListRoomsForUser(ctx context.Context, userID uuid.UUID) ([]repository.RoomWithRole, error)
 	CountMembers(ctx context.Context, roomID uuid.UUID) (int, error)
@@ -59,9 +60,10 @@ var reservedSlugs = map[string]bool{
 }
 
 const (
-	slugAlphabet = "abcdefghijklmnopqrstuvwxyz234567" // base32, lower-case
-	slugLength   = 8
-	maxRoomName  = 80
+	slugAlphabet   = "abcdefghijklmnopqrstuvwxyz234567" // base32, lower-case
+	slugLength     = 8
+	maxRoomName    = 80
+	maxDescription = 300
 )
 
 // generateSlug returns a random 8-character base32 slug.
@@ -85,6 +87,15 @@ func validateSlug(slug string) (string, string) {
 		return "", "this slug is reserved"
 	}
 	return slug, ""
+}
+
+// validateDescription trims and bounds the room description.
+func validateDescription(d string) (string, string) {
+	d = strings.TrimSpace(d)
+	if len(d) > maxDescription {
+		return "", "description must be at most 300 characters"
+	}
+	return d, ""
 }
 
 func validateRoomName(name string) (string, string) {
@@ -115,6 +126,7 @@ type roomResponse struct {
 	Visibility  entity.Visibility `json:"visibility"`
 	Settings    entity.Settings   `json:"settings"`
 	Owner       string            `json:"owner"`
+	Description string            `json:"description"`
 	MemberCount int               `json:"memberCount"`
 	MyRole      entity.RoomRole   `json:"myRole,omitempty"`
 	CreatedAt   time.Time         `json:"createdAt"`
@@ -271,7 +283,7 @@ func (s *Server) roomResponse(ctx context.Context, rc roomCtx) (roomResponse, er
 	}
 	return roomResponse{
 		ID: rc.room.ID, Slug: rc.room.Slug, Name: rc.room.Name, Visibility: rc.room.Visibility,
-		Settings: rc.room.Settings, Owner: owner.Username, MemberCount: count, MyRole: rc.actor.Role(),
+		Settings: rc.room.Settings, Owner: owner.Username, Description: rc.room.Description, MemberCount: count, MyRole: rc.actor.Role(),
 		CreatedAt: rc.room.CreatedAt,
 	}, nil
 }
@@ -292,12 +304,13 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 // --- rooms -------------------------------------------------------------------
 
 type createRoomRequest struct {
-	Name       string   `json:"name"`
-	Slug       string   `json:"slug"`
-	Visibility string   `json:"visibility"`
-	FirstURL   string   `json:"firstUrl"`
-	Invites    []string `json:"invites"`
-	Settings   *struct {
+	Name        string   `json:"name"`
+	Slug        string   `json:"slug"`
+	Visibility  string   `json:"visibility"`
+	Description string   `json:"description"`
+	FirstURL    string   `json:"firstUrl"`
+	Invites     []string `json:"invites"`
+	Settings    *struct {
 		VoteMode      *bool `json:"voteMode"`
 		ViewersCanAdd *bool `json:"viewersCanAdd"`
 	} `json:"settings"`
@@ -318,6 +331,11 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name, msg := validateRoomName(req.Name)
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, msg)
+		return
+	}
+	description, msg := validateDescription(req.Description)
 	if msg != "" {
 		writeError(w, http.StatusBadRequest, msg)
 		return
@@ -394,6 +412,15 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		slug = generateSlug()
 	}
 
+	if description != "" {
+		if updated, err := s.deps.Rooms.UpdateRoom(r.Context(), room.ID, room.Slug, room.Name, room.Visibility, description); err == nil {
+			room = updated
+		} else {
+			s.internalError(w, r, "set description", err)
+			return
+		}
+	}
+
 	rc := roomCtx{room: room, actor: access.Actor{User: user, Member: &entity.RoomMember{Role: entity.RoomRoleOwner}}}
 	var warnings []string
 
@@ -447,9 +474,10 @@ func (s *Server) handleGetRoom(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateRoomRequest struct {
-	Name       *string `json:"name"`
-	Slug       *string `json:"slug"`
-	Visibility *string `json:"visibility"`
+	Name        *string `json:"name"`
+	Slug        *string `json:"slug"`
+	Visibility  *string `json:"visibility"`
+	Description *string `json:"description"`
 }
 
 func (s *Server) handleUpdateRoom(w http.ResponseWriter, r *http.Request) {
@@ -463,8 +491,14 @@ func (s *Server) handleUpdateRoom(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	name, slug, visibility := rc.room.Name, rc.room.Slug, rc.room.Visibility
+	name, slug, visibility, description := rc.room.Name, rc.room.Slug, rc.room.Visibility, rc.room.Description
 	var msg string
+	if req.Description != nil {
+		if description, msg = validateDescription(*req.Description); msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
+	}
 	if req.Name != nil {
 		if name, msg = validateRoomName(*req.Name); msg != "" {
 			writeError(w, http.StatusBadRequest, msg)
@@ -486,7 +520,7 @@ func (s *Server) handleUpdateRoom(w http.ResponseWriter, r *http.Request) {
 		visibility = v
 	}
 
-	room, err := s.deps.Rooms.UpdateRoom(r.Context(), rc.room.ID, slug, name, visibility)
+	room, err := s.deps.Rooms.UpdateRoom(r.Context(), rc.room.ID, slug, name, visibility, description)
 	switch {
 	case errors.Is(err, repository.ErrConflict):
 		writeError(w, http.StatusConflict, "slug is taken")
@@ -639,7 +673,14 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "user is not a member")
 		return
 	}
-	if !access.CanTarget(rc.actor, access.RemoveMember, rc.room, role) {
+	// Anyone but the owner may leave on their own; the owner hands the
+	// room over first.
+	self := rc.actor.User != nil && rc.actor.User.ID == target.ID
+	if self && role == entity.RoomRoleOwner {
+		writeError(w, http.StatusConflict, "transfer ownership before leaving")
+		return
+	}
+	if !self && !access.CanTarget(rc.actor, access.RemoveMember, rc.room, role) {
 		s.denied(w, rc)
 		return
 	}
@@ -647,9 +688,60 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, r, "remove member", err)
 		return
 	}
-	s.audit(r, "member.remove", "user", target.ID.String(), rc.room, map[string]any{"username": target.Username, "role": role})
-	if s.deps.OnBan != nil && !rc.room.IsPublic() {
-		s.deps.OnBan(rc.room.ID, target.ID)
+	if self {
+		s.audit(r, "member.leave", "room", rc.room.ID.String(), rc.room, map[string]any{"role": role})
+		if s.deps.OnLeave != nil {
+			s.deps.OnLeave(rc.room.ID, target.ID)
+		}
+	} else {
+		s.audit(r, "member.remove", "user", target.ID.String(), rc.room, map[string]any{"username": target.Username, "role": role})
+		if s.deps.OnBan != nil && !rc.room.IsPublic() {
+			s.deps.OnBan(rc.room.ID, target.ID)
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+type transferRequest struct {
+	Username string `json:"username"`
+}
+
+// handleTransferOwnership hands the room to another member; the former
+// owner stays as a moderator.
+func (s *Server) handleTransferOwnership(w http.ResponseWriter, r *http.Request) {
+	rc, ok := s.loadRoom(w, r)
+	if !ok || !s.require(w, rc, access.ManageRoom) {
+		return
+	}
+	var req transferRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	target, err := s.deps.Users.GetUserByUsername(r.Context(), strings.TrimSpace(req.Username))
+	if errors.Is(err, repository.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if err != nil {
+		s.internalError(w, r, "lookup user", err)
+		return
+	}
+	if target.ID == rc.actor.User.ID {
+		writeError(w, http.StatusBadRequest, "you already own this room")
+		return
+	}
+	err = s.deps.Rooms.TransferOwnership(r.Context(), rc.room.ID, rc.actor.User.ID, target.ID)
+	switch {
+	case errors.Is(err, repository.ErrNotFound):
+		writeError(w, http.StatusNotFound, "user is not a member")
+		return
+	case err != nil:
+		s.internalError(w, r, "transfer ownership", err)
+		return
+	}
+	s.audit(r, "room.transfer", "user", target.ID.String(), rc.room, map[string]any{"username": target.Username})
+	if s.deps.OnRoomChanged != nil {
+		s.deps.OnRoomChanged(rc.room.ID)
 	}
 	w.WriteHeader(http.StatusNoContent)
 }

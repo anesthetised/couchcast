@@ -123,6 +123,7 @@ const RoomCard: Component<Props> = (props) => {
       </div>
       <div class="room-card-body">
         <div class="room-card-title">{media()?.title || props.room.name}</div>
+        <Show when={props.room.description}>{(d) => <div class="room-card-desc">{d()}</div>}</Show>
         <div class="room-card-meta">
           <Show when={media()}>
             <span>{props.room.name}</span>

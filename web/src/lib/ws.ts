@@ -60,6 +60,16 @@ export class RoomSocket {
         if (this.status !== "kicked") this.setStatus("closed");
         return;
       }
+      // The server closes with a policy-violation code and a reason when
+      // it ends the session on purpose (kick, ban, room deleted); the
+      // kicked message may not have made it out before the close.
+      if (ev.code === 1008 && ev.reason) {
+        this.stopped = true;
+        this.setStatus("kicked");
+        const msg: ServerMessage = { type: "kicked", reason: ev.reason };
+        for (const h of this.handlers) h(msg);
+        return;
+      }
       this.setStatus("closed");
       void this.scheduleReconnect(ev.reason);
     };

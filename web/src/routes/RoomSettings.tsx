@@ -5,6 +5,7 @@ import UsernamePicker from "~/components/UsernamePicker";
 import { rooms } from "~/lib/rooms";
 import { toast } from "~/lib/toast";
 import { isModerator, type Visibility } from "~/lib/types";
+import { auth } from "~/store/auth";
 
 // Room administration: general settings (owner), people (members, bans,
 // invites — moderators). Sections, not cards; one table for people.
@@ -33,20 +34,38 @@ const RoomSettings: Component = () => {
   const [name, setName] = createSignal("");
   const [slug, setSlug] = createSignal("");
   const [visibility, setVisibility] = createSignal<Visibility>("public");
+  const [description, setDescription] = createSignal("");
   const seedGeneral = () => {
     const r = room();
     if (!r) return;
     setName(r.name);
     setSlug(r.slug);
     setVisibility(r.visibility);
+    setDescription(r.description);
   };
 
   const saveGeneral = (e: SubmitEvent) => {
     e.preventDefault();
     void run("Saved.", async () => {
-      const updated = await rooms.update(params.slug, { name: name().trim(), slug: slug().trim(), visibility: visibility() });
+      const updated = await rooms.update(params.slug, { name: name().trim(), slug: slug().trim(), visibility: visibility(), description: description().trim() });
       setRoom(updated);
       if (updated.slug !== params.slug) navigate(`/r/${updated.slug}/settings`, { replace: true });
+    });
+  };
+
+  const transfer = (username: string) => {
+    if (!confirm(`Make ${username} the owner? You will stay as a moderator.`)) return;
+    void run(`${username} now owns this room.`, async () => {
+      await rooms.transfer(params.slug, username);
+      navigate(`/r/${params.slug}`, { replace: true });
+    });
+  };
+
+  const leave = () => {
+    if (!confirm("Leave this room?")) return;
+    void run("You left the room.", async () => {
+      await rooms.leave(params.slug, auth.user()!.username);
+      navigate("/", { replace: true });
     });
   };
 
@@ -117,10 +136,16 @@ const RoomSettings: Component = () => {
                     <input type="text" required maxLength={80} value={name()} onInput={(e) => setName(e.currentTarget.value)} />
                   </label>
                   <label>
+                    <span>
+                      Description <span class="muted">(optional)</span>
+                    </span>
+                    <textarea rows={2} maxLength={300} value={description()} onInput={(e) => setDescription(e.currentTarget.value)} />
+                  </label>
+                  <label>
                     Link
                     <div class="slug-input">
                       <span class="muted">/r/</span>
-                      <input type="text" required pattern="[A-Za-z0-9-]{3,32}" value={slug()} onInput={(e) => setSlug(e.currentTarget.value)} />
+                      <input type="text" required pattern="[A-Za-z0-9\-]{3,32}" value={slug()} onInput={(e) => setSlug(e.currentTarget.value)} />
                     </div>
                   </label>
                   <fieldset class="radio-row">
@@ -173,6 +198,11 @@ const RoomSettings: Component = () => {
                             <Show when={isOwner() && m.role === "member"}>
                               <button type="button" class="link" onClick={() => void run(`${m.username} is now a moderator.`, async () => { await rooms.addModerator(params.slug, m.username); void reloadMembers(); })}>
                                 Make moderator
+                              </button>
+                            </Show>
+                            <Show when={isOwner() && m.role !== "owner"}>
+                              <button type="button" class="link" onClick={() => transfer(m.username)}>
+                                Make owner
                               </button>
                             </Show>
                             <Show when={isOwner() && m.role === "moderator"}>
@@ -254,6 +284,20 @@ const RoomSettings: Component = () => {
                 </div>
               </div>
             </section>
+
+            <Show when={!isOwner()}>
+              <section class="settings-section">
+                <div class="settings-label">
+                  <h2>Membership</h2>
+                  <p class="muted small">Leaving removes you from the room; a moderator can invite you back.</p>
+                </div>
+                <div class="settings-body">
+                  <button type="button" class="ghost" onClick={leave}>
+                    Leave room
+                  </button>
+                </div>
+              </section>
+            </Show>
 
             <Show when={isOwner()}>
               <section class="settings-section">

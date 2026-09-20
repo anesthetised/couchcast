@@ -130,6 +130,13 @@ and a production image build.
   `apihttp.LiveQueue`), applies initial settings and sends invites; extras
   that fail after creation come back as `warnings`, never as errors. The
   SPA page is `/new`; anonymous visitors round-trip via `/login?next=/new`.
+- Rooms carry a `description` (≤ 300 chars, patchable, on cards and in the
+  snapshot). Members leave with `DELETE /rooms/{slug}/members/{me}` (the
+  owner first hands over with `POST /rooms/{slug}/owner {username}`, which
+  makes the former owner a moderator). `session.end` (moderators) pauses,
+  moves the queue to the history and closes every connection with reason
+  `session ended`; the web client treats any 1008 close with a reason as
+  the end of the session (kick, ban, room deleted, left).
 - `GET /api/v1/users?q=` (signed in) is username autocomplete; the
   `UsernamePicker` component wraps it wherever usernames are typed.
 - Browser notifications (`lib/notify.ts`) are opt-in from the bell in the

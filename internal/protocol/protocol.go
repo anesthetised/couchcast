@@ -31,6 +31,7 @@ const (
 	TypeQueueClear  = "queue.clearPlayed"
 	TypeSkipVote    = "skip.vote"
 	TypeSettingsSet = "settings.set"
+	TypeSessionEnd  = "session.end"
 	TypeChatSend    = "chat.send"
 	TypeChatDelete  = "chat.delete"
 	TypeReport      = "report"
@@ -105,7 +106,7 @@ func Decode(data []byte) (string, any, error) {
 	switch env.Type {
 	case TypePing:
 		msg = &Ping{}
-	case TypePlay, TypePause, TypeNext, TypeSkipVote, TypeQueueClear:
+	case TypePlay, TypePause, TypeNext, TypeSkipVote, TypeQueueClear, TypeSessionEnd:
 		msg = nil
 	case TypeSeek:
 		msg = &Seek{}
@@ -205,12 +206,13 @@ type Presence struct {
 
 // RoomInfo is the static part of the room.
 type RoomInfo struct {
-	ID         uuid.UUID         `json:"id"`
-	Slug       string            `json:"slug"`
-	Name       string            `json:"name"`
-	Visibility entity.Visibility `json:"visibility"`
-	Settings   entity.Settings   `json:"settings"`
-	Owner      string            `json:"owner"`
+	ID          uuid.UUID         `json:"id"`
+	Slug        string            `json:"slug"`
+	Name        string            `json:"name"`
+	Visibility  entity.Visibility `json:"visibility"`
+	Settings    entity.Settings   `json:"settings"`
+	Owner       string            `json:"owner"`
+	Description string            `json:"description,omitempty"`
 }
 
 // Snapshot is the full room state.
