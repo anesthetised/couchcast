@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,6 +53,79 @@ func TestChat(t *testing.T) {
 	late := &fakeConn{}
 	f.room.Join(ctx, late, access.Actor{})
 	w := late.msgs[0].(protocol.Welcome)
-	assert.Len(t, w.Messages, 4)
-	assert.Equal(t, "spam", w.Messages[0].Body)
+	var user []protocol.ChatMessage
+	for _, m := range w.Messages {
+		if !m.System {
+			user = append(user, m)
+		}
+	}
+	assert.Len(t, user, 4, "deleted message is gone, system lines are separate")
+	assert.Equal(t, "spam", user[0].Body)
+}
+
+func TestRoomLog(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	owner, guest := &fakeConn{}, &fakeConn{}
+	f.room.Join(ctx, owner, f.owner)
+
+	systemLines := func(c *fakeConn) []string {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		var out []string
+		for _, m := range c.msgs {
+			if cm, ok := m.(protocol.ChatMessage); ok && cm.System {
+				out = append(out, cm.Body)
+			}
+		}
+		return out
+	}
+
+	// A second connection of the same user is not a new join.
+	f.room.Join(ctx, guest, f.guest)
+	again := &fakeConn{}
+	f.room.Join(ctx, again, f.guest)
+	assert.Equal(t, []string{"owner joined", "guest joined"}, systemLines(owner))
+
+	// Leaving and coming straight back is one visit: no "left", no new
+	// "joined". Staying away past the grace period logs both.
+	f.room.deps.RejoinGrace = 150 * time.Millisecond
+	f.room.Leave(guest)
+	f.room.Leave(again)
+	f.now = f.now.Add(50 * time.Millisecond)
+	f.room.Join(ctx, guest, f.guest)
+	time.Sleep(200 * time.Millisecond)
+	assert.Equal(t, []string{"owner joined", "guest joined"}, systemLines(owner))
+	f.room.Leave(guest)
+	require.Eventually(t, func() bool {
+		lines := systemLines(owner)
+		return len(lines) == 3 && lines[2] == "guest left"
+	}, time.Second, 20*time.Millisecond)
+	f.now = f.now.Add(time.Second)
+	f.room.Join(ctx, guest, f.guest)
+	assert.Equal(t, []string{"owner joined", "guest joined", "guest left", "guest joined"}, systemLines(owner))
+
+	f.ready("https://a", 10_000)
+	require.NoError(t, f.room.QueueAdd(ctx, f.guest, "https://a"))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://b"))
+	require.NoError(t, f.room.Next(ctx, f.owner))
+	lines := systemLines(owner)
+	assert.Equal(t, []string{"guest added “T https://a”", "owner added a video from b", "owner skipped “T https://a”"}, lines[4:])
+
+	// The backlog carries system lines without an author.
+	late := &fakeConn{}
+	f.room.Join(ctx, late, access.Actor{})
+	w := late.msgs[0].(protocol.Welcome)
+	require.NotEmpty(t, w.Messages)
+	assert.True(t, w.Messages[0].System)
+	assert.Empty(t, w.Messages[0].Username)
+
+	// Skip by vote is logged too.
+	on := true
+	require.NoError(t, f.room.SettingsSet(ctx, f.owner, protocol.SettingsSet{VoteMode: &on}))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://c"))
+	require.NoError(t, f.room.SkipVote(ctx, f.owner))
+	require.NoError(t, f.room.SkipVote(ctx, f.guest))
+	lines = systemLines(owner)
+	assert.Contains(t, lines[len(lines)-1], "by vote")
 }

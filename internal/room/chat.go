@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -20,6 +21,7 @@ import (
 // ChatStore is the chat persistence used by rooms.
 type ChatStore interface {
 	CreateMessage(ctx context.Context, roomID, userID uuid.UUID, body string) (*entity.Message, error)
+	CreateSystemMessage(ctx context.Context, roomID uuid.UUID, body string) (*entity.Message, error)
 	ListRecentMessages(ctx context.Context, roomID uuid.UUID, limit int) ([]entity.Message, error)
 	DeleteMessage(ctx context.Context, roomID uuid.UUID, id int64, deletedBy uuid.UUID) error
 }
@@ -30,7 +32,39 @@ const (
 )
 
 func toChatMessage(m *entity.Message) protocol.ChatMessage {
-	return protocol.ChatMessage{Type: protocol.TypeChatMessage, ID: m.ID, Username: m.Username, Body: m.Body, CreatedMs: m.CreatedAt.UnixMilli()}
+	return protocol.ChatMessage{Type: protocol.TypeChatMessage, ID: m.ID, Username: m.Username, Body: m.Body, System: m.System, CreatedMs: m.CreatedAt.UnixMilli()}
+}
+
+// logLocked appends a system line to the room log and pushes it to every
+// viewer. Failures are logged: the log must never break a command.
+func (r *Room) logLocked(ctx context.Context, body string) {
+	if r.deps.Chat == nil {
+		return
+	}
+	msg, err := r.deps.Chat.CreateSystemMessage(ctx, r.info.ID, body)
+	if err != nil {
+		r.deps.Logger.Warn("room log", "room", r.info.Slug, "error", err)
+		return
+	}
+	out := toChatMessage(msg)
+	for _, v := range r.viewers {
+		v.conn.Send(out)
+	}
+}
+
+// mediaLabel names a media item for log lines: title when probed, else
+// the source host.
+func mediaLabel(m *entity.Media) string {
+	if m == nil {
+		return "a video"
+	}
+	if m.Title != "" {
+		return "“" + m.Title + "”"
+	}
+	if u, err := url.Parse(m.SourceURL); err == nil && u.Host != "" {
+		return "a video from " + strings.TrimPrefix(u.Host, "www.")
+	}
+	return "a video"
 }
 
 // recentMessagesLocked loads the welcome backlog.

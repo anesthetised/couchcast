@@ -231,8 +231,9 @@ type Welcome struct {
 type ChatMessage struct {
 	Type      string `json:"type,omitempty"`
 	ID        int64  `json:"id"`
-	Username  string `json:"username"`
+	Username  string `json:"username,omitempty"`
 	Body      string `json:"body"`
+	System    bool   `json:"system,omitempty"`
 	CreatedMs int64  `json:"createdMs"`
 }
 

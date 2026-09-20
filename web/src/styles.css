@@ -1598,3 +1598,11 @@ progress {
 .picker-menu li.active {
   background: var(--surface-3);
 }
+
+/* --- room log, toasts, sync indicator, up next --------------------------- */
+
+.chat-line.system {
+  color: var(--muted);
+  font-style: italic;
+}
+

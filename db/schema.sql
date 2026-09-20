@@ -188,6 +188,9 @@ CREATE TABLE messages (
     room_id    uuid        NOT NULL REFERENCES rooms (id) ON DELETE CASCADE,
     user_id    uuid        REFERENCES users (id) ON DELETE SET NULL,
     body       text        NOT NULL,
+    -- System lines (joined, added a video, skipped) are part of the log but
+    -- carry no author.
+    system     boolean     NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT now(),
     deleted_at timestamptz,
     deleted_by uuid        REFERENCES users (id) ON DELETE SET NULL,

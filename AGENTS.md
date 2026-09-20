@@ -73,7 +73,11 @@ and a production image build.
   room holds the authoritative clock (`positionMs` at `positionAt`, plus a
   `seq`), the queue, presence and votes; every mutation ends in a broadcast.
   `Manager` loads rooms lazily, persists positions every 5 s, unloads idle
-  rooms and relays `media_progress` notifications.
+  rooms and relays `media_progress` notifications. Room events (join/leave,
+  add, skip, jump, vote skip) are written to chat as system messages
+  (`messages.system`, no author); a leave is logged only after
+  `Deps.RejoinGrace` (2 min) without a return, and a rejoin within it is
+  silent.
 - `internal/hub` owns WebSocket connections (`coder/websocket`): decodes
   `internal/protocol` messages, re-resolves the actor's role/ban on every
   mutating command, and fans broadcasts out through a bounded send buffer.

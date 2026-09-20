@@ -63,14 +63,16 @@ const Chat: Component<Props> = (props) => {
           </Show>
         </div>
       </header>
-      <ul class="chat-list" ref={list}>
+      <ul class="chat-list" ref={list} aria-live="polite" aria-relevant="additions">
         <For each={messages()} fallback={<li class="muted small">No messages yet.</li>}>
           {(m) => (
-            <li class={`chat-line ${isStale(m.createdMs) ? "stale" : ""}`}>
+            <li class={`chat-line ${isStale(m.createdMs) ? "stale" : ""} ${m.system ? "system" : ""}`}>
               <span class="chat-time muted">{time(m.createdMs)}</span>
-              <span class="chat-user">{m.username}</span>
+              <Show when={!m.system}>
+                <span class="chat-user">{m.username}</span>
+              </Show>
               <span class="chat-body">{m.body}</span>
-              <Show when={canModerate()}>
+              <Show when={canModerate() && !m.system}>
                 <button type="button" class="link danger-text chat-delete" title="Delete" onClick={() => props.room.commands.chatDelete(m.id)}>
                   ✕
                 </button>

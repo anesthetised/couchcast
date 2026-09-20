@@ -74,8 +74,9 @@ export interface Snapshot {
 export interface ChatMessage {
   type?: "chat.message";
   id: number;
-  username: string;
+  username?: string;
   body: string;
+  system?: boolean;
   createdMs: number;
 }
 

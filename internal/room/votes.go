@@ -132,9 +132,11 @@ func (r *Room) SkipVote(ctx context.Context, actor access.Actor) error {
 	}
 
 	if len(r.skipVotes) >= r.skipNeededLocked() {
+		skipped := r.currentMedia()
 		if err := r.nextLocked(ctx); err != nil {
 			return err
 		}
+		r.logLocked(ctx, "skipped "+mediaLabel(skipped)+" by vote")
 	}
 	r.broadcastLocked()
 	return nil

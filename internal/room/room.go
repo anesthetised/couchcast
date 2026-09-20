@@ -67,6 +67,9 @@ type Deps struct {
 	Now    func() time.Time
 	// Persist bounds how often playback position is written while playing.
 	PersistEvery time.Duration
+	// RejoinGrace is how long after leaving a return still counts as the
+	// same visit (no "left"/"joined" lines). Zero means the default.
+	RejoinGrace time.Duration
 	// QueueAddLimiter budgets queue.add per user across rooms. Nil disables.
 	QueueAddLimiter *ratelimit.Limiter
 }
@@ -117,6 +120,11 @@ type Room struct {
 	viewers    map[Conn]*viewer
 	skipVotes  map[uuid.UUID]struct{}
 	chatLimits map[uuid.UUID]*rate.Limiter
+	// leftAt remembers when a user's last connection closed, so a quick
+	// reconnect (reload, network blip) is not logged as a new join; the
+	// matching timer logs "left" once the grace period passes.
+	leftAt     map[uuid.UUID]time.Time
+	leftTimers map[uuid.UUID]*time.Timer
 
 	advance     *time.Timer
 	lastPersist time.Time
@@ -142,6 +150,8 @@ func load(ctx context.Context, deps Deps, id uuid.UUID) (*Room, error) {
 		viewers:    map[Conn]*viewer{},
 		skipVotes:  map[uuid.UUID]struct{}{},
 		chatLimits: map[uuid.UUID]*rate.Limiter{},
+		leftAt:     map[uuid.UUID]time.Time{},
+		leftTimers: map[uuid.UUID]*time.Timer{},
 		current:    info.CurrentItemID,
 		playing:    info.Playing,
 		positionMs: info.PositionMs,
@@ -465,6 +475,14 @@ func (r *Room) Join(ctx context.Context, conn Conn, actor access.Actor) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	first := actor.User != nil && !r.userOnlineLocked(actor.User.ID) &&
+		r.now().Sub(r.leftAt[actor.User.ID]) > r.rejoinGrace()
+	if actor.User != nil {
+		if t, ok := r.leftTimers[actor.User.ID]; ok {
+			t.Stop()
+			delete(r.leftTimers, actor.User.ID)
+		}
+	}
 	v := &viewer{conn: conn, user: actor.User, role: actor.Role()}
 	r.viewers[conn] = v
 	r.lastActive = r.now()
@@ -485,23 +503,70 @@ func (r *Room) Join(ctx context.Context, conn Conn, actor access.Actor) {
 	}
 	conn.Send(welcome)
 
-	// Others learn about the new presence.
+	// Others learn about the new presence; everyone, including the
+	// newcomer, gets the log line after the welcome.
 	for c, other := range r.viewers {
 		if c != conn {
 			other.conn.Send(r.personalizeLocked(base, other, r.votesFor(other)))
 		}
 	}
+	if first {
+		r.logLocked(ctx, actor.User.Username+" joined")
+	}
+}
+
+// defaultRejoinGrace is how long after leaving a return is still "the
+// same visit".
+const defaultRejoinGrace = 2 * time.Minute
+
+func (r *Room) rejoinGrace() time.Duration {
+	if r.deps.RejoinGrace > 0 {
+		return r.deps.RejoinGrace
+	}
+	return defaultRejoinGrace
+}
+
+// onLeft fires after the grace period: if the user is still gone, log it.
+func (r *Room) onLeft(userID uuid.UUID, username string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.leftTimers, userID)
+	if r.userOnlineLocked(userID) {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	r.logLocked(ctx, username+" left")
+}
+
+// userOnlineLocked reports whether the user has another connection.
+func (r *Room) userOnlineLocked(userID uuid.UUID) bool {
+	for _, v := range r.viewers {
+		if v.user != nil && v.user.ID == userID {
+			return true
+		}
+	}
+	return false
 }
 
 // Leave unregisters a connection.
 func (r *Room) Leave(conn Conn) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if _, ok := r.viewers[conn]; !ok {
+	v, ok := r.viewers[conn]
+	if !ok {
 		return
 	}
 	delete(r.viewers, conn)
 	r.lastActive = r.now()
+	if v.user != nil && !r.userOnlineLocked(v.user.ID) {
+		r.leftAt[v.user.ID] = r.now()
+		if t, ok := r.leftTimers[v.user.ID]; ok {
+			t.Stop()
+		}
+		id, name := v.user.ID, v.user.Username
+		r.leftTimers[id] = time.AfterFunc(r.rejoinGrace(), func() { r.onLeft(id, name) })
+	}
 	r.broadcastLocked()
 }
 
@@ -651,9 +716,11 @@ func (r *Room) Next(ctx context.Context, actor access.Actor) error {
 	if err := r.requireLocked(actor, access.ControlPlayback); err != nil {
 		return err
 	}
+	skipped := r.currentMedia()
 	if err := r.nextLocked(ctx); err != nil {
 		return err
 	}
+	r.logLocked(ctx, actor.User.Username+" skipped "+mediaLabel(skipped))
 	r.broadcastLocked()
 	return nil
 }
@@ -682,6 +749,7 @@ func (r *Room) Jump(ctx context.Context, actor access.Actor, itemID uuid.UUID) e
 	if err := r.persistLocked(ctx); err != nil {
 		return err
 	}
+	r.logLocked(ctx, actor.User.Username+" jumped to "+mediaLabel(r.media[target.MediaID]))
 	r.broadcastLocked()
 	return nil
 }
@@ -727,6 +795,9 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string) 
 	}
 	r.queue = append(r.queue, item)
 	r.media[media.ID] = media
+	if actor.User != nil {
+		r.logLocked(ctx, actor.User.Username+" added "+mediaLabel(media))
+	}
 
 	if r.current == nil {
 		r.setCurrentLocked(item)
@@ -942,6 +1013,9 @@ func (r *Room) shutdown(ctx context.Context) {
 	defer r.mu.Unlock()
 	if r.advance != nil {
 		r.advance.Stop()
+	}
+	for _, t := range r.leftTimers {
+		t.Stop()
 	}
 	if err := r.persistLocked(ctx); err != nil {
 		r.deps.Logger.Warn("persist playback on unload", "room", r.info.Slug, "error", err)
