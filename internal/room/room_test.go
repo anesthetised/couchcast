@@ -382,6 +382,8 @@ func TestQueueHistoryAndLoop(t *testing.T) {
 	assert.Len(t, played, 1)
 
 	// Play next lands right after the current item.
+	f.ready("https://c", 10_000)
+	f.ready("https://d", 10_000)
 	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://c", false))
 	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://d", true))
 	titles := func() []string {
@@ -402,6 +404,7 @@ func TestQueueHistoryAndLoop(t *testing.T) {
 
 	// Without loop the queue runs dry; with loop it restarts in play order.
 	for range 4 {
+		f.now = f.now.Add(time.Second) // distinct played_at per item
 		require.NoError(t, f.room.Next(ctx, f.owner))
 	}
 	snap = conn.lastSnapshot()
@@ -412,6 +415,7 @@ func TestQueueHistoryAndLoop(t *testing.T) {
 	on := true
 	require.NoError(t, f.room.SettingsSet(ctx, f.owner, protocol.SettingsSet{Loop: &on}))
 	require.NoError(t, f.room.QueueReplay(ctx, f.owner, snap.Played[0].ID)) // "a" again, starts playing
+	f.now = f.now.Add(time.Second)
 	require.NoError(t, f.room.Next(ctx, f.owner))
 	snap = conn.lastSnapshot()
 	assert.Equal(t, []string{"T https://a", "T https://b", "T https://d", "T https://c", "T https://a", "T https://a"}, titles(), "history back in play order")

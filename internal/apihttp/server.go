@@ -238,7 +238,7 @@ func New(deps Deps) *Server {
 
 	var meta *metaInjector
 	if deps.Meta != nil {
-		meta = newMetaInjector(deps.Meta, deps.Live)
+		meta = newMetaInjector(deps.Meta, deps.Live, deps.Logger)
 	}
 	r.NotFound(spaHandler(deps.Static, meta))
 

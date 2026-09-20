@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -29,9 +30,10 @@ const metaTTL = 30 * time.Second
 // so a shared link unfurls with the room's name, description and the
 // current video's thumbnail in messengers.
 type metaInjector struct {
-	store MetaStore
-	live  LiveRooms
-	site  string
+	store  MetaStore
+	live   LiveRooms
+	logger *slog.Logger
+	site   string
 
 	mu    sync.Mutex
 	cache map[string]metaEntry
@@ -42,8 +44,8 @@ type metaEntry struct {
 	at   time.Time
 }
 
-func newMetaInjector(store MetaStore, live LiveRooms) *metaInjector {
-	return &metaInjector{store: store, live: live, site: "couchcast", cache: map[string]metaEntry{}}
+func newMetaInjector(store MetaStore, live LiveRooms, logger *slog.Logger) *metaInjector {
+	return &metaInjector{store: store, live: live, logger: logger, site: "couchcast", cache: map[string]metaEntry{}}
 }
 
 // roomSlugFromPath returns the slug for /r/{slug} pages, "" otherwise.
@@ -76,8 +78,14 @@ func (m *metaInjector) build(r *http.Request, slug string) string {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
 	room, err := m.store.GetRoomBySlug(ctx, slug)
-	if err != nil || !room.IsPublic() {
-		return "" // private and unknown rooms unfurl as the generic site
+	if err != nil {
+		if !errors.Is(err, repository.ErrNotFound) {
+			m.logger.Warn("room meta: load room", "slug", slug, "error", err)
+		}
+		return ""
+	}
+	if !room.IsPublic() {
+		return "" // private rooms unfurl as the generic site
 	}
 
 	title := room.Name
@@ -98,6 +106,7 @@ func (m *metaInjector) build(r *http.Request, slug string) string {
 			}
 		}
 	} else if err != nil && !errors.Is(err, repository.ErrNotFound) {
+		m.logger.Warn("room meta: current media", "slug", slug, "error", err)
 		return ""
 	}
 	if desc == "" {

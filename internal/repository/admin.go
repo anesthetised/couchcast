@@ -83,12 +83,12 @@ func (r *Repo) ListReportedMedia(ctx context.Context, limit int) ([]entity.Repor
 	var out []entity.ReportedMedia
 	for rows.Next() {
 		var (
-			m     entity.Media
-			rend  []byte
-			count int
+			m          entity.Media
+			rend, subs []byte
+			count      int
 		)
 		if err := rows.Scan(&m.ID, &m.SourceKey, &m.SourceURL, &m.Title, &m.DurationMs, &m.ThumbnailURL,
-			&m.Status, &m.Progress, &m.Error, &m.SizeBytes, &rend, &m.S3Prefix,
+			&m.Status, &m.Progress, &m.Error, &m.SizeBytes, &rend, &subs, &m.S3Prefix,
 			&m.CreatedAt, &m.UpdatedAt, &m.LastAccessedAt, &count); err != nil {
 			return nil, err
 		}
