@@ -252,7 +252,7 @@ func (r *Repo) ListUsers(ctx context.Context, query string, limit int) ([]entity
 	for rows.Next() {
 		var au entity.AdminUser
 		u := &au.User
-		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.BannedAt, &u.BannedReason, &u.BannedBy, &u.CreatedAt, &au.RoomCount); err != nil {
+		if err := rows.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.BannedAt, &u.BannedReason, &u.BannedBy, &u.CreatedAt, &u.AvatarColor, &au.RoomCount); err != nil {
 			return nil, err
 		}
 		out = append(out, au)

@@ -11,11 +11,11 @@ import (
 	"github.com/anesthetised/couchcast/internal/entity"
 )
 
-const userColumns = `id, username, password_hash, role, banned_at, banned_reason, banned_by, created_at`
+const userColumns = `id, username, password_hash, role, banned_at, banned_reason, banned_by, created_at, avatar_color`
 
 func scanUser(row pgx.Row) (*entity.User, error) {
 	var u entity.User
-	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.BannedAt, &u.BannedReason, &u.BannedBy, &u.CreatedAt)
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.BannedAt, &u.BannedReason, &u.BannedBy, &u.CreatedAt, &u.AvatarColor)
 	if err != nil {
 		return nil, wrapErr(err)
 	}
@@ -73,6 +73,20 @@ func (r *Repo) exec(ctx context.Context, q string, args ...any) error {
 		return ErrNotFound
 	}
 	return nil
+}
+
+// SetUserAvatarColor stores the palette key chosen on the profile page.
+func (r *Repo) SetUserAvatarColor(ctx context.Context, id uuid.UUID, color string) error {
+	const q = `UPDATE users SET avatar_color = $2 WHERE id = $1`
+	_, err := r.pool.Exec(ctx, q, id, color)
+	return wrapErr(err)
+}
+
+// SetUserPassword replaces the password hash.
+func (r *Repo) SetUserPassword(ctx context.Context, id uuid.UUID, passwordHash string) error {
+	const q = `UPDATE users SET password_hash = $2 WHERE id = $1`
+	_, err := r.pool.Exec(ctx, q, id, passwordHash)
+	return wrapErr(err)
 }
 
 // SearchUsernames returns up to limit usernames starting with prefix

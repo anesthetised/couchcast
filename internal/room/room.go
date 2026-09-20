@@ -403,7 +403,7 @@ func (r *Room) snapshotLocked() protocol.Snapshot {
 			continue
 		}
 		seen[v.user.Username] = len(snap.Members)
-		snap.Members = append(snap.Members, protocol.Presence{Username: v.user.Username, Role: v.role, Buffering: v.buffering})
+		snap.Members = append(snap.Members, protocol.Presence{Username: v.user.Username, Color: v.user.AvatarColor, Role: v.role, Buffering: v.buffering})
 	}
 	sort.Slice(snap.Members, func(i, j int) bool { return snap.Members[i].Username < snap.Members[j].Username })
 

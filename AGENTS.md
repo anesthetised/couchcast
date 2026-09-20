@@ -131,6 +131,11 @@ and a production image build.
   top bar and fire only while the tab is hidden: new invites (the auth
   store polls `/invites` every minute) and the caller's own video starting.
   `lib/title.ts` keeps the tab title (`(unread) ▶ Title — Room`).
+- Profile: `PATCH /api/v1/me` (avatar colour, a palette key from
+  `entity.AvatarColors`) and `POST /api/v1/me/password` (verifies the
+  current one, revokes every session, reissues the caller's). The SPA page
+  is `/me`; the colour travels with presence and chat lines, and the web
+  app derives a stable colour from the name for users who never chose.
 - `GET /api/v1/media/probe?url=` (signed in, rate limited) previews a link
   for the add form: known sources answer from the database, new ones go
   through `ingest.Service.Preview` → the extractor, bounded by a timeout.

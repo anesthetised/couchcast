@@ -41,6 +41,16 @@ function createAuthStore() {
     return u;
   }
 
+  async function updateMe(patch: { avatarColor?: string }) {
+    const u = await api<User>("/api/v1/me", { method: "PATCH", body: JSON.stringify(patch) });
+    mutate(u);
+    return u;
+  }
+
+  async function changePassword(current: string, next: string) {
+    await api<void>("/api/v1/me/password", { method: "POST", body: JSON.stringify({ current, new: next }) });
+  }
+
   async function logout() {
     await api<void>("/api/v1/auth/logout", { method: "POST" });
     mutate(null);
@@ -73,7 +83,7 @@ function createAuthStore() {
     onCleanup(() => window.clearInterval(timer));
   });
 
-  return { user, login, register, logout, refetch, invites, refetchInvites, setInvites };
+  return { user, login, register, logout, refetch, invites, refetchInvites, setInvites, updateMe, changePassword };
 }
 
 export const auth = createRoot(createAuthStore);

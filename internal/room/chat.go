@@ -32,7 +32,7 @@ const (
 )
 
 func toChatMessage(m *entity.Message) protocol.ChatMessage {
-	return protocol.ChatMessage{Type: protocol.TypeChatMessage, ID: m.ID, Username: m.Username, Body: m.Body, System: m.System, CreatedMs: m.CreatedAt.UnixMilli()}
+	return protocol.ChatMessage{Type: protocol.TypeChatMessage, ID: m.ID, Username: m.Username, Color: m.Color, Body: m.Body, System: m.System, CreatedMs: m.CreatedAt.UnixMilli()}
 }
 
 // logLocked appends a system line to the room log and pushes it to every

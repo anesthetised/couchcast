@@ -3,6 +3,7 @@ import { Show, type Component } from "solid-js";
 
 import { enabled as notifyOn, notificationsSupported, setEnabled as setNotify } from "~/lib/notify";
 import { toast } from "~/lib/toast";
+import { avatarClass } from "~/lib/types";
 import { auth } from "~/store/auth";
 
 // Header widget: current user with logout, or login/register links.
@@ -53,8 +54,8 @@ const UserMenu: Component = () => {
                 </svg>
               </button>
             </Show>
-            <a class="username" href="/" title={auth.invites().length ? `${auth.invites().length} pending invites` : undefined}>
-              <span class="avatar" aria-hidden="true">
+            <a class="username" href="/me" title={auth.invites().length ? `${auth.invites().length} pending invites` : "Profile"}>
+              <span class={`avatar ${avatarClass(u().username, u().avatarColor)}`} aria-hidden="true">
                 {u().username.slice(0, 1)}
                 <Show when={auth.invites().length > 0}>
                   <span class="avatar-badge">{auth.invites().length}</span>

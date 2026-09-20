@@ -15,6 +15,8 @@ CREATE TABLE users (
     banned_reason text,
     banned_by     uuid        REFERENCES users (id) ON DELETE SET NULL,
     created_at    timestamptz NOT NULL DEFAULT now(),
+    -- Avatar palette key chosen by the user ('' = derived from the name).
+    avatar_color  text        NOT NULL DEFAULT '',
 
     CONSTRAINT users_role_check CHECK (role IN ('user', 'admin'))
 );

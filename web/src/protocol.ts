@@ -37,6 +37,7 @@ export interface QueueEntry {
 
 export interface Presence {
   username: string;
+  color?: string;
   role?: RoomRole;
   buffering: boolean;
 }
@@ -75,6 +76,7 @@ export interface ChatMessage {
   type?: "chat.message";
   id: number;
   username?: string;
+  color?: string;
   body: string;
   system?: boolean;
   createdMs: number;

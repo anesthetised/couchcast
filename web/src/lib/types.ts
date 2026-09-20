@@ -8,6 +8,21 @@ export interface User {
   username: string;
   role: Role;
   createdAt: string;
+  avatarColor?: AvatarColor;
+}
+
+// Palette keys shared with the server (entity.AvatarColors); the tokens
+// live in styles.css as --c-<key>.
+export const AVATAR_COLORS = ["amber", "coral", "rose", "violet", "sky", "teal", "lime", "slate"] as const;
+export type AvatarColor = (typeof AVATAR_COLORS)[number];
+
+// avatarClass picks the user's colour, or a stable one from the name so
+// people who never chose still look distinct.
+export function avatarClass(username: string, color?: string): string {
+  if (color) return `c-${color}`;
+  let h = 0;
+  for (const ch of username.toLowerCase()) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `c-${AVATAR_COLORS[h % AVATAR_COLORS.length]}`;
 }
 
 export type Visibility = "public" | "private";

@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 
 import { mentionQuery, mentions, parseMessage } from "~/lib/chatText";
 import type { ChatMessage } from "~/protocol";
+import { avatarClass } from "~/lib/types";
 import type { RoomStore } from "~/store/room";
 
 type Props = { room: RoomStore };
@@ -174,7 +175,7 @@ const Chat: Component<Props> = (props) => {
         <div class="presence" title={members().map((m) => m.username).join(", ")}>
           <For each={members().slice(0, 6)}>
             {(m) => (
-              <span class={`avatar ${m.buffering ? "buffering" : ""}`} title={`${m.username}${m.role && m.role !== "member" ? ` · ${m.role}` : ""}${m.buffering ? " · buffering" : ""}`}>
+              <span class={`avatar ${avatarClass(m.username, m.color)} ${m.buffering ? "buffering" : ""}`} title={`${m.username}${m.role && m.role !== "member" ? ` · ${m.role}` : ""}${m.buffering ? " · buffering" : ""}`}>
                 {m.username.slice(0, 1)}
               </span>
             )}
@@ -207,7 +208,7 @@ const Chat: Component<Props> = (props) => {
                 >
                   <span class="chat-time muted">{time(m.createdMs)}</span>
                   <Show when={!m.system}>
-                    <span class="chat-user">{m.username}</span>
+                    <span class={`chat-user ${avatarClass(m.username ?? "", m.color)}`}>{m.username}</span>
                   </Show>
                   <span class="chat-body">
                     <For each={parseMessage(m.body)}>

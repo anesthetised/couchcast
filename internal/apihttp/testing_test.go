@@ -73,6 +73,26 @@ func (f *fakeStore) SearchUsernames(_ context.Context, prefix string, limit int)
 	return out, nil
 }
 
+func (f *fakeStore) SetUserAvatarColor(_ context.Context, id uuid.UUID, color string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if u, ok := f.users[id]; ok {
+		u.AvatarColor = color
+		return nil
+	}
+	return repository.ErrNotFound
+}
+
+func (f *fakeStore) SetUserPassword(_ context.Context, id uuid.UUID, hash string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if u, ok := f.users[id]; ok {
+		u.PasswordHash = hash
+		return nil
+	}
+	return repository.ErrNotFound
+}
+
 func (f *fakeStore) CreateSession(_ context.Context, h []byte, uid uuid.UUID, exp time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

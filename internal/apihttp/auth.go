@@ -3,6 +3,7 @@ package apihttp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
@@ -20,6 +21,8 @@ type UserStore interface {
 	CreateUser(ctx context.Context, username, passwordHash string) (*entity.User, error)
 	GetUserByUsername(ctx context.Context, username string) (*entity.User, error)
 	SearchUsernames(ctx context.Context, prefix string, limit int) ([]string, error)
+	SetUserAvatarColor(ctx context.Context, id uuid.UUID, color string) error
+	SetUserPassword(ctx context.Context, id uuid.UUID, passwordHash string) error
 }
 
 var usernameRe = regexp.MustCompile(`^[A-Za-z0-9_]{3,32}$`)
@@ -45,14 +48,15 @@ type credentials struct {
 }
 
 type userResponse struct {
-	ID        uuid.UUID   `json:"id"`
-	Username  string      `json:"username"`
-	Role      entity.Role `json:"role"`
-	CreatedAt time.Time   `json:"createdAt"`
+	ID          uuid.UUID   `json:"id"`
+	Username    string      `json:"username"`
+	Role        entity.Role `json:"role"`
+	CreatedAt   time.Time   `json:"createdAt"`
+	AvatarColor string      `json:"avatarColor,omitempty"`
 }
 
 func toUserResponse(u *entity.User) userResponse {
-	return userResponse{ID: u.ID, Username: u.Username, Role: u.Role, CreatedAt: u.CreatedAt}
+	return userResponse{ID: u.ID, Username: u.Username, Role: u.Role, CreatedAt: u.CreatedAt, AvatarColor: u.AvatarColor}
 }
 
 // normalizeCredentials trims the username (case is kept as typed; lookups
@@ -182,4 +186,78 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toUserResponse(u))
+}
+
+// --- profile -----------------------------------------------------------------
+
+type updateMeRequest struct {
+	AvatarColor *string `json:"avatarColor"`
+}
+
+// handleUpdateMe changes profile fields; today only the avatar colour.
+func (s *Server) handleUpdateMe(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFrom(r.Context())
+	var req updateMeRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if req.AvatarColor != nil {
+		if !entity.ValidAvatarColor(*req.AvatarColor) {
+			writeError(w, http.StatusBadRequest, "unknown avatar colour")
+			return
+		}
+		if err := s.deps.Users.SetUserAvatarColor(r.Context(), u.ID, *req.AvatarColor); err != nil {
+			s.internalError(w, r, "set avatar colour", err)
+			return
+		}
+		u.AvatarColor = *req.AvatarColor
+	}
+	writeJSON(w, http.StatusOK, toUserResponse(u))
+}
+
+type changePasswordRequest struct {
+	Current string `json:"current"`
+	New     string `json:"new"`
+}
+
+// handleChangePassword verifies the current password, stores the new hash
+// and logs every other device out; this session is reissued so the caller
+// stays signed in.
+func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFrom(r.Context())
+	var req changePasswordRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	if n := len(req.New); n < minPasswordLen || n > maxPasswordLen {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("password must be %d-%d characters", minPasswordLen, maxPasswordLen))
+		return
+	}
+	ok, err := auth.VerifyPassword(u.PasswordHash, req.Current)
+	if err != nil {
+		s.internalError(w, r, "verify password", err)
+		return
+	}
+	if !ok {
+		writeError(w, http.StatusForbidden, "current password is wrong")
+		return
+	}
+	hash, err := auth.HashPassword(req.New)
+	if err != nil {
+		s.internalError(w, r, "hash password", err)
+		return
+	}
+	if err := s.deps.Users.SetUserPassword(r.Context(), u.ID, hash); err != nil {
+		s.internalError(w, r, "set password", err)
+		return
+	}
+	if err := s.deps.Sessions.RevokeAll(r.Context(), u.ID); err != nil {
+		s.internalError(w, r, "revoke sessions", err)
+		return
+	}
+	if err := s.deps.Sessions.Issue(r.Context(), w, r, u.ID); err != nil {
+		s.internalError(w, r, "issue session", err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

@@ -16,11 +16,11 @@ func (r *Repo) CreateMessage(ctx context.Context, roomID, userID uuid.UUID, body
 			INSERT INTO messages (room_id, user_id, body) VALUES ($1, $2, $3)
 			RETURNING id, room_id, user_id, body, created_at
 		)
-		SELECT ins.id, ins.room_id, ins.user_id, u.username, ins.body, ins.created_at
+		SELECT ins.id, ins.room_id, ins.user_id, u.username, u.avatar_color, ins.body, ins.created_at
 		FROM ins JOIN users u ON u.id = ins.user_id
 	`
 	var m entity.Message
-	err := r.pool.QueryRow(ctx, q, roomID, userID, body).Scan(&m.ID, &m.RoomID, &m.UserID, &m.Username, &m.Body, &m.CreatedAt)
+	err := r.pool.QueryRow(ctx, q, roomID, userID, body).Scan(&m.ID, &m.RoomID, &m.UserID, &m.Username, &m.Color, &m.Body, &m.CreatedAt)
 	if err != nil {
 		return nil, wrapErr(err)
 	}
@@ -45,7 +45,7 @@ func (r *Repo) CreateSystemMessage(ctx context.Context, roomID uuid.UUID, body s
 func (r *Repo) ListRecentMessages(ctx context.Context, roomID uuid.UUID, limit int) ([]entity.Message, error) {
 	const q = `
 		SELECT * FROM (
-			SELECT m.id, m.room_id, m.user_id, coalesce(u.username, ''), m.body, m.system, m.created_at
+			SELECT m.id, m.room_id, m.user_id, coalesce(u.username, ''), coalesce(u.avatar_color, ''), m.body, m.system, m.created_at
 			FROM messages m LEFT JOIN users u ON u.id = m.user_id
 			WHERE m.room_id = $1 AND m.deleted_at IS NULL
 			ORDER BY m.id DESC
@@ -61,7 +61,7 @@ func (r *Repo) ListRecentMessages(ctx context.Context, roomID uuid.UUID, limit i
 	var out []entity.Message
 	for rows.Next() {
 		var m entity.Message
-		if err := rows.Scan(&m.ID, &m.RoomID, &m.UserID, &m.Username, &m.Body, &m.System, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.RoomID, &m.UserID, &m.Username, &m.Color, &m.Body, &m.System, &m.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, m)

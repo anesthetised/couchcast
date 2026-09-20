@@ -26,6 +26,25 @@ type User struct {
 	BannedReason *string
 	BannedBy     *uuid.UUID
 	CreatedAt    time.Time
+	// AvatarColor is a palette key ("amber", "sky", …) or "" for the default.
+	AvatarColor string
+}
+
+// AvatarColors is the palette users pick from; the web app maps keys to
+// tokens so the same name renders the same everywhere.
+var AvatarColors = []string{"amber", "coral", "rose", "violet", "sky", "teal", "lime", "slate"}
+
+// ValidAvatarColor reports whether c is "" or a palette key.
+func ValidAvatarColor(c string) bool {
+	if c == "" {
+		return true
+	}
+	for _, k := range AvatarColors {
+		if k == c {
+			return true
+		}
+	}
+	return false
 }
 
 // IsAdmin reports whether the user is a site administrator.

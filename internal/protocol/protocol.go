@@ -191,6 +191,7 @@ type QueueEntry struct {
 // Presence is one connected viewer.
 type Presence struct {
 	Username  string          `json:"username"`
+	Color     string          `json:"color,omitempty"` // avatar palette key
 	Role      entity.RoomRole `json:"role,omitempty"`
 	Buffering bool            `json:"buffering"`
 }
@@ -232,6 +233,7 @@ type ChatMessage struct {
 	Type      string `json:"type,omitempty"`
 	ID        int64  `json:"id"`
 	Username  string `json:"username,omitempty"`
+	Color     string `json:"color,omitempty"` // author's avatar palette key
 	Body      string `json:"body"`
 	System    bool   `json:"system,omitempty"`
 	CreatedMs int64  `json:"createdMs"`

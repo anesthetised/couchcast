@@ -5,6 +5,7 @@ import Toasts from "~/components/Toasts";
 import UserMenu from "~/components/UserMenu";
 import Home from "~/routes/Home";
 import Login from "~/routes/Login";
+import Profile from "~/routes/Profile";
 import NewRoom from "~/routes/NewRoom";
 import Admin from "~/routes/Admin";
 import Register from "~/routes/Register";
@@ -31,6 +32,7 @@ const App: Component = () => (
     <Route path="/" component={Home} />
     <Route path="/new" component={NewRoom} />
     <Route path="/login" component={Login} />
+    <Route path="/me" component={Profile} />
     <Route path="/register" component={Register} />
     <Route path="/r/:slug" component={Room} />
     <Route path="/r/:slug/settings" component={RoomSettings} />

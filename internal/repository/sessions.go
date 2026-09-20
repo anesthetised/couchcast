@@ -24,7 +24,7 @@ func (r *Repo) CreateSession(ctx context.Context, tokenHash []byte, userID uuid.
 func (r *Repo) GetSessionUser(ctx context.Context, tokenHash []byte, now time.Time) (*entity.Session, *entity.User, error) {
 	const q = `
 		SELECT s.token_hash, s.user_id, s.created_at, s.last_seen_at, s.expires_at,
-		       u.id, u.username, u.password_hash, u.role, u.banned_at, u.banned_reason, u.banned_by, u.created_at
+		       u.id, u.username, u.password_hash, u.role, u.banned_at, u.banned_reason, u.banned_by, u.created_at, u.avatar_color
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = $1 AND s.expires_at > $2
@@ -36,7 +36,7 @@ func (r *Repo) GetSessionUser(ctx context.Context, tokenHash []byte, now time.Ti
 	)
 	err := r.pool.QueryRow(ctx, q, tokenHash, now).Scan(
 		&s.TokenHash, &s.UserID, &s.CreatedAt, &s.LastSeenAt, &s.ExpiresAt,
-		&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.BannedAt, &u.BannedReason, &u.BannedBy, &u.CreatedAt,
+		&u.ID, &u.Username, &u.PasswordHash, &u.Role, &u.BannedAt, &u.BannedReason, &u.BannedBy, &u.CreatedAt, &u.AvatarColor,
 	)
 	if err != nil {
 		return nil, nil, wrapErr(err)
