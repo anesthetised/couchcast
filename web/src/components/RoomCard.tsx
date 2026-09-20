@@ -88,7 +88,18 @@ const RoomCard: Component<Props> = (props) => {
   return (
     <a class="room-card" href={`/r/${props.room.slug}`} onMouseEnter={onEnter} onMouseLeave={stopPreview}>
       <div class="room-card-media">
-        <Show when={media()?.thumbnailUrl} fallback={<div class="room-card-empty">{media() ? "" : "Nothing playing"}</div>}>
+        <Show
+          when={media()?.thumbnailUrl}
+          fallback={
+            <div class="room-card-empty">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <rect x="3" y="5" width="18" height="14" rx="2" />
+                <path d="M10 9.5v5l4.5-2.5z" fill="currentColor" stroke="none" />
+              </svg>
+              <Show when={!media()}>Nothing playing</Show>
+            </div>
+          }
+        >
           {(src) => <img src={src()} alt="" loading="lazy" />}
         </Show>
         <video ref={video} muted playsinline autoplay={props.room.playback?.playing ?? false} classList={{ visible: previewing() }} />
