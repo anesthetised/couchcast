@@ -265,6 +265,10 @@ func (c *conn) dispatch(ctx context.Context, data []byte) {
 		err = c.room.SettingsSet(cmdCtx, actor, *msg.(*protocol.SettingsSet))
 	case protocol.TypeChatSend:
 		err = c.room.ChatSend(cmdCtx, actor, msg.(*protocol.ChatSend).Body)
+	case protocol.TypeChatTyping:
+		err = c.room.ChatTyping(actor)
+	case protocol.TypeReact:
+		err = c.room.React(actor, msg.(*protocol.React).Emoji)
 	case protocol.TypeChatDelete:
 		err = c.room.ChatDelete(cmdCtx, actor, msg.(*protocol.ChatDelete).ID)
 	default:

@@ -123,6 +123,57 @@ func (r *Room) ChatSend(ctx context.Context, actor access.Actor, body string) er
 	return nil
 }
 
+// ChatTyping relays a typing hint to everyone else; nothing is stored.
+func (r *Room) ChatTyping(actor access.Actor) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.requireLocked(actor, access.Chat); err != nil {
+		return err
+	}
+	out := protocol.Typing{Type: protocol.TypeTyping, Username: actor.User.Username}
+	for _, v := range r.viewers {
+		if v.user != nil && v.user.ID == actor.User.ID {
+			continue
+		}
+		v.conn.Send(out)
+	}
+	return nil
+}
+
+// Reactions is the fixed set a viewer may send.
+var Reactions = map[string]bool{"👍": true, "❤️": true, "😂": true, "😮": true, "😢": true, "🔥": true, "👏": true, "🎉": true}
+
+// React broadcasts an emoji to everyone (the sender included, so their
+// own reaction floats too); one per second per user.
+func (r *Room) React(actor access.Actor, emoji string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.requireLocked(actor, access.Chat); err != nil {
+		return err
+	}
+	if !Reactions[emoji] {
+		return invalid("unknown reaction")
+	}
+	if !r.reactLimiter(actor.User.ID).Allow() {
+		return &Error{Code: protocol.CodeRateLimit, Message: "slow down"}
+	}
+	out := protocol.Reaction{Type: protocol.TypeReaction, Username: actor.User.Username, Emoji: emoji}
+	for _, v := range r.viewers {
+		v.conn.Send(out)
+	}
+	return nil
+}
+
+// reactLimiter is the per-user reaction budget: one a second, small burst.
+func (r *Room) reactLimiter(userID uuid.UUID) *rate.Limiter {
+	l, ok := r.reactLimits[userID]
+	if !ok {
+		l = rate.NewLimiter(rate.Every(time.Second), 3)
+		r.reactLimits[userID] = l
+	}
+	return l
+}
+
 // ChatDelete removes a message (moderators only).
 func (r *Room) ChatDelete(ctx context.Context, actor access.Actor, id int64) error {
 	r.mu.Lock()

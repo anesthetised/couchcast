@@ -35,6 +35,8 @@ const (
 	TypeRateSet     = "rate.set"
 	TypeChatSend    = "chat.send"
 	TypeChatDelete  = "chat.delete"
+	TypeChatTyping  = "chat.typing"
+	TypeReact       = "react"
 	TypeReport      = "report"
 )
 
@@ -85,6 +87,11 @@ type SettingsSet struct {
 	Loop          *bool    `json:"loop"`
 }
 
+// React sends an ephemeral emoji reaction.
+type React struct {
+	Emoji string `json:"emoji"`
+}
+
 // ChatSend posts a message.
 type ChatSend struct {
 	Body string `json:"body"`
@@ -112,7 +119,7 @@ func Decode(data []byte) (string, any, error) {
 	switch env.Type {
 	case TypePing:
 		msg = &Ping{}
-	case TypePlay, TypePause, TypeNext, TypeSkipVote, TypeQueueClear, TypeSessionEnd:
+	case TypePlay, TypePause, TypeNext, TypeSkipVote, TypeQueueClear, TypeSessionEnd, TypeChatTyping:
 		msg = nil
 	case TypeSeek:
 		msg = &Seek{}
@@ -130,6 +137,8 @@ func Decode(data []byte) (string, any, error) {
 		msg = &ChatSend{}
 	case TypeChatDelete:
 		msg = &ChatDelete{}
+	case TypeReact:
+		msg = &React{}
 	case TypeReport:
 		msg = &Report{}
 	default:
@@ -154,6 +163,8 @@ const (
 	TypePlayback    = "playback"
 	TypeChatMessage = "chat.message"
 	TypeChatDeleted = "chat.deleted"
+	TypeTyping      = "typing"
+	TypeReaction    = "reaction"
 	TypeKicked      = "kicked"
 	TypeError       = "error"
 )
@@ -261,6 +272,19 @@ type ChatMessage struct {
 type ChatDeleted struct {
 	Type string `json:"type"`
 	ID   int64  `json:"id"`
+}
+
+// Typing says a user is composing; nothing is stored.
+type Typing struct {
+	Type     string `json:"type"`
+	Username string `json:"username"`
+}
+
+// Reaction is an ephemeral emoji from a viewer.
+type Reaction struct {
+	Type     string `json:"type"`
+	Username string `json:"username"`
+	Emoji    string `json:"emoji"`
 }
 
 // Kicked tells the client its connection is being closed on purpose.

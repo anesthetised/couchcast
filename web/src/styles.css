@@ -2609,3 +2609,138 @@ textarea {
 .badge.rate {
   font-variant-numeric: tabular-nums;
 }
+
+/* --- chat: typing, timecodes, link cards ---------------------------------- */
+
+.chat-typing {
+  margin: 0.25rem 0 0;
+  font-style: italic;
+  min-height: 1.2em;
+}
+
+.timecode {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+button.timecode {
+  font-size: inherit;
+  padding: 0;
+}
+
+.link-card {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin: 0.3rem 0 0.2rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  max-width: 100%;
+}
+
+.link-card img {
+  width: 64px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex: none;
+}
+
+.link-card-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.link-card-title {
+  font-weight: 500;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fs-chat .link-card {
+  background: rgba(11, 13, 18, 0.6);
+}
+
+/* --- reactions ------------------------------------------------------------ */
+
+.reactions {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.reaction {
+  position: absolute;
+  bottom: 12%;
+  font-size: 2rem;
+  line-height: 1;
+  animation: float-up 2.5s ease-out forwards;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6));
+}
+
+@keyframes float-up {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(0.6);
+  }
+  15% {
+    opacity: 1;
+    transform: translateY(-10%) scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-260%) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reaction {
+    animation: fade-out 2.5s ease-out forwards;
+  }
+  @keyframes fade-out {
+    0% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+}
+
+.react-menu {
+  position: relative;
+}
+
+.react-bar {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.15rem;
+  padding: 0.3rem;
+  border-radius: var(--radius-pill);
+  background: var(--surface-3);
+  box-shadow: var(--shadow-1);
+  z-index: 6;
+}
+
+.react-btn {
+  background: none;
+  border: none;
+  padding: 0.25rem;
+  font-size: 1.25rem;
+  line-height: 1;
+  border-radius: 50%;
+}
+
+.react-btn:hover {
+  background: var(--surface-2);
+  transform: scale(1.2);
+}

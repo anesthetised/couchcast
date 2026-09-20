@@ -99,7 +99,11 @@ and a production image build.
   second retry ends the session (`store.ended()`) with a full-stage notice.
   `Player.tsx` owns the hotkeys (Space, ←/→, F, M, N, `?` — ignored in inputs),
   persists volume/mute/quality in `localStorage` (`couchcast.*`) and shows
-  the sync state as a dot (click for the debug overlay). When the browser
+  the sync state as a dot (click for the debug overlay). `chat.typing`
+  and `react {emoji}` are ephemeral fan-outs (never stored; reactions are
+  rate limited per user); `lib/chatText.ts` also turns timecodes into seek
+  buttons for moderators, and video links in recent messages unfurl via
+  the probe endpoint (`LinkCard`, one probe per URL per page). When the browser
   rejects `play()` (autoplay policy) `sync.ts` reports it and the player
   shows a tap-to-play gate that resumes inside the gesture.
 - Site administration: `couchcast admin grant|revoke <username>` sets the

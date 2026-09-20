@@ -22,6 +22,7 @@ const UP_NEXT_WINDOW_MS = 5000;
 const SEEK_STEP_MS = 5000;
 const VOLUME_STEP = 0.05;
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
+const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "👏", "🎉"];
 const CLICK_DELAY_MS = 220; // single click waits this long for a double click
 
 type SyncState = "ok" | "nudge" | "seek" | "off";
@@ -52,6 +53,12 @@ const Player: Component<Props> = (props) => {
   const [seekTip, setSeekTip] = createSignal<{ ms: number; x: number } | null>(null);
   const [pip, setPip] = createSignal(false);
   const [showKeys, setShowKeys] = createSignal(false);
+  const [showReactions, setShowReactions] = createSignal(false);
+  const canReact = () => props.room.state.me !== null;
+  const react = (emoji: string) => {
+    props.room.commands.react(emoji);
+    setShowReactions(false);
+  };
   const pipSupported = typeof document !== "undefined" && "pictureInPictureEnabled" in document && document.pictureInPictureEnabled;
   const rate = () => props.room.state.playback?.rate || 1;
   const stepRate = (dir: 1 | -1) => {
@@ -375,6 +382,16 @@ const Player: Component<Props> = (props) => {
           )}
         </Show>
 
+        <div class="reactions" aria-hidden="true">
+          <For each={props.room.reactions()}>
+            {(r) => (
+              <span class="reaction" style={{ left: `${10 + ((r.id * 37) % 80)}%` }} title={r.username}>
+                {r.emoji}
+              </span>
+            )}
+          </For>
+        </div>
+
         <Show when={showSync() && debug()}>
           {(d) => (
             <pre class="debug-overlay">
@@ -445,6 +462,24 @@ const Player: Component<Props> = (props) => {
         >
           <span />
         </button>
+        <Show when={canReact() && current()}>
+          <div class="react-menu">
+            <button type="button" class={`icon ${showReactions() ? "" : "dim"}`} onClick={() => setShowReactions(!showReactions())} title="React" aria-expanded={showReactions()}>
+              ☺
+            </button>
+            <Show when={showReactions()}>
+              <div class="react-bar" role="menu">
+                <For each={REACTIONS}>
+                  {(e) => (
+                    <button type="button" class="react-btn" role="menuitem" onClick={() => react(e)}>
+                      {e}
+                    </button>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </div>
+        </Show>
         <Show when={pipSupported && current()}>
           <button type="button" class={`icon ${pip() ? "" : "dim"}`} onClick={() => void togglePip()} title={pip() ? "Leave picture-in-picture" : "Picture-in-picture"}>
             ▣

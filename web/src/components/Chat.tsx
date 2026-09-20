@@ -1,6 +1,8 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type Component } from "solid-js";
 
+import LinkCard from "~/components/LinkCard";
 import { mentionQuery, mentions, parseMessage } from "~/lib/chatText";
+import { formatTime } from "~/lib/format";
 import type { ChatMessage } from "~/protocol";
 import { avatarClass } from "~/lib/types";
 import type { RoomStore } from "~/store/room";
@@ -23,6 +25,11 @@ const Chat: Component<Props> = (props) => {
   const canModerate = () => props.room.isModerator();
   const canAdd = () => canModerate() || (me() !== null && (props.room.state.snapshot?.room.settings.viewersCanAdd ?? false));
   const members = () => props.room.state.snapshot?.members ?? [];
+  const duration = () => props.room.current()?.media.durationMs ?? 0;
+  // Video links in recent messages unfurl into cards (signed-in only: the
+  // probe endpoint needs a session); older ones stay plain links.
+  const CARD_WINDOW_MS = 10 * 60_000;
+  const cardable = (createdMs: number) => me() !== null && now() - createdMs < CARD_WINDOW_MS;
   const guests = () => props.room.state.snapshot?.guests ?? 0;
 
   // Messages older than this are marked stale so the fullscreen ghost
@@ -155,10 +162,22 @@ const Chat: Component<Props> = (props) => {
     }
   };
 
+  // A typing hint at most every few seconds while the field has text.
+  const TYPING_EVERY_MS = 3_000;
+  let lastTyping = 0;
+  const hintTyping = (value: string) => {
+    if (!value.trim()) return;
+    const t = Date.now();
+    if (t - lastTyping < TYPING_EVERY_MS) return;
+    lastTyping = t;
+    props.room.commands.typing();
+  };
+
   const submit = (e: SubmitEvent) => {
     e.preventDefault();
     const text = body().trim();
     if (!text) return;
+    lastTyping = 0;
     props.room.commands.chat(text);
     setBody("");
     setMention(null);
@@ -217,6 +236,23 @@ const Chat: Component<Props> = (props) => {
                           p.text
                         ) : p.kind === "mention" ? (
                           <span class="mention">@{p.name}</span>
+                        ) : p.kind === "time" ? (
+                          <Show when={duration() > 0 && p.ms <= duration()} fallback={p.text}>
+                            <Show
+                              when={canModerate()}
+                              fallback={
+                                <span class="timecode" title="Timecode">
+                                  {p.text}
+                                </span>
+                              }
+                            >
+                              <button type="button" class="link timecode" title={`Seek to ${formatTime(p.ms)}`} onClick={() => props.room.commands.seek(p.ms)}>
+                                {p.text}
+                              </button>
+                            </Show>
+                          </Show>
+                        ) : p.video && cardable(m.createdMs) ? (
+                          <LinkCard url={p.url} canAdd={canAdd()} onAdd={(u) => props.room.commands.add(u)} />
                         ) : (
                           <>
                             <a href={p.url} target="_blank" rel="noopener noreferrer">
@@ -242,6 +278,11 @@ const Chat: Component<Props> = (props) => {
             )}
           </For>
         </ul>
+        <Show when={props.room.typing().length > 0}>
+          <p class="chat-typing muted small" aria-live="polite">
+            {typingText(props.room.typing())}
+          </p>
+        </Show>
         <Show when={unseen() > 0 && !atBottom()}>
           <button type="button" class="chat-new" onClick={scrollToBottom}>
             ↓ {unseen()} new
@@ -271,6 +312,7 @@ const Chat: Component<Props> = (props) => {
             onInput={(e) => {
               setBody(e.currentTarget.value);
               refreshMention();
+              hintTyping(e.currentTarget.value);
             }}
             onKeyDown={onKey}
             onBlur={() => window.setTimeout(() => setMention(null), 120)}
@@ -281,5 +323,11 @@ const Chat: Component<Props> = (props) => {
     </section>
   );
 };
+
+function typingText(names: string[]): string {
+  if (names.length === 1) return `${names[0]} is typing…`;
+  if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`;
+  return `${names[0]}, ${names[1]} and ${names.length - 2} more are typing…`;
+}
 
 export default Chat;

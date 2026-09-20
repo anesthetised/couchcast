@@ -1,8 +1,13 @@
 // Chat text helpers: split a message into plain text, links and mentions.
 
-export type Part = { kind: "text"; text: string } | { kind: "link"; url: string; video: boolean } | { kind: "mention"; name: string };
+export type Part =
+  | { kind: "text"; text: string }
+  | { kind: "link"; url: string; video: boolean }
+  | { kind: "mention"; name: string }
+  | { kind: "time"; text: string; ms: number };
 
-const TOKEN = /(https?:\/\/[^\s<>"']+)|(^|[^\w@])@([A-Za-z0-9_]{3,32})/g;
+// Links, @mentions and timecodes (m:ss or h:mm:ss) as whole words.
+const TOKEN = /(https?:\/\/[^\s<>"']+)|(^|[^\w@])@([A-Za-z0-9_]{3,32})|(^|[^\w:])((?:\d{1,2}:)?\d{1,2}:\d{2})(?![\w:])/g;
 const VIDEO_HOSTS = /(^|\.)(youtube\.com|youtu\.be|vimeo\.com|twitch\.tv|dailymotion\.com)$/i;
 const VIDEO_EXT = /\.(mp4|webm|mkv|mov|m3u8|mpd)(\?|$)/i;
 
@@ -41,10 +46,28 @@ export function parseMessage(body: string): Part[] {
       if (at > last) parts.push({ kind: "text", text: body.slice(last, at) });
       parts.push({ kind: "mention", name: m[3] });
       last = start + m[0].length;
+    } else if (m[5]) {
+      const lead = m[4] ?? "";
+      const at = start + lead.length;
+      const ms = parseTimecode(m[5]);
+      if (ms === null) continue;
+      if (at > last) parts.push({ kind: "text", text: body.slice(last, at) });
+      parts.push({ kind: "time", text: m[5], ms });
+      last = start + m[0].length;
     }
   }
   if (last < body.length) parts.push({ kind: "text", text: body.slice(last) });
   return parts;
+}
+
+// parseTimecode turns "1:23" or "1:02:03" into milliseconds; null when the
+// minute or second fields are out of range.
+export function parseTimecode(s: string): number | null {
+  const parts = s.split(":").map(Number);
+  if (parts.some((n) => Number.isNaN(n))) return null;
+  const [h, m, sec] = parts.length === 3 ? parts : [0, parts[0]!, parts[1]!];
+  if (m! > 59 || sec! > 59) return null;
+  return ((h! * 60 + m!) * 60 + sec!) * 1000;
 }
 
 export function mentions(body: string, username: string): boolean {

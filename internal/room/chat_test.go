@@ -129,3 +129,37 @@ func TestRoomLog(t *testing.T) {
 	lines = systemLines(owner)
 	assert.Contains(t, lines[len(lines)-1], "by vote")
 }
+
+func TestTypingAndReactions(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	c1, c2 := &fakeConn{}, &fakeConn{}
+	f.room.Join(ctx, c1, f.owner)
+	f.room.Join(ctx, c2, f.guest)
+	n1, n2 := len(c1.msgs), len(c2.msgs)
+
+	// Typing reaches everyone but the sender and is not stored.
+	require.NoError(t, f.room.ChatTyping(f.owner))
+	assert.Len(t, c1.msgs, n1)
+	require.Len(t, c2.msgs, n2+1)
+	assert.Equal(t, protocol.Typing{Type: protocol.TypeTyping, Username: "owner"}, c2.msgs[n2])
+	assert.Error(t, f.room.ChatTyping(access.Actor{}), "anonymous cannot type")
+
+	// Reactions go to all, from a fixed set, rate limited.
+	assert.Error(t, f.room.React(f.guest, "🦄"))
+	require.NoError(t, f.room.React(f.guest, "🔥"))
+	assert.Equal(t, protocol.Reaction{Type: protocol.TypeReaction, Username: "guest", Emoji: "🔥"}, c1.msgs[len(c1.msgs)-1])
+	assert.Equal(t, protocol.Reaction{Type: protocol.TypeReaction, Username: "guest", Emoji: "🔥"}, c2.msgs[len(c2.msgs)-1])
+	var limited bool
+	for range 5 {
+		if err := f.room.React(f.guest, "🔥"); err != nil {
+			limited = true
+		}
+	}
+	assert.True(t, limited)
+	msgs, err := f.repo.ListRecentMessages(ctx, f.room.ID(), 50)
+	require.NoError(t, err)
+	for _, m := range msgs {
+		assert.NotContains(t, m.Body, "🔥")
+	}
+}

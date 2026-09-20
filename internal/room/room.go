@@ -127,9 +127,10 @@ type Room struct {
 	rate       float64 // playback speed, 1 = normal
 	seq        uint64
 
-	viewers    map[Conn]*viewer
-	skipVotes  map[uuid.UUID]struct{}
-	chatLimits map[uuid.UUID]*rate.Limiter
+	viewers     map[Conn]*viewer
+	skipVotes   map[uuid.UUID]struct{}
+	chatLimits  map[uuid.UUID]*rate.Limiter
+	reactLimits map[uuid.UUID]*rate.Limiter
 	// leftAt remembers when a user's last connection closed, so a quick
 	// reconnect (reload, network blip) is not logged as a new join; the
 	// matching timer logs "left" once the grace period passes.
@@ -153,21 +154,22 @@ func load(ctx context.Context, deps Deps, id uuid.UUID) (*Room, error) {
 	}
 
 	r := &Room{
-		deps:       deps,
-		info:       info,
-		owner:      owner.Username,
-		media:      map[uuid.UUID]*entity.Media{},
-		viewers:    map[Conn]*viewer{},
-		skipVotes:  map[uuid.UUID]struct{}{},
-		chatLimits: map[uuid.UUID]*rate.Limiter{},
-		leftAt:     map[uuid.UUID]time.Time{},
-		leftTimers: map[uuid.UUID]*time.Timer{},
-		current:    info.CurrentItemID,
-		playing:    info.Playing,
-		positionMs: info.PositionMs,
-		positionAt: info.PositionAt,
-		rate:       info.Rate,
-		lastActive: deps.Now(),
+		deps:        deps,
+		info:        info,
+		owner:       owner.Username,
+		media:       map[uuid.UUID]*entity.Media{},
+		viewers:     map[Conn]*viewer{},
+		skipVotes:   map[uuid.UUID]struct{}{},
+		chatLimits:  map[uuid.UUID]*rate.Limiter{},
+		reactLimits: map[uuid.UUID]*rate.Limiter{},
+		leftAt:      map[uuid.UUID]time.Time{},
+		leftTimers:  map[uuid.UUID]*time.Timer{},
+		current:     info.CurrentItemID,
+		playing:     info.Playing,
+		positionMs:  info.PositionMs,
+		positionAt:  info.PositionAt,
+		rate:        info.Rate,
+		lastActive:  deps.Now(),
 	}
 	if r.rate <= 0 {
 		r.rate = 1

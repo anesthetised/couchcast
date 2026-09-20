@@ -108,6 +108,17 @@ export interface ChatDeleted {
   id: number;
 }
 
+export interface Typing {
+  type: "typing";
+  username: string;
+}
+
+export interface Reaction {
+  type: "reaction";
+  username: string;
+  emoji: string;
+}
+
 export interface Kicked {
   type: "kicked";
   reason: string;
@@ -126,6 +137,8 @@ export type ServerMessage =
   | PlaybackMessage
   | ChatMessage
   | ChatDeleted
+  | Typing
+  | Reaction
   | Kicked
   | ErrorMessage;
 
@@ -149,4 +162,6 @@ export type ClientMessage =
   | { type: "settings.set"; voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean; loop?: boolean }
   | { type: "chat.send"; body: string }
   | { type: "chat.delete"; id: number }
+  | { type: "chat.typing" }
+  | { type: "react"; emoji: string }
   | { type: "report"; state: "playing" | "buffering" | "ended"; positionMs: number };
