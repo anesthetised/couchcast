@@ -3,10 +3,11 @@ import { createResource, createSignal, For, Show, type Component } from "solid-j
 
 import UsernamePicker from "~/components/UsernamePicker";
 import { rooms } from "~/lib/rooms";
+import { toast } from "~/lib/toast";
 import { isModerator, type Visibility } from "~/lib/types";
 
-// Room administration: general settings (owner), moderators (owner),
-// members, bans and invites (moderators).
+// Room administration: general settings (owner), people (members, bans,
+// invites — moderators). Sections, not cards; one table for people.
 const RoomSettings: Component = () => {
   const params = useParams<{ slug: string }>();
   const navigate = useNavigate();
@@ -17,17 +18,12 @@ const RoomSettings: Component = () => {
     rooms.bans,
   );
 
-  const [error, setError] = createSignal<string | null>(null);
-  const [notice, setNotice] = createSignal<string | null>(null);
-
   const run = async (label: string, fn: () => Promise<unknown>) => {
-    setError(null);
-    setNotice(null);
     try {
       await fn();
-      setNotice(label);
+      toast(label);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      toast(err instanceof Error ? err.message : String(err), "error");
     }
   };
 
@@ -48,11 +44,7 @@ const RoomSettings: Component = () => {
   const saveGeneral = (e: SubmitEvent) => {
     e.preventDefault();
     void run("Saved.", async () => {
-      const updated = await rooms.update(params.slug, {
-        name: name().trim(),
-        slug: slug().trim(),
-        visibility: visibility(),
-      });
+      const updated = await rooms.update(params.slug, { name: name().trim(), slug: slug().trim(), visibility: visibility() });
       setRoom(updated);
       if (updated.slug !== params.slug) navigate(`/r/${updated.slug}/settings`, { replace: true });
     });
@@ -60,7 +52,7 @@ const RoomSettings: Component = () => {
 
   const deleteRoom = () => {
     if (!confirm("Delete this room? This cannot be undone.")) return;
-    void run("Deleted.", async () => {
+    void run("Room deleted.", async () => {
       await rooms.remove(params.slug);
       navigate("/", { replace: true });
     });
@@ -68,7 +60,7 @@ const RoomSettings: Component = () => {
 
   // --- people --------------------------------------------------------------
   const [inviteNames, setInviteNames] = createSignal<string[]>([]);
-  const [banName, setBanName] = createSignal("");
+  const [banNames, setBanNames] = createSignal<string[]>([]);
   const [banReason, setBanReason] = createSignal("");
 
   const invite = (e: SubmitEvent) => {
@@ -83,143 +75,199 @@ const RoomSettings: Component = () => {
 
   const ban = (e: SubmitEvent) => {
     e.preventDefault();
-    void run(`Banned ${banName()}.`, async () => {
-      await rooms.ban(params.slug, banName().trim(), banReason().trim());
-      setBanName("");
+    const names = banNames();
+    if (!names.length) return;
+    void run(`Banned ${names.join(", ")}.`, async () => {
+      for (const n of names) await rooms.ban(params.slug, n, banReason().trim());
+      setBanNames([]);
       setBanReason("");
       void reloadBans();
       void reloadMembers();
     });
   };
 
+  const banned = (username: string) => (bans() ?? []).find((b) => b.username === username);
+
   return (
     <Show when={room()} fallback={<p class="muted">{room.error ? String(room.error) : "Loading…"}</p>}>
       {(r) => {
         seedGeneral();
         return (
-          <div class="stack">
-            <header class="card room-header">
-              <div>
-                <h1>{r().name} — settings</h1>
-                <p class="muted">
-                  <a href={`/r/${r().slug}`}>← back to room</a>
-                </p>
+          <div class="settings">
+            <header class="room-head">
+              <div class="room-title">
+                <h1>{r().name}</h1>
+                <div class="room-meta">
+                  <a class="muted small" href={`/r/${r().slug}`}>
+                    ← back to room
+                  </a>
+                </div>
               </div>
             </header>
 
-            <Show when={error()}>{(msg) => <p class="card error">{msg()}</p>}</Show>
-            <Show when={notice()}>{(msg) => <p class="card ok">{msg()}</p>}</Show>
-
             <Show when={isOwner()}>
-              <form class="card form" onSubmit={saveGeneral}>
-                <h2>General</h2>
-                <label>
-                  Name
-                  <input type="text" required maxLength={80} value={name()} onInput={(e) => setName(e.currentTarget.value)} />
-                </label>
-                <label>
-                  Link
-                  <div class="slug-input">
-                    <span class="muted">/r/</span>
-                    <input type="text" required pattern="[A-Za-z0-9-]{3,32}" value={slug()} onInput={(e) => setSlug(e.currentTarget.value)} />
+              <form class="settings-section" onSubmit={saveGeneral}>
+                <div class="settings-label">
+                  <h2>General</h2>
+                  <p class="muted small">Name, link and who can enter.</p>
+                </div>
+                <div class="settings-body form">
+                  <label>
+                    Name
+                    <input type="text" required maxLength={80} value={name()} onInput={(e) => setName(e.currentTarget.value)} />
+                  </label>
+                  <label>
+                    Link
+                    <div class="slug-input">
+                      <span class="muted">/r/</span>
+                      <input type="text" required pattern="[A-Za-z0-9-]{3,32}" value={slug()} onInput={(e) => setSlug(e.currentTarget.value)} />
+                    </div>
+                  </label>
+                  <fieldset class="radio-row">
+                    <label class="radio">
+                      <input type="radio" name="vis" checked={visibility() === "public"} onChange={() => setVisibility("public")} />
+                      Public — anyone with the link can watch
+                    </label>
+                    <label class="radio">
+                      <input type="radio" name="vis" checked={visibility() === "private"} onChange={() => setVisibility("private")} />
+                      Private — invite only
+                    </label>
+                  </fieldset>
+                  <div class="actions">
+                    <button type="submit">Save</button>
                   </div>
-                </label>
-                <fieldset class="radio-row">
-                  <label class="radio">
-                    <input type="radio" name="vis" checked={visibility() === "public"} onChange={() => setVisibility("public")} />
-                    Public
-                  </label>
-                  <label class="radio">
-                    <input type="radio" name="vis" checked={visibility() === "private"} onChange={() => setVisibility("private")} />
-                    Private
-                  </label>
-                </fieldset>
-                <div class="actions">
-                  <button type="submit">Save</button>
-                  <button type="button" class="danger" onClick={deleteRoom}>
-                    Delete room
-                  </button>
                 </div>
               </form>
             </Show>
 
-            <section class="card">
-              <h2>Members</h2>
-              <ul class="list">
-                <For each={members() ?? []}>
-                  {(m) => (
-                    <li class="row">
-                      <span>
-                        {m.username} <span class="muted">{m.role}</span>
-                      </span>
-                      <span class="actions">
-                        <Show when={isOwner() && m.role === "member"}>
-                          <button type="button" class="link" onClick={() => void run(`${m.username} is now a moderator.`, async () => { await rooms.addModerator(params.slug, m.username); void reloadMembers(); })}>
-                            Make moderator
-                          </button>
-                        </Show>
-                        <Show when={isOwner() && m.role === "moderator"}>
-                          <button type="button" class="link" onClick={() => void run(`${m.username} is no longer a moderator.`, async () => { await rooms.removeModerator(params.slug, m.username); void reloadMembers(); })}>
-                            Remove moderator
-                          </button>
-                        </Show>
-                        <Show when={m.role !== "owner" && (isOwner() || m.role === "member")}>
-                          <button type="button" class="link" onClick={() => void run(`Removed ${m.username}.`, async () => { await rooms.removeMember(params.slug, m.username); void reloadMembers(); })}>
-                            Remove
-                          </button>
-                        </Show>
-                      </span>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </section>
-
-            <form class="card form" onSubmit={invite}>
-              <h2>Invite</h2>
-              <label>
-                Usernames
-                <UsernamePicker value={inviteNames()} onChange={setInviteNames} />
-              </label>
-              <div class="actions">
-                <button type="submit" disabled={inviteNames().length === 0}>
-                  Send invite{inviteNames().length === 1 ? "" : "s"}
-                </button>
+            <section class="settings-section">
+              <div class="settings-label">
+                <h2>People</h2>
+                <p class="muted small">Members, roles and bans.</p>
               </div>
-            </form>
+              <div class="settings-body">
+                <table class="table">
+                  <thead>
+                    <tr>
+                      <th>User</th>
+                      <th>Role</th>
+                      <th>Since</th>
+                      <th />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <For each={members() ?? []}>
+                      {(m) => (
+                        <tr class={banned(m.username) ? "muted" : ""}>
+                          <td>
+                            {m.username}
+                            <Show when={banned(m.username)}>
+                              {(b) => <span class="badge status-failed"> banned{b().reason ? ` · ${b().reason}` : ""}</span>}
+                            </Show>
+                          </td>
+                          <td>
+                            <span class={`badge ${m.role !== "member" ? "role" : ""}`}>{m.role}</span>
+                          </td>
+                          <td class="muted small">{new Date(m.joinedAt).toLocaleDateString()}</td>
+                          <td class="row-actions">
+                            <Show when={isOwner() && m.role === "member"}>
+                              <button type="button" class="link" onClick={() => void run(`${m.username} is now a moderator.`, async () => { await rooms.addModerator(params.slug, m.username); void reloadMembers(); })}>
+                                Make moderator
+                              </button>
+                            </Show>
+                            <Show when={isOwner() && m.role === "moderator"}>
+                              <button type="button" class="link" onClick={() => void run(`${m.username} is no longer a moderator.`, async () => { await rooms.removeModerator(params.slug, m.username); void reloadMembers(); })}>
+                                Demote
+                              </button>
+                            </Show>
+                            <Show when={m.role !== "owner" && (isOwner() || m.role === "member")}>
+                              <Show
+                                when={banned(m.username)}
+                                fallback={
+                                  <button type="button" class="link danger-text" onClick={() => void run(`Banned ${m.username}.`, async () => { await rooms.ban(params.slug, m.username, ""); void reloadBans(); })}>
+                                    Ban
+                                  </button>
+                                }
+                              >
+                                <button type="button" class="link" onClick={() => void run(`Unbanned ${m.username}.`, async () => { await rooms.unban(params.slug, m.username); void reloadBans(); })}>
+                                  Unban
+                                </button>
+                              </Show>
+                              <button type="button" class="link danger-text" onClick={() => void run(`Removed ${m.username}.`, async () => { await rooms.removeMember(params.slug, m.username); void reloadMembers(); })}>
+                                Remove
+                              </button>
+                            </Show>
+                          </td>
+                        </tr>
+                      )}
+                    </For>
+                    <For each={(bans() ?? []).filter((b) => !(members() ?? []).some((m) => m.username === b.username))}>
+                      {(b) => (
+                        <tr class="muted">
+                          <td>
+                            {b.username} <span class="badge status-failed">banned{b.reason ? ` · ${b.reason}` : ""}</span>
+                          </td>
+                          <td>
+                            <span class="badge">not a member</span>
+                          </td>
+                          <td class="small">{new Date(b.createdAt).toLocaleDateString()}</td>
+                          <td class="row-actions">
+                            <button type="button" class="link" onClick={() => void run(`Unbanned ${b.username}.`, async () => { await rooms.unban(params.slug, b.username); void reloadBans(); })}>
+                              Unban
+                            </button>
+                          </td>
+                        </tr>
+                      )}
+                    </For>
+                  </tbody>
+                </table>
 
-            <section class="card">
-              <h2>Bans</h2>
-              <ul class="list">
-                <For each={bans() ?? []} fallback={<li class="muted">Nobody is banned.</li>}>
-                  {(b) => (
-                    <li class="row">
-                      <span>
-                        {b.username} <span class="muted">{b.reason}</span>
-                      </span>
-                      <button type="button" class="link" onClick={() => void run(`Unbanned ${b.username}.`, async () => { await rooms.unban(params.slug, b.username); void reloadBans(); })}>
-                        Unban
+                <div class="settings-forms">
+                  <form class="form" onSubmit={invite}>
+                    <label>
+                      Invite
+                      <UsernamePicker value={inviteNames()} onChange={setInviteNames} placeholder="username" />
+                    </label>
+                    <div class="actions">
+                      <button type="submit" class="ghost" disabled={inviteNames().length === 0}>
+                        Send invite{inviteNames().length === 1 ? "" : "s"}
                       </button>
-                    </li>
-                  )}
-                </For>
-              </ul>
-              <form class="form" onSubmit={ban}>
-                <label>
-                  Username
-                  <input type="text" required value={banName()} onInput={(e) => setBanName(e.currentTarget.value)} />
-                </label>
-                <label>
-                  <span>
-                    Reason <span class="muted">(optional)</span>
-                  </span>
-                  <input type="text" maxLength={200} value={banReason()} onInput={(e) => setBanReason(e.currentTarget.value)} />
-                </label>
-                <button type="submit" class="danger">
-                  Ban
-                </button>
-              </form>
+                    </div>
+                  </form>
+                  <form class="form" onSubmit={ban}>
+                    <label>
+                      Ban
+                      <UsernamePicker value={banNames()} onChange={setBanNames} placeholder="username" />
+                    </label>
+                    <label>
+                      <span>
+                        Reason <span class="muted">(optional)</span>
+                      </span>
+                      <input type="text" maxLength={200} value={banReason()} onInput={(e) => setBanReason(e.currentTarget.value)} />
+                    </label>
+                    <div class="actions">
+                      <button type="submit" class="danger" disabled={banNames().length === 0}>
+                        Ban
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
             </section>
+
+            <Show when={isOwner()}>
+              <section class="settings-section">
+                <div class="settings-label">
+                  <h2>Danger zone</h2>
+                  <p class="muted small">Deleting removes the queue, chat and memberships.</p>
+                </div>
+                <div class="settings-body">
+                  <button type="button" class="danger" onClick={deleteRoom}>
+                    Delete room
+                  </button>
+                </div>
+              </section>
+            </Show>
           </div>
         );
       }}

@@ -1,4 +1,4 @@
-import { createSignal, Show, type Component } from "solid-js";
+import { createSignal, onCleanup, onMount, Show, type Component } from "solid-js";
 
 import { reports, type ReportReason } from "~/lib/admin";
 
@@ -10,6 +10,31 @@ const ReportDialog: Component<Props> = (props) => {
   const [comment, setComment] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
   const [done, setDone] = createSignal(false);
+  let dialog!: HTMLFormElement;
+
+  // Keep focus inside the dialog; Esc closes it.
+  onMount(() => {
+    const focusables = () =>
+      [...dialog.querySelectorAll<HTMLElement>("input, select, button, textarea, [tabindex]:not([tabindex='-1'])")].filter((el) => !el.hasAttribute("disabled"));
+    focusables()[0]?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") return props.onClose();
+      if (e.key !== "Tab") return;
+      const list = focusables();
+      const first = list[0];
+      const last = list[list.length - 1];
+      if (!first || !last) return;
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    onCleanup(() => document.removeEventListener("keydown", onKey));
+  });
 
   const submit = async (e: SubmitEvent) => {
     e.preventDefault();
@@ -24,8 +49,8 @@ const ReportDialog: Component<Props> = (props) => {
 
   return (
     <div class="modal-backdrop" onClick={props.onClose}>
-      <form class="card form modal" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <h2>Report video</h2>
+      <form class="card form modal" role="dialog" aria-modal="true" aria-labelledby="report-title" ref={dialog} onClick={(e) => e.stopPropagation()} onSubmit={submit}>
+        <h2 id="report-title">Report video</h2>
         <p class="muted small">{props.title}</p>
         <Show when={!done()} fallback={<p class="ok">Thanks, an administrator will review it.</p>}>
           <label>

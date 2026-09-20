@@ -1803,3 +1803,198 @@ a.username:hover {
   }
 }
 
+/* --- motion & mobile ------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+@media (max-width: 640px) {
+  .page {
+    padding: 0 0.85rem;
+    margin-top: 1rem;
+  }
+
+  .topbar {
+    padding: 0.6rem 0.85rem;
+  }
+
+  .usermenu .username {
+    display: none;
+  }
+
+  .hero h1 {
+    font-size: 1.5rem;
+  }
+
+  .room-head {
+    flex-direction: column;
+  }
+
+  .room-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .controls {
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .controls .icon {
+    padding: 0.5rem 0.6rem;
+    font-size: 1.1rem;
+  }
+
+  .controls .volume {
+    display: none;
+  }
+
+  .controls .seek {
+    flex-basis: 100%;
+    order: -1;
+  }
+
+  .room-chat {
+    height: 420px;
+  }
+
+  .thumb,
+  .thumb img,
+  .thumb-empty {
+    width: 84px;
+  }
+
+  .thumb img,
+  .thumb-empty {
+    height: 47px;
+  }
+}
+
+/* ==========================================================================
+   Room settings
+   Sections split into a label column and a body column, separated by
+   dividers; people are one table with actions revealed on hover.
+   ========================================================================== */
+
+.settings {
+  max-width: 920px;
+  display: flex;
+  flex-direction: column;
+}
+
+.settings > .room-head {
+  padding-bottom: 1.25rem;
+}
+
+.settings-section {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 2rem;
+  padding: 1.75rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.settings-label h2 {
+  font-size: var(--fs-md);
+  margin: 0 0 0.25rem;
+}
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.settings-body.form {
+  gap: 1rem;
+}
+
+.settings-body > button {
+  align-self: flex-start;
+}
+
+.settings-body input[type="text"] {
+  max-width: 360px;
+}
+
+.settings-forms {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 2rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.settings-forms .form {
+  gap: 0.75rem;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.table th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 0.6rem 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.table td {
+  padding: 0.55rem 0.6rem 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.table td:last-child,
+.table th:last-child {
+  padding-right: 0;
+}
+
+.table tr.muted td {
+  color: var(--muted);
+}
+
+.row-actions {
+  text-align: right;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 120ms;
+}
+
+.row-actions .link {
+  margin-left: 0.5rem;
+}
+
+.table tr:hover .row-actions,
+.table tr:focus-within .row-actions {
+  opacity: 1;
+}
+
+@media (max-width: 720px) {
+  .settings-section {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .row-actions {
+    opacity: 1;
+    white-space: normal;
+  }
+}
