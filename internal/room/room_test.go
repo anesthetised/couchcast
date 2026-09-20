@@ -457,3 +457,33 @@ func TestEndSession(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, saved.CurrentItemID)
 }
+
+func TestPlaybackRate(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	conn := &fakeConn{}
+	f.room.Join(ctx, conn, f.owner)
+	f.ready("https://a", 100_000)
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false))
+	assert.Error(t, f.room.SetRate(ctx, f.guest, 2))
+	assert.Error(t, f.room.SetRate(ctx, f.owner, 3))
+
+	// 10 s at 1×, then 10 s at 2× → 30 s.
+	f.now = f.now.Add(10 * time.Second)
+	require.NoError(t, f.room.SetRate(ctx, f.owner, 2))
+	pb := conn.last().(protocol.Playback)
+	assert.EqualValues(t, 10_000, pb.PositionMs)
+	assert.EqualValues(t, 2, pb.Rate)
+	f.now = f.now.Add(10 * time.Second)
+	require.NoError(t, f.room.Pause(ctx, f.owner))
+	pb = conn.last().(protocol.Playback)
+	assert.EqualValues(t, 30_000, pb.PositionMs)
+
+	// Persisted, and reset by the next item.
+	saved, err := f.repo.GetRoomByID(ctx, f.room.ID())
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, saved.Rate)
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://b", false))
+	require.NoError(t, f.room.Next(ctx, f.owner))
+	assert.EqualValues(t, 1, conn.lastSnapshot().Playback.Rate)
+}

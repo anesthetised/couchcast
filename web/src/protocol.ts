@@ -134,6 +134,7 @@ export type ClientMessage =
   | { type: "play" }
   | { type: "pause" }
   | { type: "seek"; positionMs: number }
+  | { type: "rate.set"; rate: number }
   | { type: "next" }
   | { type: "jump"; itemId: string }
   | { type: "queue.add"; url: string; next?: boolean }

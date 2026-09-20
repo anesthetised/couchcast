@@ -55,6 +55,7 @@ type Room struct {
 	Playing       bool
 	PositionMs    int64
 	PositionAt    time.Time
+	Rate          float64
 
 	CreatedAt time.Time
 	UpdatedAt time.Time

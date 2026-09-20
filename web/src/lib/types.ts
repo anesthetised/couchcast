@@ -106,7 +106,7 @@ export interface DirectoryRoom {
     manifest?: string;
     token?: string;
   } | null;
-  playback: { playing: boolean; positionMs: number; atServerMs: number } | null;
+  playback: { playing: boolean; positionMs: number; atServerMs: number; rate: number } | null;
 }
 
 export interface Directory {

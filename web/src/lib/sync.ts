@@ -71,9 +71,10 @@ export class Synchronizer {
     if (target === null) return;
     const drift = v.currentTime * 1000 - target;
 
+    const base = p.rate > 0 ? p.rate : 1;
     if (!p.playing) {
       if (!v.paused) v.pause();
-      v.playbackRate = 1;
+      v.playbackRate = base;
       if (Math.abs(drift) > 200 && !this.seeking) {
         this.seekTo(target);
         this.onDebug({ targetMs: target, driftMs: drift, rate: 1, action: "seek" });
@@ -90,17 +91,18 @@ export class Synchronizer {
 
     if (this.seeking) return;
 
+    // Nudges are relative to the room's speed, so 1.5× stays 1.5×.
     if (Math.abs(drift) > SEEK_AT) {
       // Land slightly ahead: the seek itself takes time.
       this.seekTo(target + 150);
-      v.playbackRate = 1;
-      this.onDebug({ targetMs: target, driftMs: drift, rate: 1, action: "seek" });
+      v.playbackRate = base;
+      this.onDebug({ targetMs: target, driftMs: drift, rate: base, action: "seek" });
     } else if (Math.abs(drift) > DEADBAND) {
-      v.playbackRate = drift > 0 ? 1 - NUDGE : 1 + NUDGE;
+      v.playbackRate = base * (drift > 0 ? 1 - NUDGE : 1 + NUDGE);
       this.onDebug({ targetMs: target, driftMs: drift, rate: v.playbackRate, action: "nudge" });
     } else {
-      v.playbackRate = 1;
-      this.onDebug({ targetMs: target, driftMs: drift, rate: 1, action: "idle" });
+      v.playbackRate = base;
+      this.onDebug({ targetMs: target, driftMs: drift, rate: base, action: "idle" });
     }
   }
 

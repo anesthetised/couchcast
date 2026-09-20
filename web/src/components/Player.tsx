@@ -21,6 +21,7 @@ type Props = {
 const UP_NEXT_WINDOW_MS = 5000;
 const SEEK_STEP_MS = 5000;
 const VOLUME_STEP = 0.05;
+const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const CLICK_DELAY_MS = 220; // single click waits this long for a double click
 
 type SyncState = "ok" | "nudge" | "seek" | "off";
@@ -52,6 +53,13 @@ const Player: Component<Props> = (props) => {
   const [pip, setPip] = createSignal(false);
   const [showKeys, setShowKeys] = createSignal(false);
   const pipSupported = typeof document !== "undefined" && "pictureInPictureEnabled" in document && document.pictureInPictureEnabled;
+  const rate = () => props.room.state.playback?.rate || 1;
+  const stepRate = (dir: 1 | -1) => {
+    if (!canControl() || !current()) return;
+    const i = RATES.indexOf(rate());
+    const next = RATES[Math.max(0, Math.min(RATES.length - 1, (i < 0 ? RATES.indexOf(1) : i) + dir))];
+    if (next !== undefined && next !== rate()) props.room.commands.rate(next);
+  };
 
   const current = () => props.room.current();
   const canControl = () => props.room.isModerator();
@@ -298,6 +306,14 @@ const Player: Component<Props> = (props) => {
       case "N":
         if (canControl() && current()) props.room.commands.next();
         break;
+      case "<":
+      case ",":
+        stepRate(-1);
+        break;
+      case ">":
+      case ".":
+        stepRate(1);
+        break;
     }
   };
 
@@ -404,6 +420,22 @@ const Player: Component<Props> = (props) => {
           <option value="auto">Auto{activeHeight() && chosen() === null ? ` (${activeHeight()}p)` : ""}</option>
           <For each={qualities()}>{(q) => <option value={String(q.height)}>{q.height}p</option>}</For>
         </select>
+        <Show when={current()}>
+          <Show
+            when={canControl()}
+            fallback={
+              <Show when={rate() !== 1}>
+                <span class="badge rate" title="Playback speed">
+                  {rate()}×
+                </span>
+              </Show>
+            }
+          >
+            <select class="quality rate-select" value={String(rate())} onChange={(e) => props.room.commands.rate(Number(e.currentTarget.value))} aria-label="Playback speed" title="Speed (< >)">
+              <For each={RATES}>{(r) => <option value={String(r)}>{r}×</option>}</For>
+            </select>
+          </Show>
+        </Show>
         <button
           type="button"
           class={`icon sync-dot ${syncState()}`}

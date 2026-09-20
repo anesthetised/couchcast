@@ -2605,3 +2605,7 @@ textarea {
 .settings-body textarea {
   max-width: 480px;
 }
+
+.badge.rate {
+  font-variant-numeric: tabular-nums;
+}

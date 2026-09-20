@@ -153,6 +153,7 @@ export function createRoomStore(slug: string) {
       play: () => send({ type: "play" }),
       pause: () => send({ type: "pause" }),
       seek: (positionMs: number) => send({ type: "seek", positionMs: Math.round(positionMs) }),
+      rate: (rate: number) => send({ type: "rate.set", rate }),
       next: () => send({ type: "next" }),
       jump: (itemId: string) => send({ type: "jump", itemId }),
       add: (url: string, opts: { next?: boolean; title?: string } = {}) => {

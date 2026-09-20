@@ -187,10 +187,10 @@ func (r *Repo) ListQueueVotesByUser(ctx context.Context, roomID, userID uuid.UUI
 // UpdateRoomPlayback persists the authoritative playback state.
 func (r *Repo) UpdateRoomPlayback(ctx context.Context, roomID uuid.UUID, p entity.PlaybackState) error {
 	const q = `
-		UPDATE rooms SET current_item_id = $2, playing = $3, position_ms = $4, position_at = $5, updated_at = now()
+		UPDATE rooms SET current_item_id = $2, playing = $3, position_ms = $4, position_at = $5, rate = $6, updated_at = now()
 		WHERE id = $1
 	`
-	_, err := r.pool.Exec(ctx, q, roomID, p.CurrentItemID, p.Playing, p.PositionMs, p.PositionAt)
+	_, err := r.pool.Exec(ctx, q, roomID, p.CurrentItemID, p.Playing, p.PositionMs, p.PositionAt, p.Rate)
 	return wrapErr(err)
 }
 

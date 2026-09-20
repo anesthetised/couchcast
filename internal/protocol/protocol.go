@@ -32,6 +32,7 @@ const (
 	TypeSkipVote    = "skip.vote"
 	TypeSettingsSet = "settings.set"
 	TypeSessionEnd  = "session.end"
+	TypeRateSet     = "rate.set"
 	TypeChatSend    = "chat.send"
 	TypeChatDelete  = "chat.delete"
 	TypeReport      = "report"
@@ -50,6 +51,11 @@ type Ping struct {
 // Seek moves playback to an absolute position.
 type Seek struct {
 	PositionMs int64 `json:"positionMs"`
+}
+
+// RateSet changes the playback speed for everyone.
+type RateSet struct {
+	Rate float64 `json:"rate"`
 }
 
 // ItemRef names a queue item.
@@ -110,6 +116,8 @@ func Decode(data []byte) (string, any, error) {
 		msg = nil
 	case TypeSeek:
 		msg = &Seek{}
+	case TypeRateSet:
+		msg = &RateSet{}
 	case TypeJump, TypeQueueRemove, TypeQueueRetry, TypeQueueVote, TypeQueueReplay:
 		msg = &ItemRef{}
 	case TypeQueueAdd:

@@ -42,9 +42,10 @@ type directoryMedia struct {
 }
 
 type directoryPlayback struct {
-	Playing    bool  `json:"playing"`
-	PositionMs int64 `json:"positionMs"`
-	AtServerMs int64 `json:"atServerMs"`
+	Playing    bool    `json:"playing"`
+	PositionMs int64   `json:"positionMs"`
+	AtServerMs int64   `json:"atServerMs"`
+	Rate       float64 `json:"rate"`
 }
 
 type directoryRoom struct {
@@ -130,10 +131,10 @@ func (s *Server) handleDirectory(w http.ResponseWriter, r *http.Request) {
 			dr.Media = m
 
 			// Prefer the live clock; fall back to the persisted one.
-			pb := directoryPlayback{Playing: pr.Room.Playing, PositionMs: pr.Room.PositionMs, AtServerMs: pr.Room.PositionAt.UnixMilli()}
+			pb := directoryPlayback{Playing: pr.Room.Playing, PositionMs: pr.Room.PositionMs, AtServerMs: pr.Room.PositionAt.UnixMilli(), Rate: pr.Room.Rate}
 			if s.deps.Live != nil {
 				if livePb, ok := s.deps.Live.Playback(pr.Room.ID); ok {
-					pb = directoryPlayback{Playing: livePb.Playing, PositionMs: livePb.PositionMs, AtServerMs: livePb.AtServerMs}
+					pb = directoryPlayback{Playing: livePb.Playing, PositionMs: livePb.PositionMs, AtServerMs: livePb.AtServerMs, Rate: livePb.Rate}
 				}
 			}
 			dr.Playback = &pb

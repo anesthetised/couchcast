@@ -35,7 +35,7 @@ const RoomCard: Component<Props> = (props) => {
     const pb = props.room.playback;
     if (!pb) return 0;
     if (!pb.playing) return pb.positionMs;
-    return pb.positionMs + (Date.now() + props.serverOffsetMs - pb.atServerMs);
+    return pb.positionMs + (Date.now() + props.serverOffsetMs - pb.atServerMs) * (pb.rate || 1);
   };
 
   const stopPreview = () => {

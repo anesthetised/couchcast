@@ -82,7 +82,10 @@ and a production image build.
   add, skip, jump, vote skip) are written to chat as system messages
   (`messages.system`, no author); a leave is logged only after
   `Deps.RejoinGrace` (2 min) without a return, and a rejoin within it is
-  silent.
+  silent. `rate.set` (0.5–2×, playback controllers) changes the room's
+  speed: the authoritative clock advances at `rate`, it is persisted on
+  the room and reset to 1 when the next item starts; the web synchroniser
+  nudges relative to it.
 - `internal/hub` owns WebSocket connections (`coder/websocket`): decodes
   `internal/protocol` messages, re-resolves the actor's role/ban on every
   mutating command, and fans broadcasts out through a bounded send buffer.

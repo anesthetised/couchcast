@@ -14,7 +14,7 @@ import (
 	"github.com/anesthetised/couchcast/internal/entity"
 )
 
-const roomColumns = `id, slug, name, owner_id, visibility, description, settings, current_item_id, playing, position_ms, position_at, created_at, updated_at`
+const roomColumns = `id, slug, name, owner_id, visibility, description, settings, current_item_id, playing, position_ms, position_at, rate, created_at, updated_at`
 
 func scanRoom(row pgx.Row) (*entity.Room, error) {
 	var (
@@ -22,7 +22,7 @@ func scanRoom(row pgx.Row) (*entity.Room, error) {
 		settings []byte
 	)
 	err := row.Scan(&r.ID, &r.Slug, &r.Name, &r.OwnerID, &r.Visibility, &r.Description, &settings,
-		&r.CurrentItemID, &r.Playing, &r.PositionMs, &r.PositionAt, &r.CreatedAt, &r.UpdatedAt)
+		&r.CurrentItemID, &r.Playing, &r.PositionMs, &r.PositionAt, &r.Rate, &r.CreatedAt, &r.UpdatedAt)
 	if err != nil {
 		return nil, wrapErr(err)
 	}
@@ -160,7 +160,7 @@ type RoomWithRole struct {
 func (r *Repo) ListRoomsForUser(ctx context.Context, userID uuid.UUID) ([]RoomWithRole, error) {
 	const q = `
 		SELECT r.id, r.slug, r.name, r.owner_id, r.visibility, r.description, r.settings, r.current_item_id,
-		       r.playing, r.position_ms, r.position_at, r.created_at, r.updated_at, m.role
+		       r.playing, r.position_ms, r.position_at, r.rate, r.created_at, r.updated_at, m.role
 		FROM room_members m
 		JOIN rooms r ON r.id = m.room_id
 		WHERE m.user_id = $1
@@ -180,7 +180,7 @@ func (r *Repo) ListRoomsForUser(ctx context.Context, userID uuid.UUID) ([]RoomWi
 		)
 		rm := &item.Room
 		if err := rows.Scan(&rm.ID, &rm.Slug, &rm.Name, &rm.OwnerID, &rm.Visibility, &rm.Description, &settings, &rm.CurrentItemID,
-			&rm.Playing, &rm.PositionMs, &rm.PositionAt, &rm.CreatedAt, &rm.UpdatedAt, &item.Role); err != nil {
+			&rm.Playing, &rm.PositionMs, &rm.PositionAt, &rm.Rate, &rm.CreatedAt, &rm.UpdatedAt, &item.Role); err != nil {
 			return nil, err
 		}
 		rm.Settings = entity.DefaultSettings()
@@ -269,7 +269,7 @@ func (r *Repo) ListDirectory(ctx context.Context, q DirectoryQuery) ([]Directory
 
 	const sql = `
 		SELECT r.id, r.slug, r.name, r.owner_id, r.visibility, r.settings, r.current_item_id,
-		       r.playing, r.position_ms, r.position_at, r.created_at, r.updated_at,
+		       r.playing, r.position_ms, r.position_at, r.rate, r.created_at, r.updated_at,
 		       u.username,
 		       (SELECT count(*) FROM room_members m WHERE m.room_id = r.id),
 		       coalesce(v.viewers, 0),
@@ -319,7 +319,7 @@ func (r *Repo) ListDirectory(ctx context.Context, q DirectoryQuery) ([]Directory
 		)
 		rm := &dr.Room
 		if err := rows.Scan(&rm.ID, &rm.Slug, &rm.Name, &rm.OwnerID, &rm.Visibility, &settings, &rm.CurrentItemID,
-			&rm.Playing, &rm.PositionMs, &rm.PositionAt, &rm.CreatedAt, &rm.UpdatedAt,
+			&rm.Playing, &rm.PositionMs, &rm.PositionAt, &rm.Rate, &rm.CreatedAt, &rm.UpdatedAt,
 			&dr.Owner, &dr.MemberCount, &dr.Viewers, &dr.Live, &dr.MyRole,
 			&mediaID, &m.SourceKey, &m.SourceURL, &m.Title, &m.DurationMs, &m.ThumbnailURL,
 			&mStatus, &mProg, &m.Error, &m.SizeBytes, &mRend, &m.S3Prefix,

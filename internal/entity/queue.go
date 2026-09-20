@@ -27,4 +27,5 @@ type PlaybackState struct {
 	Playing       bool
 	PositionMs    int64
 	PositionAt    time.Time
+	Rate          float64
 }

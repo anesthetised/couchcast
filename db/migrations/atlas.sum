@@ -1,4 +1,4 @@
-h1:6VTTkXjkdWCT2PKzRAa+8mmV1NwNiK7cCJ/Q1oaEPko=
+h1:/Epa3pXe67Wr5sqf4+XK30JxIsw1LOS4wE6+HpavdZw=
 20260918235239_init.sql h1:TTCx5JLn+krsG2APMqlbCme5/4TuRR84snkav6kn9w0=
 20260919103911_usernames-keep-case.sql h1:9GQO1l8o8C4K4+1T+xWemc8iAD1mfygbF9RTyqePgpA=
 20260919104614_report-context.sql h1:oDguffL6IWAXcxgh+9oxlGemT5Qb3X4D2MBkBQUqW2w=
@@ -7,3 +7,4 @@ h1:6VTTkXjkdWCT2PKzRAa+8mmV1NwNiK7cCJ/Q1oaEPko=
 20260920130236_queue-played.sql h1:V2kv4YPbL3D3TyJm5uhRQUj01hrCnCRR/OkVlBmvMWo=
 20260920131250_rooms-description.sql h1:l1tY89kIF8c7jUCucY9Ruk4y7cI2xmO+5yF7mjcoN9g=
 20260920132338_room-invite-links.sql h1:nCDnf5F37u2piuUmIpnUzP60Odz5H+CUc9NBxjdpHuA=
+20260920133141_rooms-rate.sql h1:cZ5T1DpqGIZjmFuU4saQkrYOI2Yw3k9VvM5j4VspPPw=

@@ -108,6 +108,8 @@ CREATE TABLE rooms (
     playing         boolean     NOT NULL DEFAULT false,
     position_ms     bigint      NOT NULL DEFAULT 0,
     position_at     timestamptz NOT NULL DEFAULT now(),
+    -- Playback speed for the whole room (1 = normal).
+    rate            real        NOT NULL DEFAULT 1,
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now(),
 

@@ -124,6 +124,7 @@ type Room struct {
 	playing    bool
 	positionMs int64
 	positionAt time.Time
+	rate       float64 // playback speed, 1 = normal
 	seq        uint64
 
 	viewers    map[Conn]*viewer
@@ -165,7 +166,11 @@ func load(ctx context.Context, deps Deps, id uuid.UUID) (*Room, error) {
 		playing:    info.Playing,
 		positionMs: info.PositionMs,
 		positionAt: info.PositionAt,
+		rate:       info.Rate,
 		lastActive: deps.Now(),
+	}
+	if r.rate <= 0 {
+		r.rate = 1
 	}
 
 	if err := r.reloadQueue(ctx); err != nil {
@@ -283,7 +288,7 @@ func (r *Room) positionLocked(t time.Time) int64 {
 	if !r.playing {
 		return r.positionMs
 	}
-	pos := r.positionMs + t.Sub(r.positionAt).Milliseconds()
+	pos := r.positionMs + int64(float64(t.Sub(r.positionAt).Milliseconds())*r.rate)
 	if m := r.currentMedia(); m != nil && m.DurationMs > 0 && pos > m.DurationMs {
 		return m.DurationMs
 	}
@@ -293,12 +298,12 @@ func (r *Room) positionLocked(t time.Time) int64 {
 func (r *Room) playbackLocked() protocol.Playback {
 	return protocol.Playback{
 		Type: protocol.TypePlayback, ItemID: r.current, Playing: r.playing,
-		PositionMs: r.positionMs, AtServerMs: r.positionAt.UnixMilli(), Rate: 1, Seq: r.seq,
+		PositionMs: r.positionMs, AtServerMs: r.positionAt.UnixMilli(), Rate: r.rate, Seq: r.seq,
 	}
 }
 
 func (r *Room) stateLocked() entity.PlaybackState {
-	return entity.PlaybackState{CurrentItemID: r.current, Playing: r.playing, PositionMs: r.positionMs, PositionAt: r.positionAt}
+	return entity.PlaybackState{CurrentItemID: r.current, Playing: r.playing, PositionMs: r.positionMs, PositionAt: r.positionAt, Rate: r.rate}
 }
 
 // setPlayback updates the clock: freezes the current position and restarts
@@ -322,7 +327,7 @@ func (r *Room) scheduleAdvanceLocked() {
 	if !r.playing || m == nil || m.DurationMs <= 0 || r.current == nil {
 		return
 	}
-	remaining := time.Duration(m.DurationMs-r.positionLocked(r.now())) * time.Millisecond
+	remaining := time.Duration(float64(m.DurationMs-r.positionLocked(r.now()))/r.rate) * time.Millisecond
 	if remaining < 0 {
 		remaining = 0
 	}
@@ -357,8 +362,47 @@ func (r *Room) setCurrentLocked(item *entity.QueueItem) {
 	}
 	id := item.ID
 	r.current = &id
+	r.rate = 1 // a new video always starts at normal speed
 	m := r.media[item.MediaID]
 	r.setPlaybackLocked(m.IsReady(), 0)
+}
+
+// allowedRates are the speeds a moderator may pick.
+var allowedRates = []float64{0.5, 0.75, 1, 1.25, 1.5, 2}
+
+// SetRate changes the room's playback speed from now on.
+func (r *Room) SetRate(ctx context.Context, actor access.Actor, rate float64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.requireLocked(actor, access.ControlPlayback); err != nil {
+		return err
+	}
+	if r.current == nil {
+		return errNoCurrent
+	}
+	ok := false
+	for _, a := range allowedRates {
+		if a == rate {
+			ok = true
+			break
+		}
+	}
+	if !ok {
+		return invalid("rate must be one of 0.5, 0.75, 1, 1.25, 1.5, 2")
+	}
+	if rate == r.rate {
+		return nil
+	}
+	// Fold the elapsed time in at the old speed, then switch.
+	pos := r.positionLocked(r.now())
+	r.rate = rate
+	r.setPlaybackLocked(r.playing, pos)
+	if err := r.persistLocked(ctx); err != nil {
+		return err
+	}
+	r.logLocked(ctx, fmt.Sprintf("%s set speed to %g×", actor.User.Username, rate))
+	r.broadcastPlaybackLocked()
+	return nil
 }
 
 // nextLocked drops the current item and advances to the following one.
