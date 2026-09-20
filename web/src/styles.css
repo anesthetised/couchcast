@@ -1390,6 +1390,12 @@ progress {
   background: var(--overlay-strong);
 }
 
+/* Like the chat, the queue grows up from the controls: the list sits at
+   the bottom of the panel and scrolls when it outgrows it. */
+.fs-panel > .queue {
+  justify-content: flex-end;
+}
+
 .fs-queue .list {
   overflow-y: auto;
   min-height: 0;
@@ -1458,6 +1464,12 @@ progress {
 .stage.fullscreen.idle .fs-chat:not(:hover) .chat-line.stale,
 .stage.fullscreen.idle .fs-queue:not(:hover) .queue-actions {
   opacity: 0;
+}
+
+/* The ghost queue keeps the current item and the next two, the way the
+   ghost chat keeps only recent lines. */
+.stage.fullscreen.idle .fs-queue:not(:hover) .queue-item:nth-child(n + 4) {
+  display: none;
 }
 
 /* ==========================================================================
