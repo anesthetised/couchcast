@@ -37,7 +37,7 @@ const Queue: Component<Props> = (props) => {
         Up next <span class="muted">{items().length}</span>
       </h2>
       <Show when={items().length === 0}>
-        <p class="muted small">Nothing queued yet.</p>
+        <p class="muted small queue-empty">Nothing queued yet.</p>
       </Show>
       <ul class="list">
         <For each={items()}>

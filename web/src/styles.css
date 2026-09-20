@@ -1370,7 +1370,8 @@ progress {
 }
 
 .fs-panel .section-title,
-.fs-panel .chat-head {
+.fs-panel .chat-head,
+.fs-panel .queue-empty {
   display: none;
 }
 
