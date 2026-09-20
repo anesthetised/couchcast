@@ -1,5 +1,6 @@
 import { createEffect, createSignal, on, onCleanup, onMount, Show, For, type Component } from "solid-js";
 
+import HotkeysSheet from "~/components/HotkeysSheet";
 import { formatTime } from "~/lib/format";
 import { Player as ShakaPlayer, type QualityOption } from "~/lib/player";
 import { Synchronizer, type SyncDebug } from "~/lib/sync";
@@ -19,6 +20,8 @@ type Props = {
 
 const UP_NEXT_WINDOW_MS = 5000;
 const SEEK_STEP_MS = 5000;
+const VOLUME_STEP = 0.05;
+const CLICK_DELAY_MS = 220; // single click waits this long for a double click
 
 type SyncState = "ok" | "nudge" | "seek" | "off";
 
@@ -27,8 +30,11 @@ type SyncState = "ok" | "nudge" | "seek" | "off";
 // viewers stay in sync; non-moderators get a read-only bar.
 const Player: Component<Props> = (props) => {
   let video!: HTMLVideoElement;
+  let wrap!: HTMLDivElement;
+  let seekBar!: HTMLInputElement;
   let player: ShakaPlayer | undefined;
   let sync: Synchronizer | undefined;
+  let clickTimer: number | null = null;
 
   const [qualities, setQualities] = createSignal<QualityOption[]>([]);
   const [activeHeight, setActiveHeight] = createSignal<number | null>(null);
@@ -41,6 +47,11 @@ const Player: Component<Props> = (props) => {
   const [muted, setMuted] = createSignal(readStored("couchcast.muted", true));
   const [volume, setVolume] = createSignal(readStored("couchcast.volume", 1));
   const [loadedMediaId, setLoadedMediaId] = createSignal<string | null>(null);
+  const [blocked, setBlocked] = createSignal(false);
+  const [seekTip, setSeekTip] = createSignal<{ ms: number; x: number } | null>(null);
+  const [pip, setPip] = createSignal(false);
+  const [showKeys, setShowKeys] = createSignal(false);
+  const pipSupported = typeof document !== "undefined" && "pictureInPictureEnabled" in document && document.pictureInPictureEnabled;
 
   const current = () => props.room.current();
   const canControl = () => props.room.isModerator();
@@ -80,7 +91,15 @@ const Player: Component<Props> = (props) => {
 
     sync = new Synchronizer(video, props.room.clock);
     sync.onDebug = setDebug;
+    sync.onBlocked = setBlocked;
     sync.start();
+
+    // Wheel over the video adjusts volume; the listener must not be passive
+    // so the page does not scroll underneath.
+    wrap.addEventListener("wheel", onWheel, { passive: false });
+    onCleanup(() => wrap.removeEventListener("wheel", onWheel));
+    video.addEventListener("enterpictureinpicture", () => setPip(true));
+    video.addEventListener("leavepictureinpicture", () => setPip(false));
 
     video.muted = muted();
     video.volume = volume();
@@ -124,7 +143,9 @@ const Player: Component<Props> = (props) => {
           setLoadedMediaId(target.id);
           player.selectQuality(chosen());
         } catch (e) {
-          setError(e instanceof Error ? e.message : String(e));
+          const code = (e as { code?: number }).code;
+          // 7000 = LOAD_INTERRUPTED: a newer load superseded this one.
+          if (code !== 7000) setError(code ? `Player error ${code}` : e instanceof Error ? e.message : String(e));
         } finally {
           sync.suspended = false;
         }
@@ -161,14 +182,8 @@ const Player: Component<Props> = (props) => {
     player?.selectQuality(h);
   };
 
-  const toggleMute = () => {
-    video.muted = !video.muted;
-    setMuted(video.muted);
-    store("couchcast.muted", video.muted);
-  };
-
-  const onVolume = (e: Event) => {
-    const v = Number((e.currentTarget as HTMLInputElement).value);
+  const setVolumeTo = (v: number) => {
+    v = Math.round(Math.max(0, Math.min(1, v)) * 100) / 100;
     video.volume = v;
     setVolume(v);
     store("couchcast.volume", v);
@@ -178,6 +193,60 @@ const Player: Component<Props> = (props) => {
       store("couchcast.muted", false);
     }
   };
+
+  const onWheel = (e: WheelEvent) => {
+    if (!current()) return;
+    e.preventDefault();
+    setVolumeTo(volume() + (e.deltaY < 0 ? VOLUME_STEP : -VOLUME_STEP));
+  };
+
+  // A single click on the video toggles playback (moderators); a double
+  // click toggles fullscreen without also toggling playback.
+  const onVideoClick = (e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return; // overlay buttons handle themselves
+    if (clickTimer !== null) return;
+    clickTimer = window.setTimeout(() => {
+      clickTimer = null;
+      togglePlay();
+    }, CLICK_DELAY_MS);
+  };
+  const onVideoDblClick = (e: MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    if (clickTimer !== null) {
+      window.clearTimeout(clickTimer);
+      clickTimer = null;
+    }
+    fullscreen();
+  };
+
+  // resume runs inside the user's gesture, which is what the autoplay
+  // policy wants.
+  const resume = () => sync?.resume();
+
+  const onSeekHover = (e: MouseEvent) => {
+    const d = duration();
+    if (!d) return setSeekTip(null);
+    const r = seekBar.getBoundingClientRect();
+    const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    setSeekTip({ ms: frac * d, x: e.clientX - r.left });
+  };
+
+  const togglePip = async () => {
+    try {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else await video.requestPictureInPicture();
+    } catch {
+      // unsupported for this stream or denied
+    }
+  };
+
+  const toggleMute = () => {
+    video.muted = !video.muted;
+    setMuted(video.muted);
+    store("couchcast.muted", video.muted);
+  };
+
+  const onVolume = (e: Event) => setVolumeTo(Number((e.currentTarget as HTMLInputElement).value));
 
   const fullscreen = () => {
     if (props.onFullscreen) {
@@ -195,7 +264,15 @@ const Player: Component<Props> = (props) => {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (showKeys()) {
+      if (e.key === "Escape" || e.key === "?") setShowKeys(false);
+      return;
+    }
     switch (e.key) {
+      case "?":
+        e.preventDefault();
+        setShowKeys(true);
+        break;
       case " ":
         e.preventDefault();
         togglePlay();
@@ -225,8 +302,15 @@ const Player: Component<Props> = (props) => {
 
   return (
     <div class="player">
-      <div class="video-wrap" onDblClick={fullscreen}>
+      <div class="video-wrap" ref={wrap} onClick={onVideoClick} onDblClick={onVideoDblClick}>
         <video ref={video} playsinline />
+
+        <Show when={blocked() && current()?.media.status === "ready"}>
+          <button type="button" class="video-overlay gate" onClick={resume}>
+            <span class="gate-icon" aria-hidden="true">▶</span>
+            <span>Tap to play</span>
+          </button>
+        </Show>
 
         <Show when={!current()}>
           <div class="video-overlay quiet">
@@ -253,8 +337,10 @@ const Player: Component<Props> = (props) => {
           </div>
         </Show>
 
-        <Show when={buffering() && current()?.media.status === "ready"}>
-          <div class="video-overlay spinner">buffering…</div>
+        <Show when={buffering() && !blocked() && current()?.media.status === "ready"}>
+          <div class="video-overlay spinner" aria-label="Buffering">
+            <span class="ring" />
+          </div>
         </Show>
         <Show when={error()}>{(e) => <div class="video-overlay error">{e()}</div>}</Show>
 
@@ -288,16 +374,26 @@ const Player: Component<Props> = (props) => {
           {props.room.state.playback?.playing ? "❚❚" : "▶"}
         </button>
         <span class="time">{formatTime(nowMs())}</span>
-        <input
-          type="range"
-          class="seek"
-          min="0"
-          max={duration() || 0}
-          value={Math.min(nowMs(), duration() || 0)}
-          disabled={!canControl() || !duration()}
-          onChange={onSeekInput}
-          aria-label="Position"
-        />
+        <div class="seek-wrap" onMouseMove={onSeekHover} onMouseLeave={() => setSeekTip(null)}>
+          <input
+            ref={seekBar}
+            type="range"
+            class="seek"
+            min="0"
+            max={duration() || 0}
+            value={Math.min(nowMs(), duration() || 0)}
+            disabled={!canControl() || !duration()}
+            onChange={onSeekInput}
+            aria-label="Position"
+          />
+          <Show when={seekTip()}>
+            {(t) => (
+              <span class="seek-tip" style={{ left: `${t().x}px` }}>
+                {formatTime(t().ms)}
+              </span>
+            )}
+          </Show>
+        </div>
         <span class="time">{formatTime(duration())}</span>
         <button type="button" class="icon" onClick={toggleMute} title="Mute (M)">
           {muted() ? "🔇" : "🔊"}
@@ -316,6 +412,11 @@ const Player: Component<Props> = (props) => {
         >
           <span />
         </button>
+        <Show when={pipSupported && current()}>
+          <button type="button" class={`icon ${pip() ? "" : "dim"}`} onClick={() => void togglePip()} title={pip() ? "Leave picture-in-picture" : "Picture-in-picture"}>
+            ▣
+          </button>
+        </Show>
         <Show when={props.isFullscreen && props.onToggleQueue}>
           <button type="button" class={`icon ${props.queueVisible ? "" : "dim"}`} onClick={props.onToggleQueue} title={props.queueVisible ? "Hide queue" : "Show queue"}>
             ☰
@@ -330,6 +431,10 @@ const Player: Component<Props> = (props) => {
           ⛶
         </button>
       </div>
+
+      <Show when={showKeys()}>
+        <HotkeysSheet moderator={canControl()} onClose={() => setShowKeys(false)} />
+      </Show>
     </div>
   );
 };

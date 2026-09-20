@@ -21,8 +21,12 @@ export class Synchronizer {
   private playback: Playback | null = null;
   private seeking = false;
   onDebug: (d: SyncDebug) => void = () => {};
+  // Called when the browser refuses to start playback without a gesture
+  // (and again with false once it plays); the UI shows a tap-to-play gate.
+  onBlocked: (blocked: boolean) => void = () => {};
   // Set while the media element is loading a new source.
   suspended = false;
+  private blocked = false;
 
   constructor(
     private readonly video: HTMLVideoElement,
@@ -80,7 +84,7 @@ export class Synchronizer {
     }
 
     if (v.paused) {
-      void v.play().catch(() => {});
+      if (!this.blocked) this.tryPlay();
       this.onDebug({ targetMs: target, driftMs: drift, rate: v.playbackRate, action: "play" });
     }
 
@@ -98,6 +102,30 @@ export class Synchronizer {
       v.playbackRate = 1;
       this.onDebug({ targetMs: target, driftMs: drift, rate: 1, action: "idle" });
     }
+  }
+
+  // resume is called from a user gesture after autoplay was blocked.
+  resume() {
+    this.tryPlay();
+  }
+
+  private tryPlay() {
+    const p = this.video.play();
+    if (!p) return;
+    p.then(
+      () => {
+        if (this.blocked) {
+          this.blocked = false;
+          this.onBlocked(false);
+        }
+      },
+      (err: unknown) => {
+        if (err instanceof DOMException && err.name === "NotAllowedError") {
+          this.blocked = true;
+          this.onBlocked(true);
+        }
+      },
+    );
   }
 
   private seekTo(ms: number) {

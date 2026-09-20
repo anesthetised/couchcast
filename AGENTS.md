@@ -86,9 +86,11 @@ and a production image build.
   to 1 s, seek beyond), `player.ts` (Shaka + token request filter).
   `store/room.ts` wraps the socket in a Solid store; server errors surface
   through `lib/toast.ts` (`<Toasts>` is mounted once in `App.tsx`).
-  `Player.tsx` owns the hotkeys (Space, ←/→, F, M, N — ignored in inputs),
+  `Player.tsx` owns the hotkeys (Space, ←/→, F, M, N, `?` — ignored in inputs),
   persists volume/mute/quality in `localStorage` (`couchcast.*`) and shows
-  the sync state as a dot (click for the debug overlay).
+  the sync state as a dot (click for the debug overlay). When the browser
+  rejects `play()` (autoplay policy) `sync.ts` reports it and the player
+  shows a tap-to-play gate that resumes inside the gesture.
 - Site administration: `couchcast admin grant|revoke <username>` sets the
   role; `/api/v1/admin/*` (behind `auth.RequireAdmin`) serves the `/admin`
   SPA route. Deleting media there also blocklists its `source_key` so it
