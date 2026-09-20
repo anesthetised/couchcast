@@ -84,7 +84,11 @@ and a production image build.
 - Frontend sync lives in `web/src/lib`: `clock.ts` (ping/pong offset,
   median of samples), `sync.ts` (deadband 50 ms, `playbackRate` nudge up
   to 1 s, seek beyond), `player.ts` (Shaka + token request filter).
-  `store/room.ts` wraps the socket in a Solid store.
+  `store/room.ts` wraps the socket in a Solid store; server errors surface
+  through `lib/toast.ts` (`<Toasts>` is mounted once in `App.tsx`).
+  `Player.tsx` owns the hotkeys (Space, ←/→, F, M, N — ignored in inputs),
+  persists volume/mute/quality in `localStorage` (`couchcast.*`) and shows
+  the sync state as a dot (click for the debug overlay).
 - Site administration: `couchcast admin grant|revoke <username>` sets the
   role; `/api/v1/admin/*` (behind `auth.RequireAdmin`) serves the `/admin`
   SPA route. Deleting media there also blocklists its `source_key` so it

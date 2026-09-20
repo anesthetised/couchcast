@@ -17,6 +17,11 @@ type Props = {
   onToggleQueue?: () => void;
 };
 
+const UP_NEXT_WINDOW_MS = 5000;
+const SEEK_STEP_MS = 5000;
+
+type SyncState = "ok" | "nudge" | "seek" | "off";
+
 // Player renders the video, custom controls and the quality menu. Native
 // controls are off: every interaction goes through the server so all
 // viewers stay in sync; non-moderators get a read-only bar.
@@ -27,19 +32,38 @@ const Player: Component<Props> = (props) => {
 
   const [qualities, setQualities] = createSignal<QualityOption[]>([]);
   const [activeHeight, setActiveHeight] = createSignal<number | null>(null);
-  const [chosen, setChosen] = createSignal<number | null>(readStoredQuality());
+  const [chosen, setChosen] = createSignal<number | null>(readStored("couchcast.quality", null));
   const [buffering, setBuffering] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [debug, setDebug] = createSignal<SyncDebug | null>(null);
-  const [showDebug, setShowDebug] = createSignal(false);
+  const [showSync, setShowSync] = createSignal(false);
   const [nowMs, setNowMs] = createSignal(0);
-  const [muted, setMuted] = createSignal(true);
-  const [volume, setVolume] = createSignal(1);
+  const [muted, setMuted] = createSignal(readStored("couchcast.muted", true));
+  const [volume, setVolume] = createSignal(readStored("couchcast.volume", 1));
   const [loadedMediaId, setLoadedMediaId] = createSignal<string | null>(null);
 
   const current = () => props.room.current();
   const canControl = () => props.room.isModerator();
   const duration = () => current()?.media.durationMs ?? 0;
+  const queue = () => props.room.state.snapshot?.queue ?? [];
+  const upNext = () => {
+    const list = queue();
+    const idx = list.findIndex((q) => q.current);
+    return idx >= 0 ? (list[idx + 1] ?? null) : null;
+  };
+  const nearEnd = () => {
+    const d = duration();
+    return d > 0 && props.room.state.playback?.playing === true && d - nowMs() <= UP_NEXT_WINDOW_MS && d - nowMs() > 0;
+  };
+
+  // Sync state derived from the last correction, for the indicator.
+  const syncState = (): SyncState => {
+    const d = debug();
+    if (!d || !current() || props.room.status() !== "open") return "off";
+    if (d.action === "seek") return "seek";
+    if (d.action === "nudge") return "nudge";
+    return "ok";
+  };
 
   onMount(() => {
     player = new ShakaPlayer(video);
@@ -58,9 +82,13 @@ const Player: Component<Props> = (props) => {
     sync.onDebug = setDebug;
     sync.start();
 
-    video.muted = true;
+    video.muted = muted();
+    video.volume = volume();
     const tick = window.setInterval(() => setNowMs(video.currentTime * 1000), 250);
     onCleanup(() => window.clearInterval(tick));
+
+    document.addEventListener("keydown", onKey);
+    onCleanup(() => document.removeEventListener("keydown", onKey));
   });
 
   onCleanup(() => {
@@ -111,35 +139,43 @@ const Player: Component<Props> = (props) => {
   });
 
   const togglePlay = () => {
-    if (!canControl()) return;
+    if (!canControl() || !current()) return;
     if (props.room.state.playback?.playing) props.room.commands.pause();
     else props.room.commands.play();
   };
 
+  const seekBy = (deltaMs: number) => {
+    if (!canControl() || !current()) return;
+    const target = Math.max(0, Math.min(duration() || Infinity, nowMs() + deltaMs));
+    props.room.commands.seek(target);
+  };
+
   const onSeekInput = (e: Event) => {
     if (!canControl()) return;
-    const value = Number((e.currentTarget as HTMLInputElement).value);
-    props.room.commands.seek(value);
+    props.room.commands.seek(Number((e.currentTarget as HTMLInputElement).value));
   };
 
   const pickQuality = (h: number | null) => {
     setChosen(h);
-    storeQuality(h);
+    store("couchcast.quality", h);
     player?.selectQuality(h);
   };
 
   const toggleMute = () => {
     video.muted = !video.muted;
     setMuted(video.muted);
+    store("couchcast.muted", video.muted);
   };
 
   const onVolume = (e: Event) => {
     const v = Number((e.currentTarget as HTMLInputElement).value);
     video.volume = v;
     setVolume(v);
+    store("couchcast.volume", v);
     if (v > 0 && video.muted) {
       video.muted = false;
       setMuted(false);
+      store("couchcast.muted", false);
     }
   };
 
@@ -154,29 +190,89 @@ const Player: Component<Props> = (props) => {
     else void el.requestFullscreen();
   };
 
+  // Hotkeys: ignored while typing so the chat stays usable.
+  const onKey = (e: KeyboardEvent) => {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    switch (e.key) {
+      case " ":
+        e.preventDefault();
+        togglePlay();
+        break;
+      case "ArrowLeft":
+        e.preventDefault();
+        seekBy(-SEEK_STEP_MS);
+        break;
+      case "ArrowRight":
+        e.preventDefault();
+        seekBy(SEEK_STEP_MS);
+        break;
+      case "f":
+      case "F":
+        fullscreen();
+        break;
+      case "m":
+      case "M":
+        toggleMute();
+        break;
+      case "n":
+      case "N":
+        if (canControl() && upNext()) props.room.commands.next();
+        break;
+    }
+  };
+
   return (
     <div class="player">
       <div class="video-wrap" onDblClick={fullscreen}>
         <video ref={video} playsinline />
+
         <Show when={!current()}>
-          <div class="video-overlay muted">Queue is empty — add a link to start.</div>
-        </Show>
-        <Show when={current() && current()!.media.status !== "ready"}>
-          <div class="video-overlay">
-            <p>{statusLabel(current()!.media.status)}</p>
-            <Show when={current()!.media.status === "downloading"}>
-              <progress max="1" value={current()!.media.progress} />
-            </Show>
-            <Show when={current()!.media.error}>
-              <p class="error">{current()!.media.error}</p>
-            </Show>
+          <div class="video-overlay quiet">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <path d="M10 9.5v5l4.5-2.5z" fill="currentColor" stroke="none" />
+            </svg>
+            <span>Nothing playing</span>
           </div>
         </Show>
+
+        <Show when={current() && current()!.media.status !== "ready"}>
+          <div class="video-overlay preparing">
+            <Show when={current()!.media.thumbnailUrl}>{(src) => <img class="poster" src={src()} alt="" />}</Show>
+            <div class="preparing-body">
+              <p>{statusLabel(current()!.media.status)}</p>
+              <Show when={current()!.media.status === "downloading"}>
+                <progress max="1" value={current()!.media.progress} />
+              </Show>
+              <Show when={current()!.media.error}>
+                <p class="error">{current()!.media.error}</p>
+              </Show>
+            </div>
+          </div>
+        </Show>
+
         <Show when={buffering() && current()?.media.status === "ready"}>
           <div class="video-overlay spinner">buffering…</div>
         </Show>
         <Show when={error()}>{(e) => <div class="video-overlay error">{e()}</div>}</Show>
-        <Show when={showDebug() && debug()}>
+
+        <Show when={nearEnd() && upNext()}>
+          {(next) => (
+            <div class="up-next-card">
+              <span class="muted small">Up next</span>
+              <strong>{next().media.title || next().media.sourceUrl}</strong>
+              <Show when={canControl()}>
+                <button type="button" class="ghost" onClick={() => props.room.commands.next()}>
+                  Play now
+                </button>
+              </Show>
+            </div>
+          )}
+        </Show>
+
+        <Show when={showSync() && debug()}>
           {(d) => (
             <pre class="debug-overlay">
               offset {props.room.clockInfo().offset.toFixed(0)}ms rtt {props.room.clockInfo().rtt.toFixed(0)}ms{"\n"}
@@ -188,7 +284,7 @@ const Player: Component<Props> = (props) => {
       </div>
 
       <div class="controls">
-        <button type="button" class="icon" onClick={togglePlay} disabled={!canControl() || !current()} title={canControl() ? "" : "Only moderators control playback"}>
+        <button type="button" class="icon" onClick={togglePlay} disabled={!canControl() || !current()} title={canControl() ? "Play/pause (Space)" : "Only moderators control playback"}>
           {props.room.state.playback?.playing ? "❚❚" : "▶"}
         </button>
         <span class="time">{formatTime(nowMs())}</span>
@@ -200,18 +296,25 @@ const Player: Component<Props> = (props) => {
           value={Math.min(nowMs(), duration() || 0)}
           disabled={!canControl() || !duration()}
           onChange={onSeekInput}
+          aria-label="Position"
         />
         <span class="time">{formatTime(duration())}</span>
-        <button type="button" class="icon" onClick={toggleMute} title="Mute">
+        <button type="button" class="icon" onClick={toggleMute} title="Mute (M)">
           {muted() ? "🔇" : "🔊"}
         </button>
-        <input type="range" class="volume" min="0" max="1" step="0.05" value={volume()} onInput={onVolume} />
-        <select class="quality" value={chosen() === null ? "auto" : String(chosen())} onChange={(e) => pickQuality(e.currentTarget.value === "auto" ? null : Number(e.currentTarget.value))}>
+        <input type="range" class="volume" min="0" max="1" step="0.05" value={volume()} onInput={onVolume} aria-label="Volume" />
+        <select class="quality" value={chosen() === null ? "auto" : String(chosen())} onChange={(e) => pickQuality(e.currentTarget.value === "auto" ? null : Number(e.currentTarget.value))} aria-label="Quality">
           <option value="auto">Auto{activeHeight() && chosen() === null ? ` (${activeHeight()}p)` : ""}</option>
           <For each={qualities()}>{(q) => <option value={String(q.height)}>{q.height}p</option>}</For>
         </select>
-        <button type="button" class="icon" onClick={() => setShowDebug(!showDebug())} title="Sync debug">
-          ⓘ
+        <button
+          type="button"
+          class={`icon sync-dot ${syncState()}`}
+          onClick={() => setShowSync(!showSync())}
+          title={syncTitle(syncState(), debug())}
+          aria-label="Sync status"
+        >
+          <span />
         </button>
         <Show when={props.isFullscreen && props.onToggleQueue}>
           <button type="button" class={`icon ${props.queueVisible ? "" : "dim"}`} onClick={props.onToggleQueue} title={props.queueVisible ? "Hide queue" : "Show queue"}>
@@ -223,7 +326,7 @@ const Player: Component<Props> = (props) => {
             💬
           </button>
         </Show>
-        <button type="button" class="icon" onClick={fullscreen} title={props.isFullscreen ? "Exit fullscreen" : "Fullscreen"}>
+        <button type="button" class="icon" onClick={fullscreen} title={props.isFullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}>
           ⛶
         </button>
       </div>
@@ -250,21 +353,33 @@ function statusLabel(status: string): string {
   }
 }
 
-const QUALITY_KEY = "couchcast.quality";
-
-function readStoredQuality(): number | null {
-  try {
-    const v = localStorage.getItem(QUALITY_KEY);
-    return v ? Number(v) : null;
-  } catch {
-    return null;
+function syncTitle(state: SyncState, d: SyncDebug | null): string {
+  const drift = d ? ` · drift ${Math.round(d.driftMs)} ms` : "";
+  switch (state) {
+    case "ok":
+      return `In sync${drift}`;
+    case "nudge":
+      return `Catching up${drift}`;
+    case "seek":
+      return `Resyncing${drift}`;
+    default:
+      return "Not connected";
   }
 }
 
-function storeQuality(h: number | null) {
+function readStored<T>(key: string, fallback: T): T {
   try {
-    if (h === null) localStorage.removeItem(QUALITY_KEY);
-    else localStorage.setItem(QUALITY_KEY, String(h));
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : (JSON.parse(v) as T);
+  } catch {
+    return fallback;
+  }
+}
+
+function store(key: string, value: unknown) {
+  try {
+    if (value === null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // storage unavailable
   }
