@@ -51,6 +51,8 @@ CREATE TABLE media (
     error            text,
     size_bytes       bigint,
     renditions       jsonb       NOT NULL DEFAULT '[]'::jsonb,
+    -- Subtitle tracks stored next to the DASH output as sub-<lang>.vtt.
+    subtitles        jsonb       NOT NULL DEFAULT '[]'::jsonb,
     s3_prefix        text,
     created_at       timestamptz NOT NULL DEFAULT now(),
     updated_at       timestamptz NOT NULL DEFAULT now(),

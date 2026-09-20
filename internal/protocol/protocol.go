@@ -201,6 +201,7 @@ type MediaInfo struct {
 	Progress     float32            `json:"progress"`
 	Error        string             `json:"error,omitempty"`
 	Renditions   []entity.Rendition `json:"renditions"`
+	Subtitles    []entity.Subtitle  `json:"subtitles,omitempty"`
 	Manifest     string             `json:"manifest,omitempty"` // path, ready media only
 	Token        string             `json:"token,omitempty"`    // append as ?t=
 	SourceURL    string             `json:"sourceUrl"`

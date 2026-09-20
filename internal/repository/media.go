@@ -13,22 +13,27 @@ import (
 )
 
 const mediaColumns = `id, source_key, source_url, coalesce(title, ''), coalesce(duration_ms, 0), coalesce(thumbnail_url, ''),
-	status, progress, coalesce(error, ''), coalesce(size_bytes, 0), renditions, coalesce(s3_prefix, ''),
+	status, progress, coalesce(error, ''), coalesce(size_bytes, 0), renditions, subtitles, coalesce(s3_prefix, ''),
 	created_at, updated_at, last_accessed_at`
 
 func scanMedia(row pgx.Row) (*entity.Media, error) {
 	var (
-		m          entity.Media
-		renditions []byte
+		m                     entity.Media
+		renditions, subtitles []byte
 	)
 	err := row.Scan(&m.ID, &m.SourceKey, &m.SourceURL, &m.Title, &m.DurationMs, &m.ThumbnailURL,
-		&m.Status, &m.Progress, &m.Error, &m.SizeBytes, &renditions, &m.S3Prefix,
+		&m.Status, &m.Progress, &m.Error, &m.SizeBytes, &renditions, &subtitles, &m.S3Prefix,
 		&m.CreatedAt, &m.UpdatedAt, &m.LastAccessedAt)
 	if err != nil {
 		return nil, wrapErr(err)
 	}
 	if len(renditions) > 0 {
 		if err := json.Unmarshal(renditions, &m.Renditions); err != nil {
+			return nil, err
+		}
+	}
+	if len(subtitles) > 0 {
+		if err := json.Unmarshal(subtitles, &m.Subtitles); err != nil {
 			return nil, err
 		}
 	}
@@ -105,6 +110,19 @@ func (r *Repo) SetMediaProgress(ctx context.Context, id uuid.UUID, progress floa
 func (r *Repo) SetMediaProbed(ctx context.Context, id uuid.UUID, title string, durationMs int64, thumbnailURL string) error {
 	const q = `UPDATE media SET title = $2, duration_ms = $3, thumbnail_url = $4, updated_at = now() WHERE id = $1`
 	return r.exec(ctx, q, id, title, durationMs, thumbnailURL)
+}
+
+// SetMediaSubtitles records the text tracks packaged with the media.
+func (r *Repo) SetMediaSubtitles(ctx context.Context, id uuid.UUID, subtitles []entity.Subtitle) error {
+	if subtitles == nil {
+		subtitles = []entity.Subtitle{}
+	}
+	b, err := json.Marshal(subtitles)
+	if err != nil {
+		return err
+	}
+	const q = `UPDATE media SET subtitles = $2, updated_at = now() WHERE id = $1`
+	return r.exec(ctx, q, id, b)
 }
 
 // SetMediaReady marks the item playable.

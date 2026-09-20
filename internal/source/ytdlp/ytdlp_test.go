@@ -77,3 +77,34 @@ func TestProgressTracker(t *testing.T) {
 	tr.line("cc-progress:10/100")
 	assert.InDeltaSlice(t, []float64{0.25, 0.55}, got, 1e-9)
 }
+
+func TestPickSubtitles(t *testing.T) {
+	// Uploaded tracks win, sorted and capped; live chat is skipped.
+	info := infoJSON{
+		Language:          "en",
+		Subtitles:         map[string][]subtitleJSON{"ru": {{Ext: "vtt", Name: "Russian"}}, "en": {{Ext: "vtt", Name: "English"}}, "en-live_chat": {{Ext: "json"}}},
+		AutomaticCaptions: map[string][]subtitleJSON{"en": {{Ext: "vtt", Name: "English"}}, "de": {{Ext: "vtt"}}},
+	}
+	subs := pickSubtitles(info)
+	require.Len(t, subs, 2)
+	assert.Equal(t, "en", subs[0].Lang)
+	assert.Equal(t, "ru", subs[1].Lang)
+	assert.False(t, subs[0].Auto)
+
+	// Without uploaded tracks: the automatic ones in the original language only.
+	info.Subtitles = nil
+	subs = pickSubtitles(info)
+	require.Len(t, subs, 1)
+	assert.Equal(t, source.Subtitle{Lang: "en", Name: "English", Auto: true}, subs[0])
+
+	// No original language known: nothing.
+	info.Language = ""
+	assert.Empty(t, pickSubtitles(info))
+
+	// The cap.
+	info.Subtitles = map[string][]subtitleJSON{}
+	for i := range 20 {
+		info.Subtitles[string(rune('a'+i))+"x"] = []subtitleJSON{{Ext: "vtt"}}
+	}
+	assert.Len(t, pickSubtitles(info), maxSubtitleTracks)
+}

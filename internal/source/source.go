@@ -51,12 +51,20 @@ func (f Format) CodecFamily() string {
 	return c
 }
 
+// Subtitle is a text track the extractor can fetch.
+type Subtitle struct {
+	Lang string // BCP 47-ish tag as the site reports it: en, ru, pt-BR
+	Name string // human name, may be empty
+	Auto bool   // machine-generated captions
+}
+
 // Probe is what an extractor learns about a URL without downloading it.
 type Probe struct {
 	Title        string
 	DurationMs   int64
 	ThumbnailURL string
 	Formats      []Format
+	Subtitles    []Subtitle
 }
 
 // Selection is the set of formats chosen for packaging.
@@ -93,6 +101,10 @@ type Extractor interface {
 	// format id to file path. progress receives 0..1 for the whole batch,
 	// weighted by the formats' expected sizes when known.
 	Download(ctx context.Context, url string, formats []Format, dir string, progress func(float64)) (map[string]string, error)
+	// DownloadSubtitles fetches the given tracks as WebVTT into dir and
+	// returns a map from language to file path. Missing tracks are simply
+	// absent from the map.
+	DownloadSubtitles(ctx context.Context, url string, subs []Subtitle, dir string) (map[string]string, error)
 }
 
 // videoPreference orders codec families for selection: VP9 first because

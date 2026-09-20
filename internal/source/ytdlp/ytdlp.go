@@ -12,9 +12,11 @@ import (
 	"fmt"
 	"log/slog"
 	"net/url"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -64,8 +66,21 @@ type infoJSON struct {
 	Duration     float64      `json:"duration"`
 	Thumbnail    string       `json:"thumbnail"`
 	ExtractorKey string       `json:"extractor_key"`
+	Language     string       `json:"language"`
 	Formats      []formatJSON `json:"formats"`
+	// Subtitles are uploaded tracks; automatic captions are machine-made,
+	// one per language the site offers (dozens on YouTube).
+	Subtitles         map[string][]subtitleJSON `json:"subtitles"`
+	AutomaticCaptions map[string][]subtitleJSON `json:"automatic_captions"`
 }
+
+type subtitleJSON struct {
+	Ext  string `json:"ext"`
+	Name string `json:"name"`
+}
+
+// maxSubtitleTracks bounds how many languages are packaged per video.
+const maxSubtitleTracks = 10
 
 type formatJSON struct {
 	FormatID       string  `json:"format_id"`
@@ -135,7 +150,87 @@ func ParseInfo(data []byte) (*source.Probe, error) {
 		return nil, errors.New("yt-dlp: no downloadable formats")
 	}
 
+	p.Subtitles = pickSubtitles(info)
 	return p, nil
+}
+
+// pickSubtitles takes every uploaded track (up to the cap, in language
+// order) and, when there are none, the automatic captions in the video's
+// own language only — the translated ones are noise.
+func pickSubtitles(info infoJSON) []source.Subtitle {
+	var out []source.Subtitle
+	langs := make([]string, 0, len(info.Subtitles))
+	for lang, tracks := range info.Subtitles {
+		if len(tracks) > 0 && !strings.HasSuffix(lang, "-live_chat") {
+			langs = append(langs, lang)
+		}
+	}
+	sort.Strings(langs)
+	for _, lang := range langs {
+		if len(out) >= maxSubtitleTracks {
+			break
+		}
+		out = append(out, source.Subtitle{Lang: lang, Name: info.Subtitles[lang][0].Name})
+	}
+	if len(out) > 0 {
+		return out
+	}
+	for _, lang := range []string{info.Language, info.Language + "-orig"} {
+		if lang == "" || lang == "-orig" {
+			continue
+		}
+		if tracks, ok := info.AutomaticCaptions[lang]; ok && len(tracks) > 0 {
+			return []source.Subtitle{{Lang: info.Language, Name: tracks[0].Name, Auto: true}}
+		}
+	}
+	return nil
+}
+
+// DownloadSubtitles implements source.Extractor with a separate yt-dlp run
+// (no media download), so the progress parser of Download stays simple.
+func (e *Extractor) DownloadSubtitles(ctx context.Context, rawURL string, subs []source.Subtitle, dir string) (map[string]string, error) {
+	if len(subs) == 0 {
+		return map[string]string{}, nil
+	}
+	langs := make([]string, 0, len(subs))
+	auto := false
+	for _, s := range subs {
+		langs = append(langs, s.Lang)
+		auto = auto || s.Auto
+	}
+	args := []string{"--no-playlist", "--no-warnings", "--skip-download", "--write-subs",
+		"--sub-langs", strings.Join(langs, ","), "--sub-format", "vtt/best", "--convert-subs", "vtt",
+		"-o", filepath.Join(dir, "subs.%(ext)s")}
+	if auto {
+		args = append(args, "--write-auto-subs")
+	}
+	args = append(args, e.ExtraArgs...)
+	args = append(args, "--", rawURL)
+
+	cmd := exec.CommandContext(ctx, e.Path, args...) //nolint:gosec // binary from config; url passed after "--"
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("yt-dlp subtitles: %w: %s", err, lastLine(stderr.String()))
+	}
+
+	files := make(map[string]string, len(subs))
+	for _, s := range subs {
+		// yt-dlp names the file subs.<lang>.vtt; the auto track may come as
+		// <lang>-orig or with a different case.
+		for _, cand := range []string{s.Lang, s.Lang + "-orig", strings.ToLower(s.Lang)} {
+			if p := filepath.Join(dir, "subs."+cand+".vtt"); fileExists(p) {
+				files[s.Lang] = p
+				break
+			}
+		}
+	}
+	return files, nil
+}
+
+func fileExists(p string) bool {
+	st, err := os.Stat(p)
+	return err == nil && !st.IsDir()
 }
 
 // usable filters out formats that cannot be downloaded as a plain file or

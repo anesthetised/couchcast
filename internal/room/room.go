@@ -461,7 +461,7 @@ func (r *Room) mediaInfoLocked(m *entity.Media) protocol.MediaInfo {
 	}
 	info := protocol.MediaInfo{
 		ID: m.ID, Title: m.Title, DurationMs: m.DurationMs, ThumbnailURL: m.ThumbnailURL,
-		Status: m.Status, Progress: m.Progress, Error: m.Error, Renditions: m.Renditions, SourceURL: m.SourceURL,
+		Status: m.Status, Progress: m.Progress, Error: m.Error, Renditions: m.Renditions, Subtitles: m.Subtitles, SourceURL: m.SourceURL,
 	}
 	if info.Renditions == nil {
 		info.Renditions = []entity.Rendition{}

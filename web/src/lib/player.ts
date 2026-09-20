@@ -52,6 +52,30 @@ export class Player {
     this.emitTracks();
   }
 
+  // addSubtitles attaches sidecar WebVTT tracks next to the manifest
+  // (sub-<lang>.vtt under the same media prefix, so the token applies).
+  async addSubtitles(manifest: string, subs: { lang: string; name: string }[]) {
+    const base = manifest.slice(0, manifest.lastIndexOf("/") + 1);
+    for (const s of subs) {
+      try {
+        await this.shaka.addTextTrackAsync(`${base}sub-${s.lang}.vtt`, s.lang, "subtitles", "text/vtt", undefined, s.name || s.lang);
+      } catch {
+        // a missing or malformed track just does not show up
+      }
+    }
+  }
+
+  // selectSubtitle turns a language on, or all captions off with null
+  // (in Shaka 5 an unselected text track is a hidden one).
+  selectSubtitle(lang: string | null) {
+    if (lang === null) {
+      this.shaka.selectTextTrack(null);
+      return;
+    }
+    const track = this.shaka.getTextTracks().find((t) => t.language === lang);
+    if (track) this.shaka.selectTextTrack(track);
+  }
+
   async unload() {
     await this.shaka.unload();
     this.onTracks([], null);

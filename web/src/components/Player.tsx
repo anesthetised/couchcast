@@ -41,6 +41,21 @@ const Player: Component<Props> = (props) => {
   const [qualities, setQualities] = createSignal<QualityOption[]>([]);
   const [activeHeight, setActiveHeight] = createSignal<number | null>(null);
   const [chosen, setChosen] = createSignal<number | null>(readStored("couchcast.quality", null));
+  // Subtitle language preference; "" means off. Applied when a video that
+  // has the language loads, ignored otherwise.
+  const [subtitle, setSubtitle] = createSignal<string>(readStored("couchcast.subtitles", ""));
+  const subtitles = () => current()?.media.subtitles ?? [];
+  const activeSubtitle = () => (subtitles().some((s) => s.lang === subtitle()) ? subtitle() : "");
+  const pickSubtitle = (lang: string) => {
+    setSubtitle(lang);
+    store("couchcast.subtitles", lang);
+    player?.selectSubtitle(lang || null);
+  };
+  const toggleSubtitles = () => {
+    const list = subtitles();
+    if (!list.length) return;
+    pickSubtitle(activeSubtitle() ? "" : list[0]!.lang);
+  };
   const [buffering, setBuffering] = createSignal(false);
   const [error, setError] = createSignal<string | null>(null);
   const [debug, setDebug] = createSignal<SyncDebug | null>(null);
@@ -158,6 +173,11 @@ const Player: Component<Props> = (props) => {
           await player.load(target.manifest, target.token, start);
           setLoadedMediaId(target.id);
           player.selectQuality(chosen());
+          const subs = current()?.media.subtitles ?? [];
+          if (subs.length) {
+            await player.addSubtitles(target.manifest, subs);
+            player.selectSubtitle(activeSubtitle() || null);
+          }
         } catch (e) {
           const code = (e as { code?: number }).code;
           // 7000 = LOAD_INTERRUPTED: a newer load superseded this one.
@@ -313,6 +333,10 @@ const Player: Component<Props> = (props) => {
       case "N":
         if (canControl() && current()) props.room.commands.next();
         break;
+      case "c":
+      case "C":
+        toggleSubtitles();
+        break;
       case "<":
       case ",":
         stepRate(-1);
@@ -437,6 +461,19 @@ const Player: Component<Props> = (props) => {
           <option value="auto">Auto{activeHeight() && chosen() === null ? ` (${activeHeight()}p)` : ""}</option>
           <For each={qualities()}>{(q) => <option value={String(q.height)}>{q.height}p</option>}</For>
         </select>
+        <Show when={subtitles().length > 0}>
+          <select class="quality cc-select" value={activeSubtitle()} onChange={(e) => pickSubtitle(e.currentTarget.value)} aria-label="Subtitles" title="Subtitles (C)">
+            <option value="">CC off</option>
+            <For each={subtitles()}>
+              {(s) => (
+                <option value={s.lang}>
+                  {s.name || s.lang}
+                  {s.auto ? " (auto)" : ""}
+                </option>
+              )}
+            </For>
+          </select>
+        </Show>
         <Show when={current()}>
           <Show
             when={canControl()}

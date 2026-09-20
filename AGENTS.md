@@ -66,6 +66,12 @@ and a production image build.
 - `internal/source` abstracts extractors; `source/ytdlp` shells out to
   yt-dlp (fixture in `testdata/`). `source.SelectFormats` picks one codec
   family and the best format per ladder height — never transcode.
+- Subtitles: the extractor reports uploaded tracks (all, up to ten) or
+  automatic captions in the video's own language; the worker fetches them
+  in a second yt-dlp run as WebVTT, drops them next to the DASH output as
+  `sub-<lang>.vtt` (same media prefix, same token) and records
+  `media.subtitles`. The web player attaches them with
+  `addTextTrackAsync`; a failure to fetch subtitles never fails the ingest.
 - `internal/packager` builds the ffmpeg `-c copy -f dash` command;
   `internal/mediastore` uploads to S3, signs HMAC media tokens and proxies
   `/media/{id}/{file}?t=` with Range support.

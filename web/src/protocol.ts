@@ -12,6 +12,12 @@ export interface Rendition {
   bitrate: number;
 }
 
+export interface Subtitle {
+  lang: string;
+  name: string;
+  auto?: boolean;
+}
+
 export interface MediaInfo {
   id: string;
   title: string;
@@ -21,6 +27,7 @@ export interface MediaInfo {
   progress: number;
   error?: string;
   renditions: Rendition[];
+  subtitles?: Subtitle[];
   manifest?: string;
   token?: string;
   sourceUrl: string;

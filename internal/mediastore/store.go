@@ -125,6 +125,8 @@ func (s *Store) DeletePrefix(ctx context.Context, prefix string) error {
 // does not know .mpd and .m4s.
 func ContentType(name string) string {
 	switch strings.ToLower(path.Ext(name)) {
+	case ".vtt":
+		return "text/vtt; charset=utf-8"
 	case ".mpd":
 		return "application/dash+xml"
 	case ".m4s":

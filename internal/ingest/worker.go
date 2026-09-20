@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"uuid"
@@ -76,6 +77,50 @@ func (w *Worker) Handle(ctx context.Context, job *jobs.Job) error {
 	return nil
 }
 
+// fetchSubtitles downloads the probed tracks and places them in outDir as
+// sub-<lang>.vtt, so they upload with the DASH output; it returns what
+// actually arrived.
+func (w *Worker) fetchSubtitles(ctx context.Context, rawURL string, subs []source.Subtitle, tmpDir, outDir string, log *slog.Logger) []entity.Subtitle {
+	if len(subs) == 0 {
+		return nil
+	}
+	if err := os.MkdirAll(tmpDir, 0o750); err != nil {
+		log.Warn("subtitles: temp dir", "error", err)
+		return nil
+	}
+	files, err := w.extractor.DownloadSubtitles(ctx, rawURL, subs, tmpDir)
+	if err != nil {
+		log.Warn("subtitles: download failed", "error", err)
+		return nil
+	}
+	var out []entity.Subtitle
+	for _, s := range subs {
+		src, ok := files[s.Lang]
+		if !ok {
+			continue
+		}
+		if err := os.Rename(src, filepath.Join(outDir, SubtitleFile(s.Lang))); err != nil {
+			log.Warn("subtitles: move", "lang", s.Lang, "error", err)
+			continue
+		}
+		out = append(out, entity.Subtitle{Lang: s.Lang, Name: s.Name, Auto: s.Auto})
+	}
+	log.Info("subtitles", "tracks", len(out))
+	return out
+}
+
+// SubtitleFile is the object name of a track inside the media prefix.
+func SubtitleFile(lang string) string {
+	// Language tags are [A-Za-z0-9-]; anything else would be a path trick.
+	safe := strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-' {
+			return r
+		}
+		return '_'
+	}, lang)
+	return "sub-" + safe + ".vtt"
+}
+
 func (w *Worker) process(ctx context.Context, media *entity.Media, log *slog.Logger) error {
 	dir := filepath.Join(w.workDir, media.ID.String())
 	srcDir, outDir := filepath.Join(dir, "src"), filepath.Join(dir, "dash")
@@ -121,6 +166,9 @@ func (w *Worker) process(ctx context.Context, media *entity.Media, log *slog.Log
 	reporter.report(ctx, 1, true)
 	w.metrics.IngestStep("download", time.Since(start))
 
+	// Subtitles are a bonus: a failure here logs and moves on.
+	subtitles := w.fetchSubtitles(ctx, media.SourceURL, probe.Subtitles, filepath.Join(dir, "subs"), outDir, log)
+
 	// --- package -------------------------------------------------------------
 	if err := w.setStatus(ctx, media.ID, entity.MediaPackaging); err != nil {
 		return err
@@ -154,6 +202,9 @@ func (w *Worker) process(ctx context.Context, media *entity.Media, log *slog.Log
 	}
 	w.metrics.IngestStep("upload", time.Since(start))
 
+	if err := w.repo.SetMediaSubtitles(ctx, media.ID, subtitles); err != nil {
+		return err
+	}
 	if err := w.repo.SetMediaReady(ctx, media.ID, renditions, size, prefix); err != nil {
 		return err
 	}

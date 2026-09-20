@@ -30,6 +30,13 @@ type Rendition struct {
 
 // Media is a video that has been (or is being) ingested. It is shared by
 // every room that queues the same source, keyed by SourceKey.
+// Subtitle is one text track packaged with the media (sub-<lang>.vtt).
+type Subtitle struct {
+	Lang string `json:"lang"`
+	Name string `json:"name"`
+	Auto bool   `json:"auto,omitempty"` // machine-generated captions
+}
+
 type Media struct {
 	ID             uuid.UUID
 	SourceKey      string
@@ -42,6 +49,7 @@ type Media struct {
 	Error          string
 	SizeBytes      int64
 	Renditions     []Rendition
+	Subtitles      []Subtitle
 	S3Prefix       string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
