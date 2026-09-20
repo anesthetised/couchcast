@@ -58,10 +58,12 @@ const Chat: Component<Props> = (props) => {
       () => messages().length,
       (len, prev) => {
         const last = messages()[len - 1];
-        if (attended()) {
+        // The backlog (first fill) always lands at the bottom, even in a
+        // background tab; after that only an attentive reader follows.
+        if (prev === undefined || prev === 0 || attended()) {
           list.scrollTop = list.scrollHeight;
           lastSeenId = last?.id ?? lastSeenId;
-        } else if (prev !== undefined && len > prev) {
+        } else if (len > prev) {
           setUnseen((n) => n + (len - prev));
         }
       },
@@ -74,6 +76,7 @@ const Chat: Component<Props> = (props) => {
       const last = messages()[messages().length - 1];
       if (last && lastSeenId && last.id !== lastSeenId) setDivider(lastSeenId);
       if (atBottom()) {
+        list.scrollTop = list.scrollHeight;
         lastSeenId = last?.id ?? lastSeenId;
         setUnseen(0);
       }
