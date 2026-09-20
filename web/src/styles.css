@@ -2327,3 +2327,71 @@ a.username:hover {
 .bell.on {
   color: var(--accent);
 }
+
+/* --- recently visited ------------------------------------------------------ */
+
+.recent {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.6rem;
+  font-size: var(--fs-sm);
+}
+
+.recent-label {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-right: 0.25rem;
+}
+
+.recent-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.1rem;
+  padding: 0.25rem 0.3rem 0.25rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: var(--surface);
+}
+
+.recent-item a {
+  color: var(--text-2);
+}
+
+.recent-item a:hover {
+  color: var(--text);
+}
+
+.recent-item .chip-x {
+  color: var(--muted);
+  opacity: 0;
+}
+
+.recent-item:hover .chip-x,
+.recent-item:focus-within .chip-x {
+  opacity: 1;
+}
+
+/* --- skeleton cards -------------------------------------------------------- */
+
+.room-card.skeleton {
+  pointer-events: none;
+}
+
+.room-card.skeleton .room-card-media {
+  background: var(--surface-2);
+}
+
+.skeleton-line {
+  height: 0.9rem;
+  border-radius: 4px;
+  background: var(--surface-2);
+  margin-bottom: 0.5rem;
+}
+
+.skeleton-line.short {
+  width: 55%;
+  margin-bottom: 0;
+}

@@ -2,6 +2,7 @@ import { Show, type Component } from "solid-js";
 
 import Directory from "~/components/Directory";
 import InvitesInbox from "~/components/InvitesInbox";
+import RecentRooms from "~/components/RecentRooms";
 import { auth } from "~/store/auth";
 
 // Home: a hero with the create link, pending invites, then the room
@@ -38,6 +39,8 @@ const Home: Component = () => {
       <Show when={auth.user()}>
         <InvitesInbox />
       </Show>
+
+      <RecentRooms />
 
       <Directory />
     </div>

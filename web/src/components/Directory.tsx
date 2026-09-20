@@ -114,7 +114,7 @@ const Directory: Component = () => {
         </div>
       </div>
 
-      <Show when={dir()} fallback={<p class="muted">Loading…</p>}>
+      <Show when={dir()} fallback={<SkeletonGrid count={Math.min(perPage(), columns() * 2)} />}>
         {(d) => (
           <>
             <Show
@@ -144,5 +144,23 @@ const Directory: Component = () => {
     </section>
   );
 };
+
+// SkeletonGrid holds the grid's shape while the first page loads: flat
+// tonal blocks, no shimmer.
+const SkeletonGrid: Component<{ count: number }> = (props) => (
+  <div class="room-grid" aria-hidden="true">
+    <For each={Array.from({ length: props.count })}>
+      {() => (
+        <div class="room-card skeleton">
+          <div class="room-card-media" />
+          <div class="room-card-body">
+            <div class="skeleton-line" />
+            <div class="skeleton-line short" />
+          </div>
+        </div>
+      )}
+    </For>
+  </div>
+);
 
 export default Directory;

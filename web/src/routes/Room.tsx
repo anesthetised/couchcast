@@ -8,6 +8,7 @@ import Queue from "~/components/Queue";
 import { ApiError } from "~/lib/api";
 import { createFullscreen, readFullscreenPanel, storeFullscreenPanel, type FullscreenPanel } from "~/lib/fullscreen";
 import { notify } from "~/lib/notify";
+import { recordVisit } from "~/lib/recent";
 import { rooms } from "~/lib/rooms";
 import { useTitle } from "~/lib/title";
 import { toast } from "~/lib/toast";
@@ -56,6 +57,10 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; canS
   const [notices, setNotices] = createSignal<string[]>(location.state?.warnings ?? []);
 
   const snap = () => store.state.snapshot;
+  createEffect(() => {
+    const name = snap()?.room.name;
+    if (name) recordVisit(props.slug, name);
+  });
   const live = () => Boolean(store.state.playback?.playing && store.current()?.media.status === "ready");
   const viewers = () => (snap()?.members.length ?? 0) + (snap()?.guests ?? 0);
 
