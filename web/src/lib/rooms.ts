@@ -22,9 +22,10 @@ export const rooms = {
   transfer: (slug: string, username: string) => api<void>(`/api/v1/rooms/${slug}/owner`, json({ username })),
   /** @deprecated superseded by `directory({ mine: true })`; the endpoint stays for compatibility. */
   mine: () => api<Room[]>("/api/v1/me/rooms"),
-  directory: (params: { q?: string; live?: boolean; private?: boolean; mine?: boolean; page?: number; perPage?: number }) => {
+  directory: (params: { q?: string; live?: boolean; private?: boolean; mine?: boolean; sort?: string; page?: number; perPage?: number }) => {
     const qs = new URLSearchParams();
     if (params.q) qs.set("q", params.q);
+    if (params.sort && params.sort !== "active") qs.set("sort", params.sort);
     if (params.live) qs.set("live", "1");
     if (params.private) qs.set("private", "1");
     if (params.mine) qs.set("mine", "1");

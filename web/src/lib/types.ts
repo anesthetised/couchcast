@@ -106,6 +106,7 @@ export interface DirectoryRoom {
   viewers: number;
   memberCount: number;
   live: boolean;
+  lastActiveMs: number;
   media: {
     id: string;
     title: string;

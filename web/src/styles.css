@@ -2758,3 +2758,13 @@ button.timecode {
 .mute-select:hover {
   color: var(--text);
 }
+
+.chips .sort {
+  width: auto;
+  padding: 0.35rem 1.6rem 0.35rem 0.75rem;
+  border-radius: var(--radius-pill);
+  font-size: var(--fs-sm);
+  background-color: var(--surface-2);
+  color: var(--text-2);
+  margin-left: 0.4rem;
+}

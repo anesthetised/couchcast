@@ -249,8 +249,45 @@ type DirectoryQuery struct {
 	OnlyLive    bool
 	OnlyPrivate bool // requires ViewerID
 	OnlyMine    bool // requires ViewerID
+	Sort        DirectorySort
 	Offset      int
 	Limit       int
+}
+
+// DirectorySort orders the directory; the zero value is "active".
+type DirectorySort string
+
+const (
+	SortActive  DirectorySort = "active"  // live, then viewers, then queued, then recency
+	SortViewers DirectorySort = "viewers" // most watched first
+	SortNewest  DirectorySort = "newest"  // recently created first
+	SortName    DirectorySort = "name"    // alphabetical
+)
+
+// ParseDirectorySort maps a query value to a sort; unknown values fall
+// back to SortActive.
+func ParseDirectorySort(s string) DirectorySort {
+	switch DirectorySort(s) {
+	case SortViewers, SortNewest, SortName:
+		return DirectorySort(s)
+	default:
+		return SortActive
+	}
+}
+
+// orderBy is the ORDER BY clause for a sort; the strings are fixed here,
+// never taken from the request.
+func (s DirectorySort) orderBy() string {
+	switch s {
+	case SortViewers:
+		return "coalesce(v.viewers, 0) DESC, (r.playing AND m.status = 'ready') DESC, r.updated_at DESC"
+	case SortNewest:
+		return "r.created_at DESC"
+	case SortName:
+		return "lower(r.name), r.created_at"
+	default:
+		return "(r.playing AND m.status = 'ready') DESC, coalesce(v.viewers, 0) DESC, (r.current_item_id IS NOT NULL) DESC, r.updated_at DESC"
+	}
 }
 
 // ListDirectory returns one page of rooms visible to the viewer (live
@@ -267,7 +304,7 @@ func (r *Repo) ListDirectory(ctx context.Context, q DirectoryQuery) ([]Directory
 		q.OnlyPrivate, q.OnlyMine = false, false
 	}
 
-	const sql = `
+	sql := `
 		SELECT r.id, r.slug, r.name, r.owner_id, r.visibility, r.settings, r.current_item_id,
 		       r.playing, r.position_ms, r.position_at, r.rate, r.created_at, r.updated_at,
 		       u.username,
@@ -291,8 +328,7 @@ func (r *Repo) ListDirectory(ctx context.Context, q DirectoryQuery) ([]Directory
 		  AND (NOT $4 OR (r.playing AND m.status = 'ready'))
 		  AND (NOT $8 OR r.visibility = 'private')
 		  AND (NOT $9 OR me.user_id IS NOT NULL)
-		ORDER BY (r.playing AND m.status = 'ready') DESC, coalesce(v.viewers, 0) DESC,
-		         (r.current_item_id IS NOT NULL) DESC, r.updated_at DESC
+		ORDER BY ` + q.Sort.orderBy() + `
 		OFFSET $5 LIMIT $6
 	`
 	rows, err := r.pool.Query(ctx, sql, q.LiveIDs, q.LiveCounts, escapeLike(q.Search), q.OnlyLive, q.Offset, q.Limit,

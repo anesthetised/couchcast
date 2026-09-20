@@ -174,6 +174,7 @@ and a production image build.
   for the add form: known sources answer from the database, new ones go
   through `ingest.Service.Preview` → the extractor, bounded by a timeout.
 - `GET /api/v1/rooms` is the directory (public rooms plus the caller's
-  private rooms; `live`/`private`/`mine` filters, search, pagination).
+  private rooms; `live`/`private`/`mine` filters, search, pagination,
+  `sort=active|viewers|newest|name`, `lastActiveMs` per room).
   `GET /api/v1/me/rooms` is deprecated and unused by the SPA.
 - Keep `AGENTS.md` and `README.md` current when commands or layout change.

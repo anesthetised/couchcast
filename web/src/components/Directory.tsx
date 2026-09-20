@@ -13,7 +13,13 @@ const MAX_PER_PAGE = 48;
 const REFRESH_MS = 30_000;
 const SEARCH_DEBOUNCE_MS = 300;
 
-type Params = { q?: string; live?: string; private?: string; mine?: string; page?: string };
+type Params = { q?: string; live?: string; private?: string; mine?: string; sort?: string; page?: string };
+const SORTS = [
+  ["active", "Active"],
+  ["viewers", "Most watched"],
+  ["newest", "Newest"],
+  ["name", "Name"],
+] as const;
 
 // Directory lists every room the visitor may open: public rooms plus the
 // private rooms they belong to. Search, the filter chips and the page live
@@ -24,6 +30,7 @@ const Directory: Component = () => {
   const q = () => params.q ?? "";
   const flag = (name: "live" | "private" | "mine") => params[name] === "1";
   const page = () => Math.max(1, Number(params.page) || 1);
+  const sort = () => (SORTS.some(([k]) => k === params.sort) ? params.sort! : "active");
   const signedIn = () => auth.user() !== null;
 
   const toggle = (name: "live" | "private" | "mine") =>
@@ -59,6 +66,7 @@ const Directory: Component = () => {
       live: flag("live"),
       private: signedIn() && flag("private"),
       mine: signedIn() && flag("mine"),
+      sort: sort(),
       page: page(),
       perPage: perPage(),
       // Re-fetch when the session changes: private rooms appear/disappear.
@@ -111,6 +119,9 @@ const Directory: Component = () => {
               Mine
             </button>
           </Show>
+          <select class="sort" value={sort()} onChange={(e) => setParams({ ...params, sort: e.currentTarget.value === "active" ? undefined : e.currentTarget.value, page: undefined })} aria-label="Sort rooms">
+            <For each={SORTS}>{([k, label]) => <option value={k}>{label}</option>}</For>
+          </select>
         </div>
       </div>
 

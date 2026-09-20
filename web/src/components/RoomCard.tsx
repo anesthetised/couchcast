@@ -1,6 +1,6 @@
 import { createSignal, onCleanup, Show, type Component } from "solid-js";
 
-import { formatTime } from "~/lib/format";
+import { formatAgo, formatTime } from "~/lib/format";
 import { Player } from "~/lib/player";
 import type { DirectoryRoom } from "~/lib/types";
 
@@ -131,7 +131,9 @@ const RoomCard: Component<Props> = (props) => {
           </Show>
           <span>{props.room.owner}</span>
           <span>·</span>
-          <span>{props.room.viewers} watching</span>
+          <Show when={media() || props.room.viewers > 0} fallback={<span title="Last activity">active {formatAgo(props.room.lastActiveMs)}</span>}>
+            <span>{props.room.viewers} watching</span>
+          </Show>
         </div>
       </div>
     </a>
