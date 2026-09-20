@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -490,4 +491,43 @@ func TestPlaybackRate(t *testing.T) {
 	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://b", false))
 	require.NoError(t, f.room.Next(ctx, f.owner))
 	assert.EqualValues(t, 1, conn.lastSnapshot().Playback.Rate)
+}
+
+func TestAdvanceSkipsFailedItems(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	conn := &fakeConn{}
+	f.room.Join(ctx, conn, f.owner)
+	f.ready("https://a", 10_000)
+	f.ready("https://d", 10_000)
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://b", false))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://c", false))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://d", false))
+	for _, u := range []string{"https://b", "https://c"} {
+		m, _, err := f.repo.CreateMedia(ctx, f.repo.Pool(), "url:"+u, u)
+		require.NoError(t, err)
+		require.NoError(t, f.repo.SetMediaFailed(ctx, m.ID, "boom"))
+		m, err = f.repo.GetMedia(ctx, m.ID)
+		require.NoError(t, err)
+		f.room.MediaUpdated(m)
+	}
+
+	// Skipping "a" lands on "d": the two failed items go straight to the history.
+	require.NoError(t, f.room.Next(ctx, f.owner))
+	snap := conn.lastSnapshot()
+	require.Len(t, snap.Queue, 1)
+	assert.True(t, snap.Queue[0].Current)
+	assert.Equal(t, "T https://d", snap.Queue[0].Media.Title)
+	assert.True(t, snap.Playback.Playing)
+	assert.Len(t, snap.Played, 3)
+	msgs, err := f.repo.ListRecentMessages(ctx, f.room.ID(), 10)
+	require.NoError(t, err)
+	var skipped int
+	for _, m := range msgs {
+		if strings.Contains(m.Body, "(not playable)") {
+			skipped++
+		}
+	}
+	assert.Equal(t, 2, skipped)
 }

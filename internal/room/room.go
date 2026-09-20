@@ -425,6 +425,24 @@ func (r *Room) nextLocked(ctx context.Context) error {
 	} else if len(r.queue) > 0 {
 		next = r.queue[0]
 	}
+	// Items whose ingest failed can never play: skip them into the history
+	// instead of stalling the room on them.
+	for next != nil {
+		m := r.media[next.MediaID]
+		if m == nil || m.Status != entity.MediaFailed {
+			break
+		}
+		r.logLocked(ctx, "skipped "+mediaLabel(m)+" (not playable)")
+		if err := r.markPlayedLocked(ctx, next.ID); err != nil {
+			return err
+		}
+		next = nil
+		if idx >= 0 && idx < len(r.queue) {
+			next = r.queue[idx]
+		} else if len(r.queue) > 0 {
+			next = r.queue[0]
+		}
+	}
 	// Loop: the queue ran out, so the history becomes the queue again in
 	// the order it was played.
 	if next == nil && r.info.Settings.Loop && len(r.played) > 0 {
