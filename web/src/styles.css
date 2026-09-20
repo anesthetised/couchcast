@@ -2312,3 +2312,18 @@ a.username:hover {
 .video-overlay.ended .button {
   margin-top: 0.75rem;
 }
+
+.bell {
+  width: 30px;
+  height: 30px;
+  color: var(--muted);
+}
+
+.bell svg {
+  width: 18px;
+  height: 18px;
+}
+
+.bell.on {
+  color: var(--accent);
+}

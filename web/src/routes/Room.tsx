@@ -1,5 +1,5 @@
 import { useLocation, useParams } from "@solidjs/router";
-import { createResource, createSignal, For, Show, type Component } from "solid-js";
+import { createEffect, createResource, createSignal, For, on, onCleanup, onMount, Show, type Component } from "solid-js";
 
 import AddToQueue from "~/components/AddToQueue";
 import Chat from "~/components/Chat";
@@ -7,7 +7,9 @@ import Player from "~/components/Player";
 import Queue from "~/components/Queue";
 import { ApiError } from "~/lib/api";
 import { createFullscreen, readFullscreenPanel, storeFullscreenPanel, type FullscreenPanel } from "~/lib/fullscreen";
+import { notify } from "~/lib/notify";
 import { rooms } from "~/lib/rooms";
+import { useTitle } from "~/lib/title";
 import { toast } from "~/lib/toast";
 import { isModerator } from "~/lib/types";
 import { createRoomStore, type RoomEnd, type RoomStore } from "~/store/room";
@@ -56,6 +58,30 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; canS
   const snap = () => store.state.snapshot;
   const live = () => Boolean(store.state.playback?.playing && store.current()?.media.status === "ready");
   const viewers = () => (snap()?.members.length ?? 0) + (snap()?.guests ?? 0);
+
+  // Tab title: unread chat while hidden, what is playing, the room.
+  onMount(() => {
+    const onVisible = () => document.visibilityState === "visible" && store.clearUnread();
+    document.addEventListener("visibilitychange", onVisible);
+    onCleanup(() => document.removeEventListener("visibilitychange", onVisible));
+  });
+  useTitle(() => {
+    const name = snap()?.room.name ?? props.name;
+    const playing = live() ? store.current()?.media.title : null;
+    return `${store.unread() > 0 ? `(${store.unread()}) ` : ""}${playing ? `▶ ${playing} — ` : ""}${name}`;
+  });
+
+  // Tell the adder when their video starts, if they are away.
+  createEffect(
+    on(
+      () => (live() ? store.current()?.id : null),
+      (id, prev) => {
+        const cur = store.current();
+        if (!id || id === prev || prev === undefined || !cur || cur.addedBy !== store.state.me) return;
+        notify("Your video is starting", cur.media.title || cur.media.sourceUrl, `start-${id}`);
+      },
+    ),
+  );
 
   return (
     <div class="room">

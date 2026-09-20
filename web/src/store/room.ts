@@ -33,6 +33,9 @@ export function createRoomStore(slug: string) {
   // the room no longer exists. The socket stops reconnecting.
   const [ended, setEnded] = createSignal<RoomEnd | null>(null);
   const [attempts, setAttempts] = createSignal(0);
+  // unread counts live chat lines that arrived while the tab was hidden;
+  // the page resets it when the tab is visible again.
+  const [unread, setUnread] = createSignal(0);
   const [clockInfo, setClockInfo] = createSignal({ offset: 0, rtt: 0 });
 
   clock.onUpdate = () => setClockInfo({ offset: clock.offset, rtt: clock.rtt });
@@ -89,6 +92,7 @@ export function createRoomStore(slug: string) {
         break;
       case "chat.message":
         setState("messages", (m) => [...m.slice(-199), msg]);
+        if (document.visibilityState === "hidden") setUnread((n) => n + 1);
         break;
       case "chat.deleted":
         setState("messages", (m) => m.filter((x) => x.id !== msg.id));
@@ -115,6 +119,8 @@ export function createRoomStore(slug: string) {
     status,
     attempts,
     ended,
+    unread,
+    clearUnread: () => setUnread(0),
     lastError,
     clock,
     clockInfo,

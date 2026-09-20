@@ -1,7 +1,10 @@
-import { createResource, createRoot } from "solid-js";
+import { createEffect, createResource, createRoot, onCleanup } from "solid-js";
 
 import { api, ApiError } from "~/lib/api";
+import { notify } from "~/lib/notify";
 import type { Invite, User } from "~/lib/types";
+
+const INVITE_POLL_MS = 60_000;
 
 export interface Credentials {
   username: string;
@@ -50,6 +53,25 @@ function createAuthStore() {
     async (id) => (id ? api<Invite[]>("/api/v1/invites") : []),
     { initialValue: [] },
   );
+
+  // Invites have no live channel: poll while signed in and announce new
+  // ones (only after the first load, so the badge does not fire a burst).
+  let known: Set<string> | null = null;
+  createEffect(() => {
+    const list = invites();
+    if (known !== null) {
+      for (const inv of list) if (!known.has(inv.id)) notify("Room invite", `${inv.inviter} invited you to ${inv.roomName}`, `invite-${inv.id}`);
+    }
+    known = new Set(list.map((i) => i.id));
+  });
+  createEffect(() => {
+    if (!user()) {
+      known = null;
+      return;
+    }
+    const timer = window.setInterval(() => void refetchInvites(), INVITE_POLL_MS);
+    onCleanup(() => window.clearInterval(timer));
+  });
 
   return { user, login, register, logout, refetch, invites, refetchInvites, setInvites };
 }

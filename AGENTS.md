@@ -127,6 +127,10 @@ and a production image build.
   SPA page is `/new`; anonymous visitors round-trip via `/login?next=/new`.
 - `GET /api/v1/users?q=` (signed in) is username autocomplete; the
   `UsernamePicker` component wraps it wherever usernames are typed.
+- Browser notifications (`lib/notify.ts`) are opt-in from the bell in the
+  top bar and fire only while the tab is hidden: new invites (the auth
+  store polls `/invites` every minute) and the caller's own video starting.
+  `lib/title.ts` keeps the tab title (`(unread) ▶ Title — Room`).
 - `GET /api/v1/media/probe?url=` (signed in, rate limited) previews a link
   for the add form: known sources answer from the database, new ones go
   through `ingest.Service.Preview` → the extractor, bounded by a timeout.
