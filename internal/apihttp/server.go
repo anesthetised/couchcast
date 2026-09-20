@@ -30,6 +30,17 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
+// Admitter checks a URL without touching the network (ingest.Service).
+type Admitter interface {
+	Key(rawURL string) (string, error)
+}
+
+// LiveQueue adds a URL to a room's queue through the room manager, so the
+// admission, rate limit and autoplay rules of a normal queue.add apply.
+type LiveQueue interface {
+	QueueAdd(ctx context.Context, roomID uuid.UUID, actor access.Actor, rawURL string) error
+}
+
 // WebSocketServer upgrades a room connection (implemented by hub.Hub).
 type WebSocketServer interface {
 	Serve(w http.ResponseWriter, r *http.Request, rm *entity.Room, actor access.Actor)
@@ -53,6 +64,11 @@ type Deps struct {
 	Directory DirectoryStore
 	Live      LiveRooms
 	Signer    *mediastore.Signer
+
+	// Admit validates a first video URL before a room is created and
+	// LiveQueue enqueues it through the live room. Nil disables firstUrl.
+	Admit     Admitter
+	LiveQueue LiveQueue
 
 	// MediaObjects deletes packaged media when an administrator removes it.
 	MediaObjects MediaDeleter

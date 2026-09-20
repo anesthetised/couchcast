@@ -5,8 +5,14 @@ import type { Ban, Directory, Invite, Member, Room, Visibility } from "~/lib/typ
 const json = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) });
 
 export const rooms = {
-  create: (input: { name: string; slug?: string; visibility: Visibility }) =>
-    api<Room>("/api/v1/rooms", json(input)),
+  create: (input: {
+    name: string;
+    slug?: string;
+    visibility: Visibility;
+    firstUrl?: string;
+    settings?: { voteMode?: boolean; viewersCanAdd?: boolean };
+    invites?: string[];
+  }) => api<Room & { warnings?: string[] }>("/api/v1/rooms", json(input)),
   get: (slug: string) => api<Room>(`/api/v1/rooms/${slug}`),
   update: (slug: string, patch: { name?: string; slug?: string; visibility?: Visibility }) =>
     api<Room>(`/api/v1/rooms/${slug}`, { method: "PATCH", body: JSON.stringify(patch) }),

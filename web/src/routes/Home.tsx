@@ -1,15 +1,12 @@
-import { createSignal, Show, type Component } from "solid-js";
+import { Show, type Component } from "solid-js";
 
-import CreateRoomForm from "~/components/CreateRoomForm";
 import Directory from "~/components/Directory";
 import InvitesInbox from "~/components/InvitesInbox";
 import { auth } from "~/store/auth";
 
-// Home: a hero with the create toggle, pending invites, then the room
+// Home: a hero with the create link, pending invites, then the room
 // directory for everyone.
 const Home: Component = () => {
-  const [creating, setCreating] = createSignal(false);
-
   return (
     <div class="stack">
       <header class="hero">
@@ -31,21 +28,14 @@ const Home: Component = () => {
               </>
             }
           >
-            <button type="button" aria-expanded={creating()} onClick={() => setCreating(!creating())}>
-              {creating() ? "Close" : "+ New room"}
-            </button>
+            <a class="button" href="/new">
+              + New room
+            </a>
           </Show>
         </div>
       </header>
 
       <Show when={auth.user()}>
-        <div class="collapse" data-open={creating()}>
-          <div>
-            <Show when={creating()}>
-              <CreateRoomForm onCancel={() => setCreating(false)} />
-            </Show>
-          </div>
-        </div>
         <InvitesInbox />
       </Show>
 

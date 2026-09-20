@@ -107,6 +107,11 @@ and a production image build.
   `ghost`/`danger`/`link`, `.chip`, `.card`, `.badge`, `.toolbar`, `.hero`,
   `.collapse`). Never hard-code colours in components; add a token.
   Wire types in `web/src/protocol.ts` mirror `internal/protocol`.
+- `POST /api/v1/rooms` creates a room and optionally queues a first video
+  (validated before creation, enqueued through the live room via
+  `apihttp.LiveQueue`), applies initial settings and sends invites; extras
+  that fail after creation come back as `warnings`, never as errors. The
+  SPA page is `/new`; anonymous visitors round-trip via `/login?next=/new`.
 - `GET /api/v1/rooms` is the directory (public rooms plus the caller's
   private rooms; `live`/`private`/`mine` filters, search, pagination).
   `GET /api/v1/me/rooms` is deprecated and unused by the SPA.

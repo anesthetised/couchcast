@@ -25,6 +25,7 @@ type AdminStore interface {
 	ResolveReports(ctx context.Context, mediaID, resolvedBy uuid.UUID) (int64, error)
 	DeleteMedia(ctx context.Context, id uuid.UUID) error
 	BlockSource(ctx context.Context, sourceKey, reason string, createdBy *uuid.UUID) error
+	IsSourceBlocked(ctx context.Context, sourceKey string) (bool, error)
 	ListBlocklist(ctx context.Context) ([]entity.BlocklistEntry, error)
 	UnblockSource(ctx context.Context, sourceKey string) error
 	Stats(ctx context.Context) (*entity.Stats, error)

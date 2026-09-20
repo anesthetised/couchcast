@@ -292,9 +292,21 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 // --- rooms -------------------------------------------------------------------
 
 type createRoomRequest struct {
-	Name       string `json:"name"`
-	Slug       string `json:"slug"`
-	Visibility string `json:"visibility"`
+	Name       string   `json:"name"`
+	Slug       string   `json:"slug"`
+	Visibility string   `json:"visibility"`
+	FirstURL   string   `json:"firstUrl"`
+	Invites    []string `json:"invites"`
+	Settings   *struct {
+		VoteMode      *bool `json:"voteMode"`
+		ViewersCanAdd *bool `json:"viewersCanAdd"`
+	} `json:"settings"`
+}
+
+// createRoomResponse is the room plus the outcome of the optional extras.
+type createRoomResponse struct {
+	roomResponse
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
@@ -329,10 +341,45 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	settings := entity.DefaultSettings()
+	if req.Settings != nil {
+		if req.Settings.VoteMode != nil {
+			settings.VoteMode = *req.Settings.VoteMode
+		}
+		if req.Settings.ViewersCanAdd != nil {
+			settings.ViewersCanAdd = *req.Settings.ViewersCanAdd
+		}
+	}
+
+	// Reject a bad first video before anything is created.
+	firstURL := strings.TrimSpace(req.FirstURL)
+	if firstURL != "" {
+		if s.deps.Admit == nil || s.deps.LiveQueue == nil {
+			writeError(w, http.StatusBadRequest, "starting with a video is not available")
+			return
+		}
+		key, err := s.deps.Admit.Key(firstURL)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "the first video link is not supported")
+			return
+		}
+		if blocked, err := s.deps.Admin.IsSourceBlocked(r.Context(), key); err != nil {
+			s.internalError(w, r, "check blocklist", err)
+			return
+		} else if blocked {
+			writeError(w, http.StatusBadRequest, "the first video has been blocked by an administrator")
+			return
+		}
+	}
+	if len(req.Invites) > 50 {
+		writeError(w, http.StatusBadRequest, "at most 50 invites at creation")
+		return
+	}
+
 	var room *entity.Room
 	for attempt := 0; ; attempt++ {
 		var err error
-		room, err = s.deps.Rooms.CreateRoom(r.Context(), slug, name, user.ID, visibility, entity.DefaultSettings())
+		room, err = s.deps.Rooms.CreateRoom(r.Context(), slug, name, user.ID, visibility, settings)
 		if err == nil {
 			break
 		}
@@ -348,12 +395,42 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rc := roomCtx{room: room, actor: access.Actor{User: user, Member: &entity.RoomMember{Role: entity.RoomRoleOwner}}}
+	var warnings []string
+
+	// The room exists from here on: extras report problems as warnings.
+	if firstURL != "" {
+		if err := s.deps.LiveQueue.QueueAdd(r.Context(), room.ID, rc.actor, firstURL); err != nil {
+			s.deps.Logger.WarnContext(r.Context(), "queue first video", "room", room.Slug, "error", err)
+			warnings = append(warnings, "the first video could not be queued: "+err.Error())
+		}
+	}
+	for _, name := range req.Invites {
+		name = strings.TrimSpace(name)
+		if name == "" || strings.EqualFold(name, user.Username) {
+			continue
+		}
+		target, err := s.deps.Users.GetUserByUsername(r.Context(), name)
+		if errors.Is(err, repository.ErrNotFound) {
+			warnings = append(warnings, "no such user: "+name)
+			continue
+		}
+		if err != nil {
+			s.internalError(w, r, "lookup invitee", err)
+			return
+		}
+		if _, err := s.deps.Rooms.CreateInvite(r.Context(), room.ID, target.ID, user.ID); err != nil && !errors.Is(err, repository.ErrConflict) {
+			s.internalError(w, r, "create invite", err)
+			return
+		}
+		s.audit(r, "invite.create", "user", target.ID.String(), room, map[string]any{"username": target.Username})
+	}
+
 	resp, err := s.roomResponse(r.Context(), rc)
 	if err != nil {
 		s.internalError(w, r, "room response", err)
 		return
 	}
-	writeJSON(w, http.StatusCreated, resp)
+	writeJSON(w, http.StatusCreated, createRoomResponse{roomResponse: resp, Warnings: warnings})
 }
 
 func (s *Server) handleGetRoom(w http.ResponseWriter, r *http.Request) {

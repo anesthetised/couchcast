@@ -1,4 +1,4 @@
-import { useNavigate } from "@solidjs/router";
+import { useNavigate, useSearchParams } from "@solidjs/router";
 import { createSignal, Show, type Component } from "solid-js";
 
 import { auth, type Credentials } from "~/store/auth";
@@ -11,6 +11,9 @@ type Props = {
 // store action is called.
 const AuthForm: Component<Props> = (props) => {
   const navigate = useNavigate();
+  const [params] = useSearchParams<{ next?: string }>();
+  // Only same-origin paths are honoured, never absolute URLs.
+  const next = () => (params.next?.startsWith("/") && !params.next.startsWith("//") ? params.next : "/");
   const [username, setUsername] = createSignal("");
   const [password, setPassword] = createSignal("");
   const [error, setError] = createSignal<string | null>(null);
@@ -23,7 +26,7 @@ const AuthForm: Component<Props> = (props) => {
     const c: Credentials = { username: username().trim(), password: password() };
     try {
       await (props.mode === "login" ? auth.login(c) : auth.register(c));
-      navigate("/", { replace: true });
+      navigate(next(), { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -71,11 +74,11 @@ const AuthForm: Component<Props> = (props) => {
       <p class="muted">
         {props.mode === "login" ? (
           <>
-            No account? <a href="/register">Register</a>
+            No account? <a href={`/register${params.next ? `?next=${encodeURIComponent(params.next)}` : ""}`}>Register</a>
           </>
         ) : (
           <>
-            Already registered? <a href="/login">Log in</a>
+            Already registered? <a href={`/login${params.next ? `?next=${encodeURIComponent(params.next)}` : ""}`}>Log in</a>
           </>
         )}
       </p>

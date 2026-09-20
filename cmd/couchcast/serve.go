@@ -83,6 +83,8 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Directory:    repo,
 		Live:         rooms,
 		Signer:       signer,
+		Admit:        admit,
+		LiveQueue:    liveQueue{rooms},
 		Media:        mediaHandler,
 		MediaObjects: store,
 		RoomsLoaded:  rooms.Loaded,
@@ -209,4 +211,15 @@ func connectDB(ctx context.Context, cfg config.DatabaseConfig, logger *slog.Logg
 	logger.Info("database connected")
 
 	return pool, nil
+}
+
+// liveQueue adapts the room manager to apihttp.LiveQueue.
+type liveQueue struct{ rooms *room.Manager }
+
+func (q liveQueue) QueueAdd(ctx context.Context, roomID uuid.UUID, actor access.Actor, rawURL string) error {
+	r, err := q.rooms.Get(ctx, roomID)
+	if err != nil {
+		return err
+	}
+	return r.QueueAdd(ctx, actor, rawURL)
 }

@@ -1,5 +1,5 @@
-import { useParams } from "@solidjs/router";
-import { createResource, createSignal, Show, type Component } from "solid-js";
+import { useLocation, useParams } from "@solidjs/router";
+import { createResource, createSignal, For, Show, type Component } from "solid-js";
 
 import AddToQueue from "~/components/AddToQueue";
 import Chat from "~/components/Chat";
@@ -37,6 +37,10 @@ const Room: Component = () => {
 
 const LiveRoom: Component<{ slug: string; name: string; canSettings: boolean }> = (props) => {
   const store = createRoomStore(props.slug);
+  // Warnings handed over by the create page (unknown invitees, a first
+  // video that could not be queued); shown once, dismissable.
+  const location = useLocation<{ warnings?: string[] }>();
+  const [notices, setNotices] = createSignal<string[]>(location.state?.warnings ?? []);
   let stage: HTMLDivElement | undefined;
   const fs = createFullscreen(() => stage);
   const usePanel = (panel: FullscreenPanel) => {
@@ -68,6 +72,16 @@ const LiveRoom: Component<{ slug: string; name: string; canSettings: boolean }> 
             </a>
           </Show>
         </header>
+        <Show when={notices().length > 0}>
+          <div class="banner">
+            <ul class="list">
+              <For each={notices()}>{(n) => <li class="row">{n}</li>}</For>
+            </ul>
+            <button type="button" class="link" onClick={() => setNotices([])}>
+              Dismiss
+            </button>
+          </div>
+        </Show>
         <Show when={store.lastError()}>{(e) => <p class="card error">{e()}</p>}</Show>
         <div
           class={`stage ${fs.active() ? "fullscreen" : ""} ${fs.idle() ? "idle" : ""}`}
