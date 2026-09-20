@@ -1400,11 +1400,19 @@ progress {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.9);
 }
 
+/* Items after the current one fade back so the playing title stands out;
+   they come forward when the panel is in use. */
+.fs-queue .queue-item:not(.current) {
+  opacity: 0.55;
+  transition: opacity 150ms;
+}
+
 .fs-queue:hover .queue-item,
 .fs-queue:focus-within .queue-item,
 .fs-chat:hover .chat-line,
 .fs-chat:focus-within .chat-line {
   text-shadow: none;
+  opacity: 1;
 }
 
 .fs-queue .queue-actions,
