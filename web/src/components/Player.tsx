@@ -98,6 +98,7 @@ const Player: Component<Props> = (props) => {
     // so the page does not scroll underneath.
     wrap.addEventListener("wheel", onWheel, { passive: false });
     onCleanup(() => wrap.removeEventListener("wheel", onWheel));
+    video.addEventListener("playing", () => setError(null));
     video.addEventListener("enterpictureinpicture", () => setPip(true));
     video.addEventListener("leavepictureinpicture", () => setPip(false));
 

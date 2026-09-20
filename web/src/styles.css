@@ -2278,3 +2278,37 @@ a.username:hover {
 .add-form > button {
   align-self: flex-start;
 }
+
+/* --- connection state ------------------------------------------------------ */
+
+.reconnecting {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.8rem;
+  border-radius: var(--radius-pill);
+  background: var(--overlay-strong);
+  color: var(--text);
+  font-size: var(--fs-sm);
+}
+
+.video-overlay.ended {
+  z-index: 6;
+  background: rgba(11, 13, 18, 0.94);
+  border-radius: var(--radius);
+  gap: 0.35rem;
+}
+
+.video-overlay.ended strong {
+  font-size: var(--fs-lg);
+  color: var(--text);
+}
+
+.video-overlay.ended .button {
+  margin-top: 0.75rem;
+}

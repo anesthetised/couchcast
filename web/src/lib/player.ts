@@ -32,7 +32,9 @@ export class Player {
     });
     this.shaka.addEventListener("error", (e) => {
       const detail = (e as unknown as { detail: shaka.util.Error }).detail;
-      this.onError(`Player error ${detail.code}`);
+      // Recoverable errors (a failed segment fetch while the server is
+      // away) are retried by Shaka; only critical ones need the user.
+      if (detail.severity === shaka.util.Error.Severity.CRITICAL) this.onError(`Player error ${detail.code}`);
     });
     const emit = () => this.emitTracks();
     this.shaka.addEventListener("trackschanged", emit);

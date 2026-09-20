@@ -9,11 +9,18 @@ type Handler = (msg: ServerMessage) => void;
 export class RoomSocket {
   private ws: WebSocket | null = null;
   private handlers = new Set<Handler>();
-  private attempts = 0;
   private timer: number | null = null;
   private stopped = false;
+  // attempts counts reconnects since the last successful open; opened
+  // reports whether the socket has ever been open (first connect vs. a
+  // drop).
+  attempts = 0;
+  opened = false;
   status: SocketStatus = "connecting";
   onStatus: (s: SocketStatus) => void = () => {};
+  // onDrop runs before each reconnect with the server's close reason (empty
+  // for network failures); return false to stop reconnecting.
+  onDrop: (reason: string, attempts: number) => boolean | Promise<boolean> = () => true;
 
   constructor(private readonly slug: string) {}
 
@@ -30,6 +37,7 @@ export class RoomSocket {
 
     ws.onopen = () => {
       this.attempts = 0;
+      this.opened = true;
       this.setStatus("open");
     };
     ws.onmessage = (ev) => {
@@ -45,7 +53,7 @@ export class RoomSocket {
       }
       for (const h of this.handlers) h(msg);
     };
-    ws.onclose = () => {
+    ws.onclose = (ev) => {
       if (this.ws !== ws) return;
       this.ws = null;
       if (this.stopped) {
@@ -53,13 +61,18 @@ export class RoomSocket {
         return;
       }
       this.setStatus("closed");
-      this.scheduleReconnect();
+      void this.scheduleReconnect(ev.reason);
     };
     ws.onerror = () => ws.close();
   }
 
-  private scheduleReconnect() {
+  private async scheduleReconnect(reason: string) {
     const delay = Math.min(30_000, 500 * 2 ** this.attempts++);
+    if (!(await this.onDrop(reason, this.attempts))) {
+      this.stopped = true;
+      return;
+    }
+    if (this.stopped) return;
     this.timer = window.setTimeout(() => this.open(), delay);
   }
 

@@ -85,7 +85,10 @@ and a production image build.
   median of samples), `sync.ts` (deadband 50 ms, `playbackRate` nudge up
   to 1 s, seek beyond), `player.ts` (Shaka + token request filter).
   `store/room.ts` wraps the socket in a Solid store; server errors surface
-  through `lib/toast.ts` (`<Toasts>` is mounted once in `App.tsx`).
+  through `lib/toast.ts` (`<Toasts>` is mounted once in `App.tsx`). A
+  dropped socket shows a reconnecting strip; a `kicked` message, a close
+  with reason `room deleted`, or a 404/403 on the REST check before the
+  second retry ends the session (`store.ended()`) with a full-stage notice.
   `Player.tsx` owns the hotkeys (Space, ←/→, F, M, N, `?` — ignored in inputs),
   persists volume/mute/quality in `localStorage` (`couchcast.*`) and shows
   the sync state as a dot (click for the debug overlay). When the browser

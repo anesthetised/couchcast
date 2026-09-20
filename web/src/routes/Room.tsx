@@ -10,7 +10,7 @@ import { createFullscreen, readFullscreenPanel, storeFullscreenPanel, type Fulls
 import { rooms } from "~/lib/rooms";
 import { toast } from "~/lib/toast";
 import { isModerator } from "~/lib/types";
-import { createRoomStore, type RoomStore } from "~/store/room";
+import { createRoomStore, type RoomEnd, type RoomStore } from "~/store/room";
 
 // Room page: the REST fetch establishes access (401/403 → message), then
 // the WebSocket store drives everything live.
@@ -81,6 +81,23 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; canS
           onClick={fs.touch}
           onKeyDown={fs.touch}
         >
+          <Show when={!store.ended() && store.status() !== "open" && (store.attempts() > 0 || store.status() === "closed")}>
+            <div class="reconnecting" role="status">
+              <span class="ring small" aria-hidden="true" />
+              Reconnecting{store.attempts() > 1 ? ` · attempt ${store.attempts()}` : ""}…
+            </div>
+          </Show>
+          <Show when={store.ended()}>
+            {(end) => (
+              <div class="video-overlay ended" role="alert">
+                <strong>{endTitle(end())}</strong>
+                <span class="muted">{endDetail(end())}</span>
+                <a class="button ghost" href="/">
+                  Back to rooms
+                </a>
+              </div>
+            )}
+          </Show>
           <Player
             room={store}
             onFullscreen={fs.toggle}
@@ -149,9 +166,6 @@ const RoomHeader: Component<{
           <span class="muted small">
             {props.viewers} watching
           </span>
-          <Show when={props.store.status() !== "open"}>
-            <span class="badge">{props.store.status()}</span>
-          </Show>
         </div>
       </div>
       <div class="actions">
@@ -190,6 +204,29 @@ const RoomHeader: Component<{
     </header>
   );
 };
+
+function endTitle(end: RoomEnd): string {
+  if (end.kind === "gone") return "This room is gone";
+  switch (end.reason) {
+    case "banned":
+      return "You have been banned";
+    case "removed from room":
+      return "You were removed from this room";
+    default:
+      return "Disconnected";
+  }
+}
+
+function endDetail(end: RoomEnd): string {
+  if (end.kind === "gone") return "It was deleted by its owner or an administrator.";
+  switch (end.reason) {
+    case "banned":
+    case "removed from room":
+      return "A moderator ended your access.";
+    default:
+      return end.reason;
+  }
+}
 
 async function copyLink(slug: string) {
   const url = `${location.origin}/r/${slug}`;

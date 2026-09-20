@@ -1,11 +1,15 @@
 import { createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 
+import { ApiError } from "~/lib/api";
 import { ClockSync } from "~/lib/clock";
+import { rooms } from "~/lib/rooms";
 import { toast } from "~/lib/toast";
 import type { RoomRole } from "~/lib/types";
 import { RoomSocket, type SocketStatus } from "~/lib/ws";
 import type { ChatMessage, ClientMessage, Playback, Snapshot } from "~/protocol";
+
+export type RoomEnd = { kind: "gone" } | { kind: "kicked"; reason: string };
 
 export interface RoomState {
   snapshot: Snapshot | null;
@@ -25,13 +29,42 @@ export function createRoomStore(slug: string) {
   const [state, setState] = createStore<RoomState>({ snapshot: null, playback: null, messages: [], me: null });
   const [status, setStatus] = createSignal<SocketStatus>("connecting");
   const [lastError, setLastError] = createSignal<string | null>(null);
+  // ended is set when the room is over for this client: kicked, banned or
+  // the room no longer exists. The socket stops reconnecting.
+  const [ended, setEnded] = createSignal<RoomEnd | null>(null);
+  const [attempts, setAttempts] = createSignal(0);
   const [clockInfo, setClockInfo] = createSignal({ offset: 0, rtt: 0 });
 
   clock.onUpdate = () => setClockInfo({ offset: clock.offset, rtt: clock.rtt });
   socket.onStatus = (s) => {
     setStatus(s);
+    setAttempts(socket.attempts);
     if (s === "open") clock.start();
     else clock.stop();
+  };
+  // A drop with a server-side reason (room deleted) or a room that has
+  // gone missing or closed to us since (404/403 on a quick REST check)
+  // ends the session instead of retrying forever.
+  socket.onDrop = async (reason, n) => {
+    setAttempts(n);
+    if (reason === "room deleted") {
+      setEnded({ kind: "gone" });
+      return false;
+    }
+    if (n < 2) return true;
+    try {
+      await rooms.get(slug);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 404) {
+        setEnded({ kind: "gone" });
+        return false;
+      }
+      if (err instanceof ApiError && err.status === 403) {
+        setEnded({ kind: "kicked", reason: err.message });
+        return false;
+      }
+    }
+    return true;
   };
 
   socket.subscribe((msg) => {
@@ -64,7 +97,7 @@ export function createRoomStore(slug: string) {
         toast(msg.message, "error");
         break;
       case "kicked":
-        setLastError(`Disconnected: ${msg.reason}`);
+        setEnded({ kind: "kicked", reason: msg.reason });
         break;
     }
   });
@@ -80,6 +113,8 @@ export function createRoomStore(slug: string) {
   return {
     state,
     status,
+    attempts,
+    ended,
     lastError,
     clock,
     clockInfo,
