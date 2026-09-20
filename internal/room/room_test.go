@@ -134,7 +134,7 @@ func TestQueueAddStartsPlayback(t *testing.T) {
 	f.room.Join(ctx, conn, f.owner)
 
 	// Media not ready: current is set but paused.
-	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a"))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false))
 	snap := conn.lastSnapshot()
 	require.Len(t, snap.Queue, 1)
 	assert.True(t, snap.Queue[0].Current)
@@ -142,8 +142,8 @@ func TestQueueAddStartsPlayback(t *testing.T) {
 	assert.Equal(t, "queued", string(snap.Queue[0].Media.Status))
 
 	// Guests may add to public rooms with viewersCanAdd; anonymous may not.
-	require.NoError(t, f.room.QueueAdd(ctx, f.guest, "https://b"))
-	err := f.room.QueueAdd(ctx, access.Actor{}, "https://c")
+	require.NoError(t, f.room.QueueAdd(ctx, f.guest, "https://b", false))
+	err := f.room.QueueAdd(ctx, access.Actor{}, "https://c", false)
 	require.ErrorAs(t, err, new(*Error))
 
 	// Ingest finishes the first item: playback starts automatically.
@@ -167,8 +167,8 @@ func TestPlaybackClock(t *testing.T) {
 	conn := &fakeConn{}
 	f.room.Join(ctx, conn, f.owner)
 	f.ready("https://a", 100_000)
-	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a"))
-	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://b"))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://b", false))
 
 	// Playing from 0 at t0.
 	pb := conn.last().(protocol.Snapshot).Playback
@@ -213,7 +213,7 @@ func TestPlaybackClock(t *testing.T) {
 func TestPlayNotReady(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://x"))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://x", false))
 	err := f.room.Play(ctx, f.owner)
 	var re *Error
 	require.ErrorAs(t, err, &re)
@@ -227,7 +227,7 @@ func TestQueueRemoveMoveJumpRetry(t *testing.T) {
 	f.room.Join(ctx, conn, f.owner)
 	for _, u := range []string{"https://a", "https://b", "https://c", "https://d"} {
 		f.ready(u, 10_000)
-		require.NoError(t, f.room.QueueAdd(ctx, f.owner, u))
+		require.NoError(t, f.room.QueueAdd(ctx, f.owner, u, false))
 	}
 	ids := func() []string {
 		snap := conn.lastSnapshot()
@@ -255,7 +255,7 @@ func TestQueueRemoveMoveJumpRetry(t *testing.T) {
 	assert.Equal(t, c, reloaded.queue[1].ID)
 
 	// Guests can remove only their own items.
-	require.NoError(t, f.room.QueueAdd(ctx, f.guest, "https://e"))
+	require.NoError(t, f.room.QueueAdd(ctx, f.guest, "https://e", false))
 	e := conn.lastSnapshot().Queue[4].ID
 	assert.Error(t, f.room.QueueRemove(ctx, f.guest, b))
 	require.NoError(t, f.room.QueueRemove(ctx, f.guest, e))
@@ -291,8 +291,8 @@ func TestAutoAdvance(t *testing.T) {
 	require.NoError(t, err)
 	conn := &fakeConn{}
 	room.Join(ctx, conn, f.owner)
-	require.NoError(t, room.QueueAdd(ctx, f.owner, "https://short"))
-	require.NoError(t, room.QueueAdd(ctx, f.owner, "https://next"))
+	require.NoError(t, room.QueueAdd(ctx, f.owner, "https://short", false))
+	require.NoError(t, room.QueueAdd(ctx, f.owner, "https://next", false))
 
 	require.Eventually(t, func() bool {
 		snap := conn.lastSnapshot()
@@ -334,7 +334,7 @@ func TestPlayingRoomStaysLoaded(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	f.ready("https://a", 600_000)
-	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a"))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false))
 
 	f.now = f.now.Add(time.Hour)
 	assert.False(t, f.room.Tick(ctx, time.Minute), "playing with nobody watching is not idle")
@@ -348,7 +348,7 @@ func TestRestoreFromDatabase(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	f.ready("https://a", 100_000)
-	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a"))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false))
 	f.now = f.now.Add(7 * time.Second)
 	require.NoError(t, f.room.Pause(ctx, f.owner))
 
@@ -358,4 +358,73 @@ func TestRestoreFromDatabase(t *testing.T) {
 	assert.False(t, pb.Playing)
 	assert.EqualValues(t, 7_000, pb.PositionMs)
 	assert.NotNil(t, pb.ItemID)
+}
+
+func TestQueueHistoryAndLoop(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	conn := &fakeConn{}
+	f.room.Join(ctx, conn, f.owner)
+	f.ready("https://a", 10_000)
+	f.ready("https://b", 10_000)
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://b", false))
+
+	// Skipping moves the item into the history instead of dropping it.
+	require.NoError(t, f.room.Next(ctx, f.owner))
+	snap := conn.lastSnapshot()
+	require.Len(t, snap.Queue, 1)
+	require.Len(t, snap.Played, 1)
+	assert.Equal(t, "T https://a", snap.Played[0].Media.Title)
+	assert.Equal(t, f.now.UnixMilli(), snap.Played[0].PlayedMs)
+	played, err := f.repo.ListPlayed(ctx, f.room.ID(), 10)
+	require.NoError(t, err)
+	assert.Len(t, played, 1)
+
+	// Play next lands right after the current item.
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://c", false))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://d", true))
+	titles := func() []string {
+		queue := conn.lastSnapshot().Queue
+		out := make([]string, 0, len(queue))
+		for _, q := range queue {
+			out = append(out, q.Media.Title)
+		}
+		return out
+	}
+	assert.Equal(t, []string{"T https://b", "T https://d", "T https://c"}, titles())
+
+	// Replay re-queues a copy from the history; the history keeps it.
+	require.NoError(t, f.room.QueueReplay(ctx, f.guest, snap.Played[0].ID))
+	assert.Equal(t, []string{"T https://b", "T https://d", "T https://c", "T https://a"}, titles())
+	assert.Len(t, conn.lastSnapshot().Played, 1)
+	assert.Error(t, f.room.QueueReplay(ctx, f.owner, uuid.New()))
+
+	// Without loop the queue runs dry; with loop it restarts in play order.
+	for range 4 {
+		require.NoError(t, f.room.Next(ctx, f.owner))
+	}
+	snap = conn.lastSnapshot()
+	assert.Empty(t, snap.Queue)
+	assert.Nil(t, snap.Playback.ItemID)
+	assert.Len(t, snap.Played, 5)
+
+	on := true
+	require.NoError(t, f.room.SettingsSet(ctx, f.owner, protocol.SettingsSet{Loop: &on}))
+	require.NoError(t, f.room.QueueReplay(ctx, f.owner, snap.Played[0].ID)) // "a" again, starts playing
+	require.NoError(t, f.room.Next(ctx, f.owner))
+	snap = conn.lastSnapshot()
+	assert.Equal(t, []string{"T https://a", "T https://b", "T https://d", "T https://c", "T https://a", "T https://a"}, titles(), "history back in play order")
+	assert.Empty(t, snap.Played)
+	require.NotNil(t, snap.Playback.ItemID)
+	assert.True(t, snap.Queue[0].Current)
+
+	// Clearing the history is a moderator action.
+	require.NoError(t, f.room.Next(ctx, f.owner))
+	assert.Error(t, f.room.QueueClearPlayed(ctx, f.guest))
+	require.NoError(t, f.room.QueueClearPlayed(ctx, f.owner))
+	assert.Empty(t, conn.lastSnapshot().Played)
+	played, err = f.repo.ListPlayed(ctx, f.room.ID(), 10)
+	require.NoError(t, err)
+	assert.Empty(t, played)
 }

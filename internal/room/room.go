@@ -34,8 +34,12 @@ type Store interface {
 	ListQueue(ctx context.Context, roomID uuid.UUID) ([]entity.QueueItem, error)
 	GetMediaBatch(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*entity.Media, error)
 	GetMedia(ctx context.Context, id uuid.UUID) (*entity.Media, error)
+	ListPlayed(ctx context.Context, roomID uuid.UUID, limit int) ([]entity.QueueItem, error)
 	AddQueueItem(ctx context.Context, q repository.Querier, roomID, mediaID uuid.UUID, addedBy *uuid.UUID) (*entity.QueueItem, error)
 	DeleteQueueItem(ctx context.Context, roomID, itemID uuid.UUID) error
+	MarkQueueItemPlayed(ctx context.Context, roomID, itemID uuid.UUID, at time.Time) error
+	RequeuePlayed(ctx context.Context, roomID uuid.UUID) error
+	ClearPlayed(ctx context.Context, roomID uuid.UUID) error
 	SetQueueRanks(ctx context.Context, roomID uuid.UUID, ordered []uuid.UUID) error
 	UpdateRoomPlayback(ctx context.Context, roomID uuid.UUID, p entity.PlaybackState) error
 	ToggleQueueVote(ctx context.Context, itemID, userID uuid.UUID) (bool, error)
@@ -74,6 +78,9 @@ type Deps struct {
 	QueueAddLimiter *ratelimit.Limiter
 }
 
+// playedKept is how much history a room keeps in memory and sends out.
+const playedKept = 20
+
 // Error is a command rejection with a protocol error code.
 type Error struct {
 	Code    string
@@ -108,8 +115,9 @@ type Room struct {
 	info  *entity.Room
 	owner string
 
-	queue []*entity.QueueItem // rank order
-	media map[uuid.UUID]*entity.Media
+	queue  []*entity.QueueItem // rank order
+	played []*entity.QueueItem // history, newest first, at most playedKept
+	media  map[uuid.UUID]*entity.Media
 
 	current    *uuid.UUID
 	playing    bool
@@ -190,9 +198,16 @@ func (r *Room) reloadQueue(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	ids := make([]uuid.UUID, 0, len(items))
+	played, err := r.deps.Store.ListPlayed(ctx, r.info.ID, playedKept)
+	if err != nil {
+		return err
+	}
+	ids := make([]uuid.UUID, 0, len(items)+len(played))
 	for i := range items {
 		ids = append(ids, items[i].MediaID)
+	}
+	for i := range played {
+		ids = append(ids, played[i].MediaID)
 	}
 	media, err := r.deps.Store.GetMediaBatch(ctx, ids)
 	if err != nil {
@@ -203,7 +218,31 @@ func (r *Room) reloadQueue(ctx context.Context) error {
 	for i := range items {
 		r.queue = append(r.queue, &items[i])
 	}
+	r.played = r.played[:0]
+	for i := range played {
+		r.played = append(r.played, &played[i])
+	}
 	r.media = media
+	return nil
+}
+
+// markPlayedLocked moves a queue item into the history.
+func (r *Room) markPlayedLocked(ctx context.Context, itemID uuid.UUID) error {
+	now := r.now()
+	if err := r.deps.Store.MarkQueueItemPlayed(ctx, r.info.ID, itemID, now); err != nil && !errors.Is(err, repository.ErrNotFound) {
+		return err
+	}
+	idx := r.indexOf(itemID)
+	if idx < 0 {
+		return nil
+	}
+	item := r.queue[idx]
+	r.queue = append(r.queue[:idx], r.queue[idx+1:]...)
+	item.PlayedAt = &now
+	r.played = append([]*entity.QueueItem{item}, r.played...)
+	if len(r.played) > playedKept {
+		r.played = r.played[:playedKept]
+	}
 	return nil
 }
 
@@ -327,13 +366,8 @@ func (r *Room) nextLocked(ctx context.Context) error {
 		return errNoCurrent
 	}
 	idx := r.indexOf(*r.current)
-	oldID := *r.current
-
-	if err := r.deps.Store.DeleteQueueItem(ctx, r.info.ID, oldID); err != nil && !errors.Is(err, repository.ErrNotFound) {
+	if err := r.markPlayedLocked(ctx, *r.current); err != nil {
 		return err
-	}
-	if idx >= 0 {
-		r.queue = append(r.queue[:idx], r.queue[idx+1:]...)
 	}
 
 	var next *entity.QueueItem
@@ -341,6 +375,25 @@ func (r *Room) nextLocked(ctx context.Context) error {
 		next = r.queue[idx]
 	} else if len(r.queue) > 0 {
 		next = r.queue[0]
+	}
+	// Loop: the queue ran out, so the history becomes the queue again in
+	// the order it was played.
+	if next == nil && r.info.Settings.Loop && len(r.played) > 0 {
+		if err := r.deps.Store.RequeuePlayed(ctx, r.info.ID); err != nil {
+			return err
+		}
+		if err := r.reloadQueue(ctx); err != nil {
+			return err
+		}
+		if r.info.Settings.VoteMode {
+			if err := r.reorderByVotesLocked(ctx); err != nil {
+				return err
+			}
+		}
+		if len(r.queue) > 0 {
+			next = r.queue[0]
+		}
+		r.logLocked(ctx, "queue restarted from the top")
 	}
 	r.setCurrentLocked(next)
 	return r.persistLocked(ctx)
@@ -389,6 +442,16 @@ func (r *Room) snapshotLocked() protocol.Snapshot {
 		snap.Queue = append(snap.Queue, protocol.QueueEntry{
 			ID: it.ID, Media: r.mediaInfoLocked(r.media[it.MediaID]), AddedBy: it.AddedByName, Votes: it.Votes,
 			Current: r.current != nil && *r.current == it.ID,
+		})
+	}
+	snap.Played = make([]protocol.QueueEntry, 0, len(r.played))
+	for _, it := range r.played {
+		var playedMs int64
+		if it.PlayedAt != nil {
+			playedMs = it.PlayedAt.UnixMilli()
+		}
+		snap.Played = append(snap.Played, protocol.QueueEntry{
+			ID: it.ID, Media: r.mediaInfoLocked(r.media[it.MediaID]), AddedBy: it.AddedByName, PlayedMs: playedMs,
 		})
 	}
 
@@ -716,11 +779,14 @@ func (r *Room) Next(ctx context.Context, actor access.Actor) error {
 	if err := r.requireLocked(actor, access.ControlPlayback); err != nil {
 		return err
 	}
-	skipped := r.currentMedia()
+	if r.current == nil {
+		return errNoCurrent
+	}
+	// Logged first so a loop restart reads after the skip in the chat.
+	r.logLocked(ctx, actor.User.Username+" skipped "+mediaLabel(r.currentMedia()))
 	if err := r.nextLocked(ctx); err != nil {
 		return err
 	}
-	r.logLocked(ctx, actor.User.Username+" skipped "+mediaLabel(skipped))
 	r.broadcastLocked()
 	return nil
 }
@@ -737,12 +803,8 @@ func (r *Room) Jump(ctx context.Context, actor access.Actor, itemID uuid.UUID) e
 		return notFound("queue item")
 	}
 	if r.current != nil && *r.current != itemID {
-		oldID := *r.current
-		if err := r.deps.Store.DeleteQueueItem(ctx, r.info.ID, oldID); err != nil && !errors.Is(err, repository.ErrNotFound) {
+		if err := r.markPlayedLocked(ctx, *r.current); err != nil {
 			return err
-		}
-		if idx := r.indexOf(oldID); idx >= 0 {
-			r.queue = append(r.queue[:idx], r.queue[idx+1:]...)
 		}
 	}
 	r.setCurrentLocked(target)
@@ -754,8 +816,9 @@ func (r *Room) Jump(ctx context.Context, actor access.Actor, itemID uuid.UUID) e
 	return nil
 }
 
-// QueueAdd admits a URL and appends it to the queue.
-func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string) error {
+// QueueAdd admits a URL and appends it to the queue, or places it right
+// after the current item when next is set (manual mode only).
+func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, next bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := r.requireLocked(actor, access.AddToQueue); err != nil {
@@ -795,6 +858,11 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string) 
 	}
 	r.queue = append(r.queue, item)
 	r.media[media.ID] = media
+	if next && !r.info.Settings.VoteMode && r.current != nil && len(r.queue) > 1 {
+		if err := r.placeAfterLocked(ctx, len(r.queue)-1, r.current); err != nil {
+			return err
+		}
+	}
 	if actor.User != nil {
 		r.logLocked(ctx, actor.User.Username+" added "+mediaLabel(media))
 	}
@@ -805,6 +873,64 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string) 
 			return err
 		}
 	}
+	r.broadcastLocked()
+	return nil
+}
+
+// QueueReplay re-queues an item from the history as a fresh entry.
+func (r *Room) QueueReplay(ctx context.Context, actor access.Actor, itemID uuid.UUID) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.requireLocked(actor, access.AddToQueue); err != nil {
+		return err
+	}
+	var src *entity.QueueItem
+	for _, it := range r.played {
+		if it.ID == itemID {
+			src = it
+			break
+		}
+	}
+	if src == nil {
+		return notFound("played item")
+	}
+	if len(r.queue) >= 200 {
+		return invalid("queue is full")
+	}
+	var addedBy *uuid.UUID
+	if actor.User != nil {
+		addedBy = &actor.User.ID
+	}
+	item, err := r.deps.Store.AddQueueItem(ctx, r.deps.Store.Pool(), r.info.ID, src.MediaID, addedBy)
+	if err != nil {
+		return err
+	}
+	if actor.User != nil {
+		item.AddedByName = actor.User.Username
+		r.logLocked(ctx, actor.User.Username+" re-added "+mediaLabel(r.media[src.MediaID]))
+	}
+	r.queue = append(r.queue, item)
+	if r.current == nil {
+		r.setCurrentLocked(item)
+		if err := r.persistLocked(ctx); err != nil {
+			return err
+		}
+	}
+	r.broadcastLocked()
+	return nil
+}
+
+// QueueClearPlayed empties the history.
+func (r *Room) QueueClearPlayed(ctx context.Context, actor access.Actor) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.requireLocked(actor, access.ManageQueue); err != nil {
+		return err
+	}
+	if err := r.deps.Store.ClearPlayed(ctx, r.info.ID); err != nil {
+		return err
+	}
+	r.played = r.played[:0]
 	r.broadcastLocked()
 	return nil
 }
@@ -873,6 +999,16 @@ func (r *Room) QueueMove(ctx context.Context, actor access.Actor, itemID uuid.UU
 		return invalid("the current item cannot be moved")
 	}
 
+	if err := r.placeAfterLocked(ctx, idx, afterID); err != nil {
+		return err
+	}
+	r.broadcastLocked()
+	return nil
+}
+
+// placeAfterLocked moves the item at idx right after afterID (nil = head)
+// and persists the new ranks.
+func (r *Room) placeAfterLocked(ctx context.Context, idx int, afterID *uuid.UUID) error {
 	item := r.queue[idx]
 	rest := append(append([]*entity.QueueItem{}, r.queue[:idx]...), r.queue[idx+1:]...)
 
@@ -906,7 +1042,6 @@ func (r *Room) QueueMove(ctx context.Context, actor access.Actor, itemID uuid.UU
 		it.Rank = fmt.Sprintf("%08d", i+1)
 	}
 	r.queue = ordered
-	r.broadcastLocked()
 	return nil
 }
 

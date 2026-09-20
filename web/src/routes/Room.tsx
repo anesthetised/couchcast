@@ -224,6 +224,10 @@ const RoomHeader: Component<{
                   <input type="checkbox" checked={s().viewersCanAdd} onChange={(e) => props.store.commands.settings({ viewersCanAdd: e.currentTarget.checked })} />
                   Viewers can add videos
                 </label>
+                <label class="radio">
+                  <input type="checkbox" checked={s().loop} onChange={(e) => props.store.commands.settings({ loop: e.currentTarget.checked })} />
+                  Loop queue
+                </label>
               </div>
             </details>
           )}

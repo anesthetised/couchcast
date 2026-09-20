@@ -58,6 +58,9 @@ func (r *Room) SettingsSet(ctx context.Context, actor access.Actor, in protocol.
 	if in.ViewersCanAdd != nil {
 		s.ViewersCanAdd = *in.ViewersCanAdd
 	}
+	if in.Loop != nil {
+		s.Loop = *in.Loop
+	}
 
 	if err := r.deps.Store.UpdateRoomSettings(ctx, r.info.ID, s); err != nil {
 		return err
@@ -132,11 +135,10 @@ func (r *Room) SkipVote(ctx context.Context, actor access.Actor) error {
 	}
 
 	if len(r.skipVotes) >= r.skipNeededLocked() {
-		skipped := r.currentMedia()
+		r.logLocked(ctx, "skipped "+mediaLabel(r.currentMedia())+" by vote")
 		if err := r.nextLocked(ctx); err != nil {
 			return err
 		}
-		r.logLocked(ctx, "skipped "+mediaLabel(skipped)+" by vote")
 	}
 	r.broadcastLocked()
 	return nil

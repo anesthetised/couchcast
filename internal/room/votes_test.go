@@ -26,7 +26,7 @@ func TestVoteMode(t *testing.T) {
 
 	for _, u := range []string{"https://a", "https://b", "https://c"} {
 		f.ready(u, 10_000)
-		require.NoError(t, f.room.QueueAdd(ctx, f.owner, u))
+		require.NoError(t, f.room.QueueAdd(ctx, f.owner, u, false))
 	}
 	titles := func(c *fakeConn) []string {
 		snap := c.lastSnapshot()
@@ -95,7 +95,7 @@ func TestVoteMode(t *testing.T) {
 	// viewersCanAdd gates guests.
 	no := false
 	require.NoError(t, f.room.SettingsSet(ctx, f.owner, protocol.SettingsSet{ViewersCanAdd: &no}))
-	assert.Error(t, f.room.QueueAdd(ctx, f.guest, "https://z"))
+	assert.Error(t, f.room.QueueAdd(ctx, f.guest, "https://z", false))
 	saved, err := f.repo.GetRoomByID(ctx, f.room.ID())
 	require.NoError(t, err)
 	assert.Equal(t, entity.Settings{VoteMode: false, SkipThreshold: 0.5, ViewersCanAdd: false}, saved.Settings)

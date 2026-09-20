@@ -108,3 +108,64 @@ func TestQueueAndPlayback(t *testing.T) {
 	blocked, _ = repo.IsSourceBlocked(ctx, "youtube:aaa")
 	assert.True(t, blocked)
 }
+
+func TestPlayedHistory(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+	owner, _ := repo.CreateUser(ctx, "owner", "h")
+	room, err := repo.CreateRoom(ctx, "history-room", "H", owner.ID, entity.VisibilityPublic, entity.DefaultSettings())
+	require.NoError(t, err)
+	items := make([]*entity.QueueItem, 0, 3)
+	for _, key := range []string{"a", "b", "c"} {
+		m, _, err := repo.CreateMedia(ctx, repo.Pool(), "url:"+key, "https://"+key)
+		require.NoError(t, err)
+		it, err := repo.AddQueueItem(ctx, repo.Pool(), room.ID, m.ID, &owner.ID)
+		require.NoError(t, err)
+		items = append(items, it)
+	}
+
+	t0 := time.Now().Add(-time.Hour)
+	require.NoError(t, repo.MarkQueueItemPlayed(ctx, room.ID, items[0].ID, t0))
+	require.NoError(t, repo.MarkQueueItemPlayed(ctx, room.ID, items[1].ID, t0.Add(time.Minute)))
+	assert.ErrorIs(t, repo.MarkQueueItemPlayed(ctx, room.ID, items[1].ID, t0), ErrNotFound, "already played")
+
+	queue, err := repo.ListQueue(ctx, room.ID)
+	require.NoError(t, err)
+	require.Len(t, queue, 1)
+	assert.Equal(t, items[2].ID, queue[0].ID)
+	played, err := repo.ListPlayed(ctx, room.ID, 10)
+	require.NoError(t, err)
+	require.Len(t, played, 2)
+	assert.Equal(t, items[1].ID, played[0].ID, "newest first")
+	assert.NotNil(t, played[0].PlayedAt)
+
+	// A new item ranks after the unplayed ones only.
+	m, _, _ := repo.CreateMedia(ctx, repo.Pool(), "url:d", "https://d")
+	d, err := repo.AddQueueItem(ctx, repo.Pool(), room.ID, m.ID, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "00000004", d.Rank)
+
+	// Requeue appends the history in play order after what is queued.
+	require.NoError(t, repo.RequeuePlayed(ctx, room.ID))
+	queue, _ = repo.ListQueue(ctx, room.ID)
+	ids := make([]uuid.UUID, 0, len(queue))
+	for _, q := range queue {
+		ids = append(ids, q.ID)
+	}
+	assert.Equal(t, []uuid.UUID{items[2].ID, d.ID, items[0].ID, items[1].ID}, ids)
+	played, _ = repo.ListPlayed(ctx, room.ID, 10)
+	assert.Empty(t, played)
+
+	// Purge keeps the newest N per room and drops old ones.
+	for i, it := range queue {
+		require.NoError(t, repo.MarkQueueItemPlayed(ctx, room.ID, it.ID, t0.Add(time.Duration(i)*time.Minute)))
+	}
+	n, err := repo.PurgePlayed(ctx, t0.Add(30*time.Second), 2)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, n)
+	played, _ = repo.ListPlayed(ctx, room.ID, 10)
+	assert.Len(t, played, 2)
+	require.NoError(t, repo.ClearPlayed(ctx, room.ID))
+	played, _ = repo.ListPlayed(ctx, room.ID, 10)
+	assert.Empty(t, played)
+}

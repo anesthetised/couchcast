@@ -32,6 +32,7 @@ export interface Settings {
   voteMode: boolean;
   skipThreshold: number;
   viewersCanAdd: boolean;
+  loop: boolean;
 }
 
 export interface Room {

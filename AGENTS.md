@@ -73,7 +73,12 @@ and a production image build.
   room holds the authoritative clock (`positionMs` at `positionAt`, plus a
   `seq`), the queue, presence and votes; every mutation ends in a broadcast.
   `Manager` loads rooms lazily, persists positions every 5 s, unloads idle
-  rooms and relays `media_progress` notifications. Room events (join/leave,
+  rooms and relays `media_progress` notifications. Finished and skipped
+  items are not deleted but marked `played_at` (the room's history, last 20
+  in the snapshot as `played`; `queue.replay` re-queues one,
+  `queue.clearPlayed` empties it); the `loop` setting re-queues the history
+  in play order when the queue runs out; `queue.add` with `next` lands
+  right after the current item. Old history is purged hourly. Room events (join/leave,
   add, skip, jump, vote skip) are written to chat as system messages
   (`messages.system`, no author); a leave is logged only after
   `Deps.RejoinGrace` (2 min) without a return, and a rejoin within it is

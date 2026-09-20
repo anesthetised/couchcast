@@ -17,6 +17,7 @@ type QueueItem struct {
 	Rank        string
 	Votes       int // populated by list queries
 	CreatedAt   time.Time
+	PlayedAt    *time.Time // set once the item finished or was skipped
 }
 
 // PlaybackState is the authoritative position of a room, persisted on the

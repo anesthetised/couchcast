@@ -33,6 +33,7 @@ export interface QueueEntry {
   votes: number;
   voted: boolean;
   current: boolean;
+  playedMs?: number; // history entries only
 }
 
 export interface Presence {
@@ -65,6 +66,7 @@ export interface Snapshot {
   room: RoomInfo;
   playback: Playback;
   queue: QueueEntry[];
+  played: QueueEntry[]; // newest first
   members: Presence[];
   guests: number;
   skipVotes: number;
@@ -133,13 +135,15 @@ export type ClientMessage =
   | { type: "seek"; positionMs: number }
   | { type: "next" }
   | { type: "jump"; itemId: string }
-  | { type: "queue.add"; url: string }
+  | { type: "queue.add"; url: string; next?: boolean }
+  | { type: "queue.replay"; itemId: string }
+  | { type: "queue.clearPlayed" }
   | { type: "queue.remove"; itemId: string }
   | { type: "queue.move"; itemId: string; afterId: string | null }
   | { type: "queue.retry"; itemId: string }
   | { type: "queue.vote"; itemId: string }
   | { type: "skip.vote" }
-  | { type: "settings.set"; voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean }
+  | { type: "settings.set"; voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean; loop?: boolean }
   | { type: "chat.send"; body: string }
   | { type: "chat.delete"; id: number }
   | { type: "report"; state: "playing" | "buffering" | "ended"; positionMs: number };

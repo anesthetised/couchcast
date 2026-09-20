@@ -167,10 +167,14 @@ CREATE TABLE queue_items (
     media_id   uuid        NOT NULL REFERENCES media (id) ON DELETE CASCADE,
     added_by   uuid        REFERENCES users (id) ON DELETE SET NULL,
     rank       text        NOT NULL,
-    created_at timestamptz NOT NULL DEFAULT now()
+    created_at timestamptz NOT NULL DEFAULT now(),
+    -- Set when the item finished or was skipped; played items stay for the
+    -- room's history and "loop" until purged.
+    played_at  timestamptz
 );
 
-CREATE INDEX queue_items_room_rank_idx ON queue_items (room_id, rank);
+CREATE INDEX queue_items_room_rank_idx ON queue_items (room_id, rank) WHERE played_at IS NULL;
+CREATE INDEX queue_items_room_played_idx ON queue_items (room_id, played_at DESC) WHERE played_at IS NOT NULL;
 CREATE INDEX queue_items_media_id_idx ON queue_items (media_id);
 
 ALTER TABLE rooms

@@ -53,15 +53,24 @@ const AddToQueue: Component<Props> = (props) => {
   });
 
   const blocked = () => lookup()?.state === "error";
+  // "Play next" only makes sense when a moderator orders the queue by hand
+  // and something is playing.
+  const canPlayNext = () =>
+    props.room.isModerator() && !(props.room.state.snapshot?.room.settings.voteMode ?? false) && props.room.current() !== null;
 
-  const submit = (e: SubmitEvent) => {
-    e.preventDefault();
+  const add = (next: boolean) => {
     const u = url().trim();
     if (!u || blocked()) return;
-    props.room.commands.add(u);
+    const l = lookup();
+    props.room.commands.add(u, { next, title: l?.state === "ok" ? l.preview.title : undefined });
     setUrl("");
     setLookup(null);
     seq++;
+  };
+
+  const submit = (e: SubmitEvent) => {
+    e.preventDefault();
+    add(false);
   };
 
   return (
@@ -108,9 +117,16 @@ const AddToQueue: Component<Props> = (props) => {
             )}
           </Show>
         </div>
-        <button type="submit" disabled={blocked()}>
-          Add
-        </button>
+        <div class="actions add-actions">
+          <button type="submit" disabled={blocked()}>
+            Add
+          </button>
+          <Show when={canPlayNext()}>
+            <button type="button" class="ghost" disabled={blocked() || !url().trim()} onClick={() => add(true)} title="Queue right after the current video">
+              Play next
+            </button>
+          </Show>
+        </div>
       </form>
     </Show>
   );

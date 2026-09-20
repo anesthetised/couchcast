@@ -3,24 +3,41 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"uuid"
 
 	"github.com/anesthetised/couchcast/internal/entity"
 )
 
-const queueColumns = `q.id, q.room_id, q.media_id, q.added_by, coalesce(u.username, ''), q.rank, q.created_at,
+const queueColumns = `q.id, q.room_id, q.media_id, q.added_by, coalesce(u.username, ''), q.rank, q.created_at, q.played_at,
 	(SELECT count(*) FROM queue_votes v WHERE v.item_id = q.id)`
 
-// ListQueue returns the room's items in rank order with vote counts.
+// ListQueue returns the room's unplayed items in rank order with vote counts.
 func (r *Repo) ListQueue(ctx context.Context, roomID uuid.UUID) ([]entity.QueueItem, error) {
 	const q = `
 		SELECT ` + queueColumns + `
 		FROM queue_items q LEFT JOIN users u ON u.id = q.added_by
-		WHERE q.room_id = $1
+		WHERE q.room_id = $1 AND q.played_at IS NULL
 		ORDER BY q.rank, q.created_at
 	`
-	rows, err := r.pool.Query(ctx, q, roomID)
+	return r.listQueue(ctx, q, roomID)
+}
+
+// ListPlayed returns the room's most recently played items, newest first.
+func (r *Repo) ListPlayed(ctx context.Context, roomID uuid.UUID, limit int) ([]entity.QueueItem, error) {
+	const q = `
+		SELECT ` + queueColumns + `
+		FROM queue_items q LEFT JOIN users u ON u.id = q.added_by
+		WHERE q.room_id = $1 AND q.played_at IS NOT NULL
+		ORDER BY q.played_at DESC
+		LIMIT $2
+	`
+	return r.listQueue(ctx, q, roomID, limit)
+}
+
+func (r *Repo) listQueue(ctx context.Context, q string, args ...any) ([]entity.QueueItem, error) {
+	rows, err := r.pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, wrapErr(err)
 	}
@@ -29,7 +46,7 @@ func (r *Repo) ListQueue(ctx context.Context, roomID uuid.UUID) ([]entity.QueueI
 	var out []entity.QueueItem
 	for rows.Next() {
 		var it entity.QueueItem
-		if err := rows.Scan(&it.ID, &it.RoomID, &it.MediaID, &it.AddedBy, &it.AddedByName, &it.Rank, &it.CreatedAt, &it.Votes); err != nil {
+		if err := rows.Scan(&it.ID, &it.RoomID, &it.MediaID, &it.AddedBy, &it.AddedByName, &it.Rank, &it.CreatedAt, &it.PlayedAt, &it.Votes); err != nil {
 			return nil, err
 		}
 		out = append(out, it)
@@ -37,12 +54,60 @@ func (r *Repo) ListQueue(ctx context.Context, roomID uuid.UUID) ([]entity.QueueI
 	return out, rows.Err()
 }
 
+// MarkQueueItemPlayed moves an item to the room's history.
+func (r *Repo) MarkQueueItemPlayed(ctx context.Context, roomID, itemID uuid.UUID, at time.Time) error {
+	const q = `UPDATE queue_items SET played_at = $3 WHERE room_id = $1 AND id = $2 AND played_at IS NULL`
+	return r.exec(ctx, q, roomID, itemID, at)
+}
+
+// RequeuePlayed puts every played item back into the queue in the order it
+// was played, ranked after whatever is still queued.
+func (r *Repo) RequeuePlayed(ctx context.Context, roomID uuid.UUID) error {
+	const q = `
+		WITH base AS (
+			SELECT coalesce(max(rank)::bigint, 0) AS n FROM queue_items WHERE room_id = $1 AND played_at IS NULL
+		), ordered AS (
+			SELECT id, row_number() OVER (ORDER BY played_at, created_at) AS rn
+			FROM queue_items WHERE room_id = $1 AND played_at IS NOT NULL
+		)
+		UPDATE queue_items q SET played_at = NULL, rank = lpad((base.n + ordered.rn)::text, 8, '0')
+		FROM ordered, base WHERE q.id = ordered.id
+	`
+	_, err := r.pool.Exec(ctx, q, roomID)
+	return wrapErr(err)
+}
+
+// ClearPlayed deletes the room's history.
+func (r *Repo) ClearPlayed(ctx context.Context, roomID uuid.UUID) error {
+	const q = `DELETE FROM queue_items WHERE room_id = $1 AND played_at IS NOT NULL`
+	_, err := r.pool.Exec(ctx, q, roomID)
+	return wrapErr(err)
+}
+
+// PurgePlayed drops history older than the cutoff and anything beyond the
+// newest keep items per room.
+func (r *Repo) PurgePlayed(ctx context.Context, before time.Time, keep int) (int64, error) {
+	const q = `
+		DELETE FROM queue_items WHERE id IN (
+			SELECT id FROM (
+				SELECT id, played_at, row_number() OVER (PARTITION BY room_id ORDER BY played_at DESC) AS rn
+				FROM queue_items WHERE played_at IS NOT NULL
+			) t WHERE t.rn > $2 OR t.played_at < $1
+		)
+	`
+	tag, err := r.pool.Exec(ctx, q, before, keep)
+	if err != nil {
+		return 0, wrapErr(err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // AddQueueItem appends an item at the end of the queue.
 func (r *Repo) AddQueueItem(ctx context.Context, q Querier, roomID, mediaID uuid.UUID, addedBy *uuid.UUID) (*entity.QueueItem, error) {
 	const insert = `
 		INSERT INTO queue_items (room_id, media_id, added_by, rank)
 		VALUES ($1, $2, $3, (
-			SELECT lpad((coalesce(max(rank)::bigint, 0) + 1)::text, 8, '0') FROM queue_items WHERE room_id = $1
+			SELECT lpad((coalesce(max(rank)::bigint, 0) + 1)::text, 8, '0') FROM queue_items WHERE room_id = $1 AND played_at IS NULL
 		))
 		RETURNING id, room_id, media_id, added_by, rank, created_at
 	`

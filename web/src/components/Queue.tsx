@@ -9,6 +9,9 @@ type Props = { room: RoomStore };
 
 const Queue: Component<Props> = (props) => {
   const items = () => props.room.state.snapshot?.queue ?? [];
+  const played = () => props.room.state.snapshot?.played ?? [];
+  const pending = () => props.room.pending();
+  const canAdd = () => canManage() || (me() !== null && (props.room.state.snapshot?.room.settings.viewersCanAdd ?? false));
   const canManage = () => props.room.isModerator();
   const me = () => props.room.state.me;
   const voteMode = () => props.room.state.snapshot?.room.settings.voteMode ?? false;
@@ -98,7 +101,7 @@ const Queue: Component<Props> = (props) => {
           </span>
         </Show>
       </h2>
-      <Show when={items().length === 0}>
+      <Show when={items().length === 0 && pending().length === 0}>
         <p class="muted small queue-empty">Nothing queued yet.</p>
       </Show>
       <ul class="list">
@@ -168,7 +171,65 @@ const Queue: Component<Props> = (props) => {
             </li>
           )}
         </For>
+        <For each={pending()}>
+          {(p) => (
+            <li class="queue-item pending" aria-busy="true">
+              <div class="thumb">
+                <div class="thumb-empty" />
+              </div>
+              <div class="queue-body">
+                <div class="queue-title">{p.title || p.url}</div>
+                <div class="queue-meta muted">
+                  <span class="ring small" aria-hidden="true" /> {p.next ? "adding next…" : "adding…"}
+                </div>
+              </div>
+            </li>
+          )}
+        </For>
       </ul>
+
+      <Show when={played().length > 0}>
+        <details class="played">
+          <summary>
+            <span class="section-title">
+              Played <span class="muted">{played().length}</span>
+            </span>
+            <Show when={canManage()}>
+              <button type="button" class="link small" onClick={(e) => (e.preventDefault(), props.room.commands.clearPlayed())}>
+                Clear
+              </button>
+            </Show>
+          </summary>
+          <ul class="list">
+            <For each={played()}>
+              {(item) => (
+                <li class="queue-item played-item">
+                  <div class="thumb">
+                    <Show when={item.media.thumbnailUrl} fallback={<div class="thumb-empty" />}>
+                      <img src={item.media.thumbnailUrl} alt="" loading="lazy" />
+                    </Show>
+                  </div>
+                  <div class="queue-body">
+                    <div class="queue-title">{item.media.title || item.media.sourceUrl}</div>
+                    <div class="queue-meta muted">
+                      <Show when={item.media.durationMs > 0}>{formatTime(item.media.durationMs)} · </Show>
+                      <Show when={item.addedBy}>by {item.addedBy} · </Show>
+                      finished {new Date(item.playedMs ?? 0).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                  </div>
+                  <div class="queue-actions">
+                    <Show when={canAdd()}>
+                      <button type="button" class="link" onClick={() => props.room.commands.replay(item.id)} title="Queue again">
+                        play again
+                      </button>
+                    </Show>
+                  </div>
+                </li>
+              )}
+            </For>
+          </ul>
+        </details>
+      </Show>
       <Show when={reporting()}>
         {(item) => (
           <ReportDialog

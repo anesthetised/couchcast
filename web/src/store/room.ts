@@ -10,6 +10,9 @@ import { RoomSocket, type SocketStatus } from "~/lib/ws";
 import type { ChatMessage, ClientMessage, Playback, Snapshot } from "~/protocol";
 
 export type RoomEnd = { kind: "gone" } | { kind: "kicked"; reason: string };
+export type PendingAdd = { id: number; url: string; title?: string; next: boolean };
+
+const PENDING_TTL_MS = 15_000;
 
 export interface RoomState {
   snapshot: Snapshot | null;
@@ -36,6 +39,12 @@ export function createRoomStore(slug: string) {
   // unread counts live chat lines that arrived while the tab was hidden;
   // the page resets it when the tab is visible again.
   const [unread, setUnread] = createSignal(0);
+  // pending holds links sent with queue.add until the snapshot lists them
+  // (or the server rejects them), so the queue can show them right away.
+  const [pending, setPending] = createSignal<PendingAdd[]>([]);
+  let pendingSeq = 0;
+  let knownItems = new Set<string>();
+  const dropPending = (id: number) => setPending((p) => p.filter((x) => x.id !== id));
   const [clockInfo, setClockInfo] = createSignal({ offset: 0, rtt: 0 });
 
   clock.onUpdate = () => setClockInfo({ offset: clock.offset, rtt: clock.rtt });
@@ -73,6 +82,8 @@ export function createRoomStore(slug: string) {
   socket.subscribe((msg) => {
     switch (msg.type) {
       case "welcome":
+        knownItems = new Set(msg.snapshot.queue.map((q) => q.id));
+        setPending([]);
         setState("me", msg.me);
         setState("role", msg.role);
         setState("snapshot", reconcile(msg.snapshot));
@@ -82,6 +93,13 @@ export function createRoomStore(slug: string) {
       case "room.state":
         setState("snapshot", reconcile(msg));
         setState("playback", msg.playback);
+        if (pending().length) {
+          // The media's stored URL may differ from what was pasted, so a
+          // pending add is settled by our own new items appearing.
+          const mine = msg.queue.filter((q) => q.addedBy === state.me && !knownItems.has(q.id)).length;
+          if (mine > 0) setPending((p) => p.slice(mine));
+        }
+        knownItems = new Set(msg.queue.map((q) => q.id));
         break;
       case "playback":
         setState("playback", { ...msg });
@@ -99,6 +117,8 @@ export function createRoomStore(slug: string) {
         break;
       case "error":
         toast(msg.message, "error");
+        // Most errors here answer a command; a pending add is the likeliest.
+        setPending((p) => p.slice(0, -1));
         break;
       case "kicked":
         setEnded({ kind: "kicked", reason: msg.reason });
@@ -121,6 +141,7 @@ export function createRoomStore(slug: string) {
     ended,
     unread,
     clearUnread: () => setUnread(0),
+    pending,
     lastError,
     clock,
     clockInfo,
@@ -134,13 +155,20 @@ export function createRoomStore(slug: string) {
       seek: (positionMs: number) => send({ type: "seek", positionMs: Math.round(positionMs) }),
       next: () => send({ type: "next" }),
       jump: (itemId: string) => send({ type: "jump", itemId }),
-      add: (url: string) => send({ type: "queue.add", url }),
+      add: (url: string, opts: { next?: boolean; title?: string } = {}) => {
+        const id = ++pendingSeq;
+        setPending((p) => [...p, { id, url, title: opts.title, next: opts.next ?? false }]);
+        window.setTimeout(() => dropPending(id), PENDING_TTL_MS);
+        return send({ type: "queue.add", url, next: opts.next || undefined });
+      },
+      replay: (itemId: string) => send({ type: "queue.replay", itemId }),
+      clearPlayed: () => send({ type: "queue.clearPlayed" }),
       remove: (itemId: string) => send({ type: "queue.remove", itemId }),
       move: (itemId: string, afterId: string | null) => send({ type: "queue.move", itemId, afterId }),
       retry: (itemId: string) => send({ type: "queue.retry", itemId }),
       vote: (itemId: string) => send({ type: "queue.vote", itemId }),
       skipVote: () => send({ type: "skip.vote" }),
-      settings: (patch: { voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean }) =>
+      settings: (patch: { voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean; loop?: boolean }) =>
         send({ type: "settings.set", ...patch }),
       chat: (body: string) => send({ type: "chat.send", body }),
       chatDelete: (id: number) => send({ type: "chat.delete", id }),

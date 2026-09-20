@@ -31,6 +31,8 @@ type Settings struct {
 	VoteMode      bool    `json:"voteMode"`
 	SkipThreshold float64 `json:"skipThreshold"`
 	ViewersCanAdd bool    `json:"viewersCanAdd"`
+	// Loop re-queues the played items when the queue runs out.
+	Loop bool `json:"loop"`
 }
 
 // DefaultSettings is applied to new rooms.

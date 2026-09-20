@@ -296,7 +296,7 @@ const Player: Component<Props> = (props) => {
         break;
       case "n":
       case "N":
-        if (canControl() && upNext()) props.room.commands.next();
+        if (canControl() && current()) props.room.commands.next();
         break;
     }
   };

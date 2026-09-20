@@ -240,7 +240,12 @@ func (c *conn) dispatch(ctx context.Context, data []byte) {
 	case protocol.TypeJump:
 		err = c.room.Jump(cmdCtx, actor, msg.(*protocol.ItemRef).ItemID)
 	case protocol.TypeQueueAdd:
-		err = c.room.QueueAdd(cmdCtx, actor, msg.(*protocol.QueueAdd).URL)
+		m := msg.(*protocol.QueueAdd)
+		err = c.room.QueueAdd(cmdCtx, actor, m.URL, m.Next)
+	case protocol.TypeQueueReplay:
+		err = c.room.QueueReplay(cmdCtx, actor, msg.(*protocol.ItemRef).ItemID)
+	case protocol.TypeQueueClear:
+		err = c.room.QueueClearPlayed(cmdCtx, actor)
 	case protocol.TypeQueueRemove:
 		err = c.room.QueueRemove(cmdCtx, actor, msg.(*protocol.ItemRef).ItemID)
 	case protocol.TypeQueueMove:

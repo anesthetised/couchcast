@@ -27,6 +27,8 @@ const (
 	TypeQueueMove   = "queue.move"
 	TypeQueueRetry  = "queue.retry"
 	TypeQueueVote   = "queue.vote"
+	TypeQueueReplay = "queue.replay"
+	TypeQueueClear  = "queue.clearPlayed"
 	TypeSkipVote    = "skip.vote"
 	TypeSettingsSet = "settings.set"
 	TypeChatSend    = "chat.send"
@@ -54,9 +56,11 @@ type ItemRef struct {
 	ItemID uuid.UUID `json:"itemId"`
 }
 
-// QueueAdd enqueues a URL.
+// QueueAdd enqueues a URL; Next places it right after the current item
+// (ignored in vote mode).
 type QueueAdd struct {
-	URL string `json:"url"`
+	URL  string `json:"url"`
+	Next bool   `json:"next,omitempty"`
 }
 
 // QueueMove places ItemID right after AfterID, or at the head when
@@ -71,6 +75,7 @@ type SettingsSet struct {
 	VoteMode      *bool    `json:"voteMode"`
 	SkipThreshold *float64 `json:"skipThreshold"`
 	ViewersCanAdd *bool    `json:"viewersCanAdd"`
+	Loop          *bool    `json:"loop"`
 }
 
 // ChatSend posts a message.
@@ -100,11 +105,11 @@ func Decode(data []byte) (string, any, error) {
 	switch env.Type {
 	case TypePing:
 		msg = &Ping{}
-	case TypePlay, TypePause, TypeNext, TypeSkipVote:
+	case TypePlay, TypePause, TypeNext, TypeSkipVote, TypeQueueClear:
 		msg = nil
 	case TypeSeek:
 		msg = &Seek{}
-	case TypeJump, TypeQueueRemove, TypeQueueRetry, TypeQueueVote:
+	case TypeJump, TypeQueueRemove, TypeQueueRetry, TypeQueueVote, TypeQueueReplay:
 		msg = &ItemRef{}
 	case TypeQueueAdd:
 		msg = &QueueAdd{}
@@ -186,6 +191,8 @@ type QueueEntry struct {
 	Votes   int       `json:"votes"`
 	Voted   bool      `json:"voted"` // by the receiving viewer
 	Current bool      `json:"current"`
+	// PlayedMs is set on history entries only.
+	PlayedMs int64 `json:"playedMs,omitempty"`
 }
 
 // Presence is one connected viewer.
@@ -212,6 +219,7 @@ type Snapshot struct {
 	Room       RoomInfo     `json:"room"`
 	Playback   Playback     `json:"playback"`
 	Queue      []QueueEntry `json:"queue"`
+	Played     []QueueEntry `json:"played"` // newest first
 	Members    []Presence   `json:"members"`
 	Guests     int          `json:"guests"`
 	SkipVotes  int          `json:"skipVotes"`

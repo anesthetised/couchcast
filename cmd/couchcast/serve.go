@@ -166,6 +166,11 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 			} else if n > 0 {
 				logger.Info("deleted expired sessions", "count", n)
 			}
+			if n, err := repo.PurgePlayed(ctx, time.Now().AddDate(0, 0, -playedRetentionDays), playedKeptPerRoom); err != nil {
+				logger.Warn("purge played items", "error", err)
+			} else if n > 0 {
+				logger.Info("purged played items", "count", n)
+			}
 			if cfg.Web.ChatRetentionDays > 0 {
 				cutoff := time.Now().AddDate(0, 0, -cfg.Web.ChatRetentionDays)
 				n, err := repo.PurgeMessagesBefore(ctx, cutoff)
@@ -182,6 +187,13 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 }
 
 // runPeriodic calls fn every interval until the context is cancelled.
+// Played queue items are history: keep a week and at most this many per
+// room so the table does not grow with every session.
+const (
+	playedRetentionDays = 7
+	playedKeptPerRoom   = 50
+)
+
 func runPeriodic(ctx context.Context, interval time.Duration, fn func(context.Context)) error {
 	t := time.NewTicker(interval)
 	defer t.Stop()
@@ -224,5 +236,5 @@ func (q liveQueue) QueueAdd(ctx context.Context, roomID uuid.UUID, actor access.
 	if err != nil {
 		return err
 	}
-	return r.QueueAdd(ctx, actor, rawURL)
+	return r.QueueAdd(ctx, actor, rawURL, false)
 }
