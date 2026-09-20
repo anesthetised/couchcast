@@ -29,7 +29,7 @@ func TestSelectFormats(t *testing.T) {
 	for _, v := range sel.Video {
 		ids = append(ids, v.ID)
 	}
-	assert.Equal(t, []string{"248", "247b", "244"}, ids, "VP9 preferred, best bitrate per height, 360 skipped")
+	assert.Equal(t, []string{"248", "247b", "244"}, ids, "VP9 preferred, best bitrate per height, 144p is no stand-in for 360")
 	assert.Equal(t, "251", sel.Audio.ID, "best opus")
 	assert.Equal(t, []string{"248", "247b", "244", "251"}, sel.IDs())
 
@@ -40,8 +40,31 @@ func TestSelectFormats(t *testing.T) {
 	assert.Equal(t, "137", sel.Video[0].ID)
 	assert.Equal(t, "140", sel.Audio.ID)
 
-	// Ladder with no matching heights.
-	_, err = SelectFormats(probe, []int{2160})
+	// Off-ladder heights map to the nearest rung, each height used once.
+	odd := &Probe{Formats: []Format{
+		{ID: "a", VCodec: "vp09", Height: 872, Bitrate: 3000},
+		{ID: "b", VCodec: "vp09", Height: 818, Bitrate: 2500},
+		{ID: "c", VCodec: "vp09", Height: 534, Bitrate: 1000},
+		{ID: "d", VCodec: "vp09", Height: 356, Bitrate: 600},
+		{ID: "e", VCodec: "vp09", Height: 178, Bitrate: 200},
+		probe.Formats[9],
+	}}
+	sel, err = SelectFormats(odd, []int{1080, 720, 480, 360})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"a", "b", "c", "d", "251"}, sel.IDs(), "872→1080, 818→720, 534→480, 356→360")
+	sel, err = SelectFormats(probe, []int{2160})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"248"}, []string{sel.Video[0].ID}, "a single rung takes the closest height")
+	assert.Len(t, sel.Video, 1)
+
+	// A tiny video still plays through the lowest rung.
+	tiny := &Probe{Formats: []Format{probe.Formats[7], probe.Formats[9]}}
+	sel, err = SelectFormats(tiny, []int{1080, 720, 480, 360})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"278", "251"}, sel.IDs())
+
+	// No video formats at all.
+	_, err = SelectFormats(&Probe{Formats: []Format{probe.Formats[9]}}, []int{1080})
 	assert.Error(t, err)
 
 	// No audio.

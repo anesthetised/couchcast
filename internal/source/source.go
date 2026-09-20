@@ -150,8 +150,13 @@ func SelectFormats(p *Probe, ladder []int) (Selection, error) {
 	return sel, nil
 }
 
-// pickLadder returns the highest-bitrate format for each ladder height
-// that the family offers, ordered by descending height.
+// pickLadder maps each ladder rung to the closest height the family
+// offers (highest bitrate at that height), so a video encoded at 818p or
+// 534p still fills the ladder instead of being rejected. A rung never
+// takes a height below half of itself — 144p is no stand-in for 360p —
+// unless nothing fit any rung, in which case the lowest rung accepts what
+// there is so a small video still plays. Every height is used at most once; the result is ordered
+// by descending height.
 func pickLadder(formats []Format, ladder []int) []Format {
 	best := map[int]Format{}
 	for _, f := range formats {
@@ -159,19 +164,49 @@ func pickLadder(formats []Format, ladder []int) []Format {
 			best[f.Height] = f
 		}
 	}
+	available := make([]int, 0, len(best))
+	for h := range best {
+		available = append(available, h)
+	}
+	sort.Sort(sort.Reverse(sort.IntSlice(available)))
 
-	heights := append([]int(nil), ladder...)
-	sort.Sort(sort.Reverse(sort.IntSlice(heights)))
+	rungs := append([]int(nil), ladder...)
+	sort.Sort(sort.Reverse(sort.IntSlice(rungs)))
 
-	var out []Format
-	seen := map[int]bool{}
-	for _, h := range heights {
-		if f, ok := best[h]; ok && !seen[h] {
-			out = append(out, f)
-			seen[h] = true
+	used := map[int]bool{}
+	for i, rung := range rungs {
+		floor := rung / 2
+		if i == len(rungs)-1 && len(used) == 0 {
+			floor = 0 // nothing fit so far: anything beats rejecting the video
+		}
+		pick, found := 0, false
+		for _, h := range available {
+			if used[h] || h <= floor {
+				continue
+			}
+			if !found || abs(h-rung) < abs(pick-rung) {
+				pick, found = h, true
+			}
+		}
+		if found {
+			used[pick] = true
+		}
+	}
+
+	out := make([]Format, 0, len(used))
+	for _, h := range available {
+		if used[h] {
+			out = append(out, best[h])
 		}
 	}
 	return out
+}
+
+func abs(n int) int {
+	if n < 0 {
+		return -n
+	}
+	return n
 }
 
 // audioPreference: Opus pairs with VP9 in WebM segments and is what
