@@ -174,6 +174,7 @@ func New(deps Deps) *Server {
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireUser)
 			r.Get("/me/rooms", s.handleMyRooms)
+			r.Get("/users", s.handleSearchUsers)
 			r.Get("/invites", s.handleMyInvites)
 			r.Post("/invites/{id}/accept", s.handleAcceptInvite)
 			r.Post("/invites/{id}/decline", s.handleDeclineInvite)

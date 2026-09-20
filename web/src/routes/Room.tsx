@@ -3,16 +3,13 @@ import { createResource, createSignal, For, Show, type Component } from "solid-j
 
 import AddToQueue from "~/components/AddToQueue";
 import Chat from "~/components/Chat";
-import Members from "~/components/Members";
 import Player from "~/components/Player";
 import Queue from "~/components/Queue";
-import RoomOptions from "~/components/RoomOptions";
-import VotePanel from "~/components/VotePanel";
 import { ApiError } from "~/lib/api";
 import { createFullscreen, readFullscreenPanel, storeFullscreenPanel, type FullscreenPanel } from "~/lib/fullscreen";
 import { rooms } from "~/lib/rooms";
 import { isModerator } from "~/lib/types";
-import { createRoomStore } from "~/store/room";
+import { createRoomStore, type RoomStore } from "~/store/room";
 
 // Room page: the REST fetch establishes access (401/403 → message), then
 // the WebSocket store drives everything live.
@@ -27,20 +24,16 @@ const Room: Component = () => {
   };
 
   return (
-    <Show when={!room.error} fallback={<section class="card error">{errorMessage()}</section>}>
+    <Show when={!room.error} fallback={<div class="empty">{errorMessage()}</div>}>
       <Show when={room()} fallback={<p class="muted">Loading…</p>}>
-        {(r) => <LiveRoom slug={r().slug} name={r().name} canSettings={isModerator(r().myRole)} />}
+        {(r) => <LiveRoom slug={r().slug} name={r().name} visibility={r().visibility} canSettings={isModerator(r().myRole)} />}
       </Show>
     </Show>
   );
 };
 
-const LiveRoom: Component<{ slug: string; name: string; canSettings: boolean }> = (props) => {
+const LiveRoom: Component<{ slug: string; name: string; visibility: string; canSettings: boolean }> = (props) => {
   const store = createRoomStore(props.slug);
-  // Warnings handed over by the create page (unknown invitees, a first
-  // video that could not be queued); shown once, dismissable.
-  const location = useLocation<{ warnings?: string[] }>();
-  const [notices, setNotices] = createSignal<string[]>(location.state?.warnings ?? []);
   let stage: HTMLDivElement | undefined;
   const fs = createFullscreen(() => stage);
   const usePanel = (panel: FullscreenPanel) => {
@@ -55,23 +48,19 @@ const LiveRoom: Component<{ slug: string; name: string; canSettings: boolean }> 
   const chatPanel = usePanel("chat");
   const queuePanel = usePanel("queue");
 
+  // Warnings handed over by the create page; shown once, dismissable.
+  const location = useLocation<{ warnings?: string[] }>();
+  const [notices, setNotices] = createSignal<string[]>(location.state?.warnings ?? []);
+
+  const snap = () => store.state.snapshot;
+  const live = () => Boolean(store.state.playback?.playing && store.current()?.media.status === "ready");
+  const viewers = () => (snap()?.members.length ?? 0) + (snap()?.guests ?? 0);
+
   return (
-    <div class="room-layout">
+    <div class="room">
       <div class="room-main">
-        <header class="room-header">
-          <div>
-            <h1>{store.state.snapshot?.room.name ?? props.name}</h1>
-            <p class="muted small">
-              /r/{props.slug}
-              <Show when={store.status() !== "open"}> · {store.status()}</Show>
-            </p>
-          </div>
-          <Show when={props.canSettings}>
-            <a class="button" href={`/r/${props.slug}/settings`}>
-              Settings
-            </a>
-          </Show>
-        </header>
+        <RoomHeader store={store} slug={props.slug} name={snap()?.room.name ?? props.name} visibility={snap()?.room.visibility ?? props.visibility} live={live()} viewers={viewers()} canSettings={props.canSettings} />
+
         <Show when={notices().length > 0}>
           <div class="banner">
             <ul class="list">
@@ -82,7 +71,8 @@ const LiveRoom: Component<{ slug: string; name: string; canSettings: boolean }> 
             </button>
           </div>
         </Show>
-        <Show when={store.lastError()}>{(e) => <p class="card error">{e()}</p>}</Show>
+        <Show when={store.lastError()}>{(e) => <p class="notice error">{e()}</p>}</Show>
+
         <div
           class={`stage ${fs.active() ? "fullscreen" : ""} ${fs.idle() ? "idle" : ""}`}
           ref={stage}
@@ -110,16 +100,107 @@ const LiveRoom: Component<{ slug: string; name: string; canSettings: boolean }> 
             </div>
           </Show>
         </div>
-        <VotePanel room={store} />
-        <AddToQueue room={store} />
+
+        <div class="room-actions">
+          <AddToQueue room={store} />
+          <SkipVote store={store} />
+        </div>
+
+        <section class="up-next">
+          <Queue room={store} />
+        </section>
       </div>
-      <aside class="room-side">
-        <Queue room={store} />
+
+      <aside class="room-chat">
         <Chat room={store} />
-        <Members room={store} />
-        <RoomOptions room={store} />
       </aside>
     </div>
+  );
+};
+
+// RoomHeader: title, badges, viewer count and the moderator menu.
+const RoomHeader: Component<{
+  store: RoomStore;
+  slug: string;
+  name: string;
+  visibility: string;
+  live: boolean;
+  viewers: number;
+  canSettings: boolean;
+}> = (props) => {
+  const settings = () => props.store.state.snapshot?.room.settings;
+
+  return (
+    <header class="room-head">
+      <div class="room-title">
+        <h1>{props.name}</h1>
+        <div class="room-meta">
+          <Show when={props.live}>
+            <span class="badge live">live</span>
+          </Show>
+          <Show when={props.visibility === "private"}>
+            <span class="badge private">🔒 private</span>
+          </Show>
+          <span class="muted small">/r/{props.slug}</span>
+          <span class="muted small">·</span>
+          <span class="muted small">
+            {props.viewers} watching
+          </span>
+          <Show when={props.store.status() !== "open"}>
+            <span class="badge">{props.store.status()}</span>
+          </Show>
+        </div>
+      </div>
+      <div class="actions">
+        <Show when={props.store.isModerator() && settings()}>
+          {(s) => (
+            <details class="menu">
+              <summary class="button ghost">Options</summary>
+              <div class="menu-body">
+                <label class="radio">
+                  <input type="checkbox" checked={s().voteMode} onChange={(e) => props.store.commands.settings({ voteMode: e.currentTarget.checked })} />
+                  Vote mode
+                </label>
+                <label class="radio">
+                  Skip at
+                  <select value={String(s().skipThreshold)} onChange={(e) => props.store.commands.settings({ skipThreshold: Number(e.currentTarget.value) })}>
+                    <option value="0.25">25% of viewers</option>
+                    <option value="0.5">50% of viewers</option>
+                    <option value="0.75">75% of viewers</option>
+                    <option value="1">everyone</option>
+                  </select>
+                </label>
+                <label class="radio">
+                  <input type="checkbox" checked={s().viewersCanAdd} onChange={(e) => props.store.commands.settings({ viewersCanAdd: e.currentTarget.checked })} />
+                  Viewers can add videos
+                </label>
+              </div>
+            </details>
+          )}
+        </Show>
+        <Show when={props.canSettings}>
+          <a class="button ghost" href={`/r/${props.slug}/settings`}>
+            Settings
+          </a>
+        </Show>
+      </div>
+    </header>
+  );
+};
+
+// SkipVote sits next to the add form while vote mode is on.
+const SkipVote: Component<{ store: RoomStore }> = (props) => {
+  const snap = () => props.store.state.snapshot;
+  const voteMode = () => snap()?.room.settings.voteMode ?? false;
+
+  return (
+    <Show when={voteMode() && props.store.current()}>
+      <Show when={props.store.state.me} fallback={<span class="muted small">Log in to vote.</span>}>
+        <button type="button" class={snap()?.skipVoted ? "ghost" : "ghost"} onClick={() => props.store.commands.skipVote()}>
+          {snap()?.skipVoted ? "Cancel skip vote" : "Vote to skip"} · {snap()?.skipVotes ?? 0}/{snap()?.skipNeeded ?? 0}
+        </button>
+      </Show>
+    </Show>
   );
 };
 

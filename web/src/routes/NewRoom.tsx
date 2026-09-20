@@ -1,6 +1,7 @@
 import { useNavigate } from "@solidjs/router";
 import { createEffect, createSignal, on, onCleanup, Show, type Component } from "solid-js";
 
+import UsernamePicker from "~/components/UsernamePicker";
 import { ApiError } from "~/lib/api";
 import { rooms } from "~/lib/rooms";
 import type { Visibility } from "~/lib/types";
@@ -27,7 +28,7 @@ const NewRoom: Component = () => {
   const [firstUrl, setFirstUrl] = createSignal("");
   const [voteMode, setVoteMode] = createSignal(false);
   const [viewersCanAdd, setViewersCanAdd] = createSignal(true);
-  const [invites, setInvites] = createSignal("");
+  const [invites, setInvites] = createSignal<string[]>([]);
   const [error, setError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
 
@@ -54,12 +55,6 @@ const NewRoom: Component = () => {
     if (check !== null) window.clearTimeout(check);
   });
 
-  const inviteList = () =>
-    invites()
-      .split(/[\s,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-
   const submit = async (e: SubmitEvent) => {
     e.preventDefault();
     if (slugState() === "taken" || slugState() === "invalid") return;
@@ -72,7 +67,7 @@ const NewRoom: Component = () => {
         visibility: visibility(),
         firstUrl: firstUrl().trim() || undefined,
         settings: { voteMode: voteMode(), viewersCanAdd: viewersCanAdd() },
-        invites: visibility() === "private" ? inviteList() : undefined,
+        invites: visibility() === "private" ? invites() : undefined,
       });
       navigate(`/r/${room.slug}`, { state: { warnings: room.warnings } });
     } catch (err) {
@@ -124,9 +119,9 @@ const NewRoom: Component = () => {
           <Show when={visibility() === "private"}>
             <label>
               <span>
-                Invite <span class="muted">(usernames, separated by spaces or commas)</span>
+                Invite <span class="muted">(start typing a username)</span>
               </span>
-              <input type="text" placeholder="alice, bob" value={invites()} onInput={(e) => setInvites(e.currentTarget.value)} />
+              <UsernamePicker value={invites()} onChange={setInvites} exclude={[auth.user()?.username ?? ""]} />
             </label>
           </Show>
         </section>

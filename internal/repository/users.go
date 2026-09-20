@@ -74,3 +74,29 @@ func (r *Repo) exec(ctx context.Context, q string, args ...any) error {
 	}
 	return nil
 }
+
+// SearchUsernames returns up to limit usernames starting with prefix
+// (case-insensitive), excluding banned accounts.
+func (r *Repo) SearchUsernames(ctx context.Context, prefix string, limit int) ([]string, error) {
+	const q = `
+		SELECT username FROM users
+		WHERE banned_at IS NULL AND lower(username) LIKE lower($1) || '%' ESCAPE '\'
+		ORDER BY username
+		LIMIT $2
+	`
+	rows, err := r.pool.Query(ctx, q, escapeLike(prefix), limit)
+	if err != nil {
+		return nil, wrapErr(err)
+	}
+	defer rows.Close()
+
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}

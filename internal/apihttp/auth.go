@@ -19,6 +19,7 @@ import (
 type UserStore interface {
 	CreateUser(ctx context.Context, username, passwordHash string) (*entity.User, error)
 	GetUserByUsername(ctx context.Context, username string) (*entity.User, error)
+	SearchUsernames(ctx context.Context, prefix string, limit int) ([]string, error)
 }
 
 var usernameRe = regexp.MustCompile(`^[A-Za-z0-9_]{3,32}$`)
@@ -153,6 +154,25 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleSearchUsers powers username autocomplete for invites: a short
+// prefix match, signed-in users only, small result set.
+func (s *Server) handleSearchUsers(w http.ResponseWriter, r *http.Request) {
+	prefix := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len(prefix) < 2 || len(prefix) > 32 {
+		writeJSON(w, http.StatusOK, []string{})
+		return
+	}
+	names, err := s.deps.Users.SearchUsernames(r.Context(), prefix, 8)
+	if err != nil {
+		s.internalError(w, r, "search users", err)
+		return
+	}
+	if names == nil {
+		names = []string{}
+	}
+	writeJSON(w, http.StatusOK, names)
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {

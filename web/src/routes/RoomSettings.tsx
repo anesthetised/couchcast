@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { createResource, createSignal, For, Show, type Component } from "solid-js";
 
+import UsernamePicker from "~/components/UsernamePicker";
 import { rooms } from "~/lib/rooms";
 import { isModerator, type Visibility } from "~/lib/types";
 
@@ -66,15 +67,17 @@ const RoomSettings: Component = () => {
   };
 
   // --- people --------------------------------------------------------------
-  const [inviteName, setInviteName] = createSignal("");
+  const [inviteNames, setInviteNames] = createSignal<string[]>([]);
   const [banName, setBanName] = createSignal("");
   const [banReason, setBanReason] = createSignal("");
 
   const invite = (e: SubmitEvent) => {
     e.preventDefault();
-    void run(`Invited ${inviteName()}.`, async () => {
-      await rooms.invite(params.slug, inviteName().trim());
-      setInviteName("");
+    const names = inviteNames();
+    if (!names.length) return;
+    void run(`Invited ${names.join(", ")}.`, async () => {
+      for (const n of names) await rooms.invite(params.slug, n);
+      setInviteNames([]);
     });
   };
 
@@ -175,10 +178,14 @@ const RoomSettings: Component = () => {
             <form class="card form" onSubmit={invite}>
               <h2>Invite</h2>
               <label>
-                Username
-                <input type="text" required value={inviteName()} onInput={(e) => setInviteName(e.currentTarget.value)} />
+                Usernames
+                <UsernamePicker value={inviteNames()} onChange={setInviteNames} />
               </label>
-              <button type="submit">Send invite</button>
+              <div class="actions">
+                <button type="submit" disabled={inviteNames().length === 0}>
+                  Send invite{inviteNames().length === 1 ? "" : "s"}
+                </button>
+              </div>
             </form>
 
             <section class="card">

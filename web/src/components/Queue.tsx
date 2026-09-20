@@ -32,10 +32,12 @@ const Queue: Component<Props> = (props) => {
   };
 
   return (
-    <section class="card queue">
-      <h2>Queue ({items().length})</h2>
+    <section class="queue">
+      <h2 class="section-title">
+        Up next <span class="muted">{items().length}</span>
+      </h2>
       <Show when={items().length === 0}>
-        <p class="muted">Nothing queued.</p>
+        <p class="muted small">Nothing queued yet.</p>
       </Show>
       <ul class="list">
         <For each={items()}>

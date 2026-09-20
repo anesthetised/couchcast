@@ -870,37 +870,118 @@ input[type="radio"] {
 
 /* ==========================================================================
    Room
+   Player and queue on the left, chat as a full-height column on the right.
+   Sections are separated by whitespace and dividers, not boxes.
    ========================================================================== */
 
-.room-layout {
+.room {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
-  gap: 1.25rem;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 1.5rem;
   align-items: start;
 }
 
-@media (max-width: 900px) {
-  .room-layout {
+@media (max-width: 960px) {
+  .room {
     grid-template-columns: 1fr;
   }
 }
 
-.room-main,
-.room-side {
+.room-main {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+  min-width: 0;
 }
 
-.room-header {
+.section-title {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+}
+
+.section-title .muted {
+  font-weight: 500;
+  font-size: var(--fs-sm);
+}
+
+/* --- header --------------------------------------------------------------- */
+
+.room-head {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 1rem;
 }
 
-.room-header p {
-  margin: 0;
+.room-title h1 {
+  font-size: var(--fs-xl);
+  margin-bottom: 0.2rem;
+}
+
+.room-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.notice {
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+}
+
+/* Moderator options as a plain disclosure menu. */
+.menu {
+  position: relative;
+}
+
+.menu summary {
+  list-style: none;
+}
+
+.menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu[open] summary {
+  background: var(--surface-3);
+}
+
+.menu-body {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.35rem);
+  z-index: 10;
+  min-width: 240px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.85rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-2);
+}
+
+.menu-body select {
+  width: auto;
+  padding: 0.25rem 0.4rem;
+  margin-left: auto;
+}
+
+.room-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.room-actions .add-form {
+  flex: 1;
 }
 
 /* --- player --------------------------------------------------------------- */
@@ -932,8 +1013,8 @@ input[type="radio"] {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  background: rgba(11, 13, 18, 0.55);
-  color: var(--text);
+  background: rgba(11, 13, 18, 0.6);
+  color: var(--text-2);
   text-align: center;
   padding: 1rem;
 }
@@ -948,7 +1029,7 @@ input[type="radio"] {
   left: 0.5rem;
   margin: 0;
   padding: 0.4rem 0.6rem;
-  background: rgba(11, 13, 18, 0.75);
+  background: rgba(11, 13, 18, 0.8);
   color: var(--ok);
   font-size: var(--fs-xs);
   border-radius: var(--radius-sm);
@@ -1017,33 +1098,29 @@ progress {
   gap: 0.75rem;
   padding: 0.6rem 0;
   border-top: 1px solid var(--border);
-  align-items: flex-start;
+  align-items: center;
 }
 
 .queue-item:first-child {
   border-top: none;
 }
 
-.queue-item.current {
-  margin: 0 -0.75rem;
-  padding-left: 0.75rem;
-  padding-right: 0.75rem;
-  background: linear-gradient(90deg, var(--accent-soft), transparent);
-  border-radius: var(--radius-sm);
+.queue-item.current .queue-title {
+  color: var(--accent);
 }
 
 .thumb {
-  width: 96px;
+  width: 112px;
   flex: none;
 }
 
 .thumb img,
 .thumb-empty {
-  width: 96px;
-  height: 54px;
+  width: 112px;
+  height: 63px;
   object-fit: cover;
   border-radius: 6px;
-  background: var(--bg);
+  background: var(--surface-2);
 }
 
 .queue-body {
@@ -1070,10 +1147,17 @@ progress {
 
 .queue-actions {
   display: flex;
-  gap: 0.35rem;
+  gap: 0.1rem;
   flex-wrap: wrap;
   justify-content: flex-end;
   font-size: var(--fs-sm);
+  opacity: 0.55;
+  transition: opacity 120ms;
+}
+
+.queue-item:hover .queue-actions,
+.queue-item:focus-within .queue-actions {
+  opacity: 1;
 }
 
 .vote.voted {
@@ -1082,15 +1166,81 @@ progress {
 
 /* --- chat ----------------------------------------------------------------- */
 
+.room-chat {
+  position: sticky;
+  top: calc(3.2rem + 1.25rem);
+  height: calc(100vh - 3.2rem - 2.5rem);
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  overflow: hidden;
+}
+
+@media (max-width: 960px) {
+  .room-chat {
+    position: static;
+    height: 480px;
+  }
+}
+
+.chat {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  padding: 0.85rem 1rem;
+}
+
+.chat-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.6rem;
+}
+
+.chat-head .section-title {
+  margin: 0;
+}
+
+.presence {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.presence .avatar {
+  width: 24px;
+  height: 24px;
+  font-size: 0.65rem;
+  margin-left: -6px;
+  border: 2px solid var(--surface);
+  background: var(--surface-3);
+  color: var(--text-2);
+}
+
+.presence .avatar:first-child {
+  margin-left: 0;
+}
+
+.presence .avatar.buffering {
+  color: var(--warn);
+}
+
 .chat-list {
   list-style: none;
   margin: 0 0 0.75rem;
   padding: 0;
-  max-height: 320px;
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.35rem;
   font-size: var(--fs-sm);
 }
 
@@ -1120,6 +1270,11 @@ progress {
 .chat-delete {
   flex: none;
   font-size: var(--fs-xs);
+  opacity: 0;
+}
+
+.chat-line:hover .chat-delete {
+  opacity: 1;
 }
 
 .chat-form {
@@ -1131,43 +1286,9 @@ progress {
   flex: 1;
 }
 
-/* --- votes & options ------------------------------------------------------ */
-
-.vote-panel {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.vote-panel button.voted {
-  background: var(--surface-3);
-  color: var(--text);
-}
-
-.options {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.options select {
-  width: auto;
-  padding: 0.25rem 0.4rem;
-}
-
-.player-placeholder {
-  min-height: 200px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-}
-
 /* ==========================================================================
    Fullscreen stage
+   Flat overlays: the same surface as inline controls, translucent at rest.
    ========================================================================== */
 
 .stage {
@@ -1198,8 +1319,6 @@ progress {
   object-fit: contain;
 }
 
-/* Controls float over the bottom edge, same treatment as the overlay panels:
-   surface colour, translucent at rest, denser with a blur while hovered. */
 .stage.fullscreen .controls {
   position: absolute;
   left: 0;
@@ -1211,8 +1330,6 @@ progress {
 
 .stage.fullscreen .controls:hover {
   background: var(--overlay-strong);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
 }
 
 .stage.fullscreen.idle .controls {
@@ -1224,8 +1341,6 @@ progress {
   cursor: none;
 }
 
-/* Overlay panels: translucent at rest, denser while hovered or focused.
-   Chat sits on the right, the queue on the left. */
 .fs-panel {
   position: absolute;
   top: 0;
@@ -1243,28 +1358,27 @@ progress {
   left: 0;
 }
 
-.fs-panel > .card {
+.fs-panel > .chat,
+.fs-panel > .queue {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border: none;
-  border-radius: 0;
-  box-shadow: none;
-  background: var(--overlay);
-  transition: background 150ms, backdrop-filter 150ms;
   padding: 0.75rem;
+  background: var(--overlay);
+  transition: background 150ms;
 }
 
-.fs-panel > .card h2 {
+.fs-panel .section-title,
+.fs-panel .chat-head {
   display: none;
 }
 
-.fs-panel:hover > .card,
-.fs-panel:focus-within > .card {
+.fs-panel:hover > .chat,
+.fs-panel:hover > .queue,
+.fs-panel:focus-within > .chat,
+.fs-panel:focus-within > .queue {
   background: var(--overlay-strong);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
 }
 
 .fs-queue .list {
@@ -1279,8 +1393,8 @@ progress {
 
 .fs-queue:hover .queue-item,
 .fs-queue:focus-within .queue-item,
-.fs-chat .chat:hover .chat-line,
-.fs-chat .chat:focus-within .chat-line {
+.fs-chat:hover .chat-line,
+.fs-chat:focus-within .chat-line {
   text-shadow: none;
 }
 
@@ -1288,11 +1402,6 @@ progress {
 .fs-chat .chat-form,
 .fs-chat .chat-delete {
   transition: opacity 200ms;
-}
-
-.fs-chat .chat-list {
-  flex: 1;
-  max-height: none;
 }
 
 .fs-chat .chat-form input {
@@ -1322,7 +1431,8 @@ progress {
   pointer-events: none;
 }
 
-.stage.fullscreen.idle .fs-panel:not(:hover) > .card {
+.stage.fullscreen.idle .fs-panel:not(:hover) > .chat,
+.stage.fullscreen.idle .fs-panel:not(:hover) > .queue {
   background: transparent;
 }
 
@@ -1400,4 +1510,91 @@ progress {
 .modal {
   width: min(420px, 90vw);
   box-shadow: var(--shadow-2);
+}
+
+/* --- username picker ------------------------------------------------------ */
+
+.picker {
+  position: relative;
+}
+
+.picker-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  min-height: 2.6rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  cursor: text;
+}
+
+.picker-field:focus-within {
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+
+.picker-field input {
+  flex: 1;
+  min-width: 120px;
+  border: none;
+  background: none;
+  padding: 0.25rem;
+  box-shadow: none;
+}
+
+.picker-field input:focus {
+  box-shadow: none;
+  border: none;
+}
+
+.chip.small {
+  padding: 0.15rem 0.3rem 0.15rem 0.6rem;
+  gap: 0.2rem;
+  display: inline-flex;
+  align-items: center;
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+}
+
+.chip-x {
+  background: none;
+  border: none;
+  color: inherit;
+  padding: 0 0.25rem;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.chip-x:hover {
+  background: none;
+  color: var(--text);
+}
+
+.picker-menu {
+  position: absolute;
+  z-index: 10;
+  left: 0;
+  right: 0;
+  margin: 0.25rem 0 0;
+  padding: 0.25rem;
+  list-style: none;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-2);
+}
+
+.picker-menu li {
+  padding: 0.4rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.picker-menu li:hover,
+.picker-menu li.active {
+  background: var(--surface-3);
 }

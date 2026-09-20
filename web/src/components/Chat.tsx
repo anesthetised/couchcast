@@ -12,6 +12,8 @@ const Chat: Component<Props> = (props) => {
   const messages = () => props.room.state.messages;
   const canWrite = () => props.room.state.me !== null;
   const canModerate = () => props.room.isModerator();
+  const members = () => props.room.state.snapshot?.members ?? [];
+  const guests = () => props.room.state.snapshot?.guests ?? 0;
 
   // Messages older than this are marked stale so the fullscreen ghost
   // overlay can fade them out; the clock ticks coarsely on purpose.
@@ -43,8 +45,24 @@ const Chat: Component<Props> = (props) => {
   const time = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
   return (
-    <section class="card chat">
-      <h2>Chat</h2>
+    <section class="chat">
+      <header class="chat-head">
+        <h2 class="section-title">Chat</h2>
+        <div class="presence" title={members().map((m) => m.username).join(", ")}>
+          <For each={members().slice(0, 6)}>
+            {(m) => (
+              <span class={`avatar ${m.buffering ? "buffering" : ""}`} title={`${m.username}${m.role && m.role !== "member" ? ` · ${m.role}` : ""}${m.buffering ? " · buffering" : ""}`}>
+                {m.username.slice(0, 1)}
+              </span>
+            )}
+          </For>
+          <Show when={members().length > 6 || guests() > 0}>
+            <span class="muted small">
+              +{Math.max(0, members().length - 6) + guests()}
+            </span>
+          </Show>
+        </div>
+      </header>
       <ul class="chat-list" ref={list}>
         <For each={messages()} fallback={<li class="muted small">No messages yet.</li>}>
           {(m) => (

@@ -112,6 +112,8 @@ and a production image build.
   `apihttp.LiveQueue`), applies initial settings and sends invites; extras
   that fail after creation come back as `warnings`, never as errors. The
   SPA page is `/new`; anonymous visitors round-trip via `/login?next=/new`.
+- `GET /api/v1/users?q=` (signed in) is username autocomplete; the
+  `UsernamePicker` component wraps it wherever usernames are typed.
 - `GET /api/v1/rooms` is the directory (public rooms plus the caller's
   private rooms; `live`/`private`/`mine` filters, search, pagination).
   `GET /api/v1/me/rooms` is deprecated and unused by the SPA.

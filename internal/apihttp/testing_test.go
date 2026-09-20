@@ -61,6 +61,18 @@ func (f *fakeStore) GetUserByUsername(_ context.Context, username string) (*enti
 	return nil, repository.ErrNotFound
 }
 
+func (f *fakeStore) SearchUsernames(_ context.Context, prefix string, limit int) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for _, u := range f.users {
+		if strings.HasPrefix(strings.ToLower(u.Username), strings.ToLower(prefix)) && len(out) < limit {
+			out = append(out, u.Username)
+		}
+	}
+	return out, nil
+}
+
 func (f *fakeStore) CreateSession(_ context.Context, h []byte, uid uuid.UUID, exp time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
