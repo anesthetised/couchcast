@@ -2088,8 +2088,38 @@ a.username:hover {
     order: -1;
   }
 
-  .room-chat {
-    height: 420px;
+  /* The stage stays put; Chat / Queue live in tabs below it. */
+  .stage:not(.fullscreen) {
+    position: sticky;
+    top: 3.2rem;
+    z-index: 4;
+    background: var(--bg);
+  }
+
+  .room-tabs {
+    margin-top: 0.25rem;
+  }
+
+  .room-tabs .tab {
+    flex: 1;
+    text-align: center;
+  }
+
+  .room-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding-top: 0.75rem;
+  }
+
+  .room-panel .room-chat {
+    position: static;
+    height: calc(100vh - 3.2rem - 56.25vw - 5.5rem);
+    min-height: 320px;
+  }
+
+  .up-next .list {
+    max-height: none;
   }
 
   .thumb,

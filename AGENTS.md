@@ -170,7 +170,10 @@ and a production image build.
 - Browser notifications (`lib/notify.ts`) are opt-in from the bell in the
   top bar and fire only while the tab is hidden: new invites (the auth
   store polls `/invites` every minute) and the caller's own video starting.
-  `lib/title.ts` keeps the tab title (`(unread) ▶ Title — Room`).
+  `lib/title.ts` keeps the tab title (`(unread) ▶ Title — Room`). Below
+  640 px the room page keeps the stage sticky and shows Chat / Queue as
+  tabs (`?tab=queue`, swipe switches); the player preloads the next ready
+  item in the last five seconds (`Player.preload`) for a gapless switch.
 - Profile: `PATCH /api/v1/me` (avatar colour, a palette key from
   `entity.AvatarColors`) and `POST /api/v1/me/password` (verifies the
   current one, revokes every session, reissues the caller's). The SPA page

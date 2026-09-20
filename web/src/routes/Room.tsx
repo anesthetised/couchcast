@@ -1,4 +1,4 @@
-import { useLocation, useNavigate, useParams } from "@solidjs/router";
+import { useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/router";
 import { createEffect, createResource, createSignal, For, on, onCleanup, onMount, Show, type Component } from "solid-js";
 
 import AddToQueue from "~/components/AddToQueue";
@@ -14,6 +14,8 @@ import { useTitle } from "~/lib/title";
 import { toast } from "~/lib/toast";
 import { isModerator } from "~/lib/types";
 import { createRoomStore, type RoomEnd, type RoomStore } from "~/store/room";
+
+const SWIPE_PX = 60;
 
 // Room page: the REST fetch establishes access (401/403 → message), then
 // the WebSocket store drives everything live.
@@ -61,6 +63,30 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
   // Warnings handed over by the create page; shown once, dismissable.
   const location = useLocation<{ warnings?: string[] }>();
   const [notices, setNotices] = createSignal<string[]>(location.state?.warnings ?? []);
+
+  // Narrow screens: the stage stays on top and Chat / Queue become tabs
+  // below it (the tab lives in the URL); swiping the panel switches.
+  const mq = window.matchMedia("(max-width: 640px)");
+  const [mobile, setMobile] = createSignal(mq.matches);
+  onMount(() => {
+    const onChange = (e: MediaQueryListEvent) => setMobile(e.matches);
+    mq.addEventListener("change", onChange);
+    onCleanup(() => mq.removeEventListener("change", onChange));
+  });
+  const [params, setParams] = useSearchParams<{ tab?: string }>();
+  const tab = () => (params.tab === "queue" ? "queue" : "chat");
+  const setTab = (t: "chat" | "queue") => setParams({ tab: t === "chat" ? undefined : t }, { replace: true });
+  let touchX: number | null = null;
+  const onTouchStart = (e: TouchEvent) => {
+    touchX = e.touches[0]?.clientX ?? null;
+  };
+  const onTouchEnd = (e: TouchEvent) => {
+    if (touchX === null) return;
+    const dx = (e.changedTouches[0]?.clientX ?? touchX) - touchX;
+    touchX = null;
+    if (Math.abs(dx) < SWIPE_PX) return;
+    setTab(dx < 0 ? "queue" : "chat");
+  };
 
   const snap = () => store.state.snapshot;
   createEffect(
@@ -167,19 +193,57 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
           </Show>
         </div>
 
-        <div class="room-actions">
-          <AddToQueue room={store} />
-          <SkipVote store={store} />
-        </div>
+        <Show
+          when={!mobile()}
+          fallback={
+            <>
+              <nav class="tabs room-tabs" role="tablist">
+                <button type="button" class={`tab ${tab() === "chat" ? "active" : ""}`} role="tab" aria-selected={tab() === "chat"} onClick={() => setTab("chat")}>
+                  Chat
+                </button>
+                <button type="button" class={`tab ${tab() === "queue" ? "active" : ""}`} role="tab" aria-selected={tab() === "queue"} onClick={() => setTab("queue")}>
+                  Queue <span class="muted">{snap()?.queue.length ?? 0}</span>
+                </button>
+              </nav>
+              <div class="room-panel" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+                <Show
+                  when={tab() === "chat"}
+                  fallback={
+                    <>
+                      <div class="room-actions">
+                        <AddToQueue room={store} />
+                        <SkipVote store={store} />
+                      </div>
+                      <section class="up-next">
+                        <Queue room={store} />
+                      </section>
+                    </>
+                  }
+                >
+                  <div class="room-chat">
+                    <Chat room={store} />
+                  </div>
+                </Show>
+              </div>
+            </>
+          }
+        >
+          <div class="room-actions">
+            <AddToQueue room={store} />
+            <SkipVote store={store} />
+          </div>
 
-        <section class="up-next">
-          <Queue room={store} />
-        </section>
+          <section class="up-next">
+            <Queue room={store} />
+          </section>
+        </Show>
       </div>
 
-      <aside class="room-chat">
-        <Chat room={store} />
-      </aside>
+      <Show when={!mobile()}>
+        <aside class="room-chat">
+          <Chat room={store} />
+        </aside>
+      </Show>
     </div>
   );
 };
