@@ -163,7 +163,7 @@ const Player: Component<Props> = (props) => {
           return;
         }
         if (target.id === loadedMediaId()) {
-          player.setToken(target.token);
+          player.setTokenFor(target.manifest, target.token);
           return;
         }
         sync.suspended = true;
@@ -188,6 +188,14 @@ const Player: Component<Props> = (props) => {
       },
     ),
   );
+
+  // Preload the next item's manifest shortly before the current one ends
+  // so auto-advance starts without a black gap.
+  createEffect(() => {
+    const next = upNext();
+    if (!player || !nearEnd() || !next || next.media.status !== "ready" || !next.media.manifest || !next.media.token) return;
+    void player.preload(next.media.manifest, next.media.token);
+  });
 
   // Feed playback updates to the synchroniser.
   createEffect(() => {

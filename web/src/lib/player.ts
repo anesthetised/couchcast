@@ -1,5 +1,13 @@
 import shaka from "shaka-player";
 
+// prefixOf returns "/media/<id>/" for any URL under a media prefix.
+function prefixOf(u: string): string {
+  const i = u.indexOf("/media/");
+  if (i < 0) return "";
+  const j = u.indexOf("/", i + "/media/".length);
+  return j < 0 ? u.slice(i) : u.slice(i, j + 1);
+}
+
 export interface QualityOption {
   height: number;
   bandwidth: number;
@@ -9,7 +17,10 @@ export interface QualityOption {
 // selection. All segment requests carry ?t=<token> via a request filter.
 export class Player {
   readonly shaka: shaka.Player;
-  private token = "";
+  // Tokens by media prefix ("/media/<id>/"): the current item and a
+  // preloaded next one may be fetching at the same time.
+  private tokens = new Map<string, string>();
+  private preloaded: { manifest: string; manager: shaka.media.PreloadManager } | null = null;
   onBuffering: (buffering: boolean) => void = () => {};
   onTracks: (tracks: QualityOption[], active: number | null) => void = () => {};
   onError: (message: string) => void = () => {};
@@ -25,7 +36,11 @@ export class Player {
       abr: { enabled: true, restrictions: options.maxHeight ? { maxHeight: options.maxHeight } : {} },
     });
     this.shaka.getNetworkingEngine()?.registerRequestFilter((_type, request) => {
-      request.uris = request.uris.map((u) => (u.includes("?t=") ? u : `${u}?t=${this.token}`));
+      request.uris = request.uris.map((u) => {
+        if (u.includes("?t=")) return u;
+        const token = this.tokens.get(prefixOf(u));
+        return token ? `${u}?t=${token}` : u;
+      });
     });
     this.shaka.addEventListener("buffering", (e) => {
       this.onBuffering(Boolean((e as unknown as { buffering: boolean }).buffering));
@@ -47,9 +62,38 @@ export class Player {
   }
 
   async load(manifest: string, token: string, startMs: number) {
-    this.token = token;
-    await this.shaka.load(manifest, startMs / 1000);
+    this.tokens.set(prefixOf(manifest), token);
+    // A matching preload carries the parsed manifest and first segments;
+    // anything else is dropped.
+    const pre = this.preloaded;
+    this.preloaded = null;
+    if (pre && pre.manifest === manifest) {
+      await this.shaka.load(pre.manager, startMs / 1000);
+    } else {
+      if (pre) void pre.manager.destroy();
+      await this.shaka.load(manifest, startMs / 1000);
+    }
     this.emitTracks();
+  }
+
+  // preload fetches the next item's manifest and first segments ahead of
+  // time so auto-advance starts without a black gap.
+  async preload(manifest: string, token: string) {
+    if (this.preloaded?.manifest === manifest) return;
+    if (this.preloaded) void this.preloaded.manager.destroy();
+    this.preloaded = null;
+    this.tokens.set(prefixOf(manifest), token);
+    try {
+      const manager = await this.shaka.preload(manifest, 0);
+      if (manager) this.preloaded = { manifest, manager };
+    } catch {
+      // preloading is best effort
+    }
+  }
+
+  // setToken refreshes a media's token without reloading.
+  setTokenFor(manifest: string, token: string) {
+    this.tokens.set(prefixOf(manifest), token);
   }
 
   // addSubtitles attaches sidecar WebVTT tracks next to the manifest
@@ -77,14 +121,14 @@ export class Player {
   }
 
   async unload() {
+    if (this.preloaded) {
+      void this.preloaded.manager.destroy();
+      this.preloaded = null;
+    }
     await this.shaka.unload();
     this.onTracks([], null);
   }
 
-  // setToken refreshes the token without reloading (tokens expire hourly).
-  setToken(token: string) {
-    this.token = token;
-  }
 
   // selectQuality picks a fixed height, or re-enables ABR with null.
   selectQuality(height: number | null) {
