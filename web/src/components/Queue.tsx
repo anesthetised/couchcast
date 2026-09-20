@@ -1,7 +1,7 @@
-import { createSignal, For, Show, type Component } from "solid-js";
+import { createSignal, For, onCleanup, Show, type Component } from "solid-js";
 
 import ReportDialog from "~/components/ReportDialog";
-import { formatTime } from "~/lib/format";
+import { formatDuration, formatTime } from "~/lib/format";
 import type { RoomStore } from "~/store/room";
 import type { QueueEntry } from "~/protocol";
 
@@ -13,6 +13,27 @@ const Queue: Component<Props> = (props) => {
   const me = () => props.room.state.me;
   const voteMode = () => props.room.state.snapshot?.room.settings.voteMode ?? false;
   const [reporting, setReporting] = createSignal<QueueEntry | null>(null);
+
+  // Time left in the whole queue: the rest of the current item plus every
+  // item after it. Ticks coarsely; the header only shows minutes.
+  const [tick, setTick] = createSignal(0);
+  const ticker = window.setInterval(() => setTick((t) => t + 1), 10_000);
+  onCleanup(() => window.clearInterval(ticker));
+  const remainingMs = () => {
+    tick();
+    const list = items();
+    const idx = list.findIndex((q) => q.current);
+    let total = 0;
+    if (idx >= 0) {
+      const pb = props.room.state.playback;
+      const cur = list[idx]!;
+      let pos = pb?.positionMs ?? 0;
+      if (pb?.playing) pos += (props.room.clock.serverNow() - pb.atServerMs) * pb.rate;
+      total += Math.max(0, cur.media.durationMs - pos);
+    }
+    for (const q of list.slice(idx + 1)) total += q.media.durationMs;
+    return total;
+  };
 
   // Pointer drag-and-drop in manual mode. The current item is pinned; a
   // drop maps to queue.move with the item above the target as the anchor.
@@ -71,6 +92,11 @@ const Queue: Component<Props> = (props) => {
     <section class="queue">
       <h2 class="section-title">
         Up next <span class="muted">{items().length}</span>
+        <Show when={remainingMs() > 0}>
+          <span class="muted queue-total" title="Time left in the queue">
+            · {formatDuration(remainingMs())}
+          </span>
+        </Show>
       </h2>
       <Show when={items().length === 0}>
         <p class="muted small queue-empty">Nothing queued yet.</p>

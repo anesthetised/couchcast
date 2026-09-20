@@ -57,6 +57,12 @@ func (r *Repo) CreateMedia(ctx context.Context, q Querier, sourceKey, sourceURL 
 	return m, false, err
 }
 
+// GetMediaByKey returns the media row for a source key or ErrNotFound.
+func (r *Repo) GetMediaByKey(ctx context.Context, sourceKey string) (*entity.Media, error) {
+	const q = `SELECT ` + mediaColumns + ` FROM media WHERE source_key = $1`
+	return scanMedia(r.pool.QueryRow(ctx, q, sourceKey))
+}
+
 // GetMedia returns a media row or ErrNotFound.
 func (r *Repo) GetMedia(ctx context.Context, id uuid.UUID) (*entity.Media, error) {
 	const q = `SELECT ` + mediaColumns + ` FROM media WHERE id = $1`

@@ -69,6 +69,8 @@ type Deps struct {
 	// LiveQueue enqueues it through the live room. Nil disables firstUrl.
 	Admit     Admitter
 	LiveQueue LiveQueue
+	// Prober serves GET /media/probe for the add form; nil disables it.
+	Prober Prober
 
 	// MediaObjects deletes packaged media when an administrator removes it.
 	MediaObjects MediaDeleter
@@ -97,6 +99,7 @@ type Deps struct {
 	RoomCreateLimiter *ratelimit.Limiter
 	InviteLimiter     *ratelimit.Limiter
 	ReportLimiter     *ratelimit.Limiter
+	ProbeLimiter      *ratelimit.Limiter
 }
 
 // Server owns the chi router.
@@ -180,6 +183,9 @@ func New(deps Deps) *Server {
 			r.Post("/invites/{id}/decline", s.handleDeclineInvite)
 			if deps.Admin != nil {
 				r.Post("/media/{id}/reports", s.handleCreateReport)
+			}
+			if deps.Prober != nil {
+				r.Get("/media/probe", s.handleProbe)
 			}
 		})
 

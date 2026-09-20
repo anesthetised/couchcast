@@ -2222,3 +2222,59 @@ a.username:hover {
     white-space: normal;
   }
 }
+
+/* --- add form preview ------------------------------------------------------ */
+
+.add-field {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.add-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: var(--fs-sm);
+  min-height: 1.5rem;
+}
+
+.add-preview.error {
+  color: var(--danger);
+}
+
+.add-preview img {
+  width: 64px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--surface-2);
+  flex: none;
+}
+
+.add-preview-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.add-preview-body strong {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ring.small {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+  flex: none;
+}
+
+/* The button stays on the input's row when the preview is open. */
+.add-form > button {
+  align-self: flex-start;
+}

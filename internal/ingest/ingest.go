@@ -43,6 +43,7 @@ var (
 type MediaRepo interface {
 	CreateMedia(ctx context.Context, q repository.Querier, sourceKey, sourceURL string) (*entity.Media, bool, error)
 	GetMedia(ctx context.Context, id uuid.UUID) (*entity.Media, error)
+	GetMediaByKey(ctx context.Context, sourceKey string) (*entity.Media, error)
 	IsSourceBlocked(ctx context.Context, sourceKey string) (bool, error)
 	SetMediaStatus(ctx context.Context, id uuid.UUID, status entity.MediaStatus) error
 	SetMediaProgress(ctx context.Context, id uuid.UUID, progress float32) error
@@ -100,6 +101,49 @@ func (s *Service) EnsureMedia(ctx context.Context, q repository.Querier, rawURL 
 	}
 
 	return media, nil
+}
+
+// Preview is what the add form shows before a URL is queued.
+type Preview struct {
+	Title        string
+	DurationMs   int64
+	ThumbnailURL string
+	// Status is set when the media is already known (queued, ready, …).
+	Status entity.MediaStatus
+}
+
+// Preview describes a URL without queueing it: a known source answers from
+// the database, a new one is probed through the extractor.
+func (s *Service) Preview(ctx context.Context, rawURL string) (*Preview, error) {
+	key, err := s.Key(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	blocked, err := s.repo.IsSourceBlocked(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	if blocked {
+		return nil, ErrBlocked
+	}
+
+	media, err := s.repo.GetMediaByKey(ctx, key)
+	switch {
+	case err == nil && (media.Title != "" || media.Status == entity.MediaReady):
+		return &Preview{Title: media.Title, DurationMs: media.DurationMs, ThumbnailURL: media.ThumbnailURL, Status: media.Status}, nil
+	case err != nil && !errors.Is(err, repository.ErrNotFound):
+		return nil, err
+	}
+
+	p, err := s.extractor.Probe(ctx, rawURL)
+	if err != nil {
+		return nil, err
+	}
+	out := &Preview{Title: p.Title, DurationMs: p.DurationMs, ThumbnailURL: p.ThumbnailURL}
+	if media != nil {
+		out.Status = media.Status
+	}
+	return out, nil
 }
 
 // Retry re-queues a failed media item.

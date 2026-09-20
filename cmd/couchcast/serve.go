@@ -59,6 +59,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	inviteLimiter := ratelimit.PerHour(30, 30)
 	reportLimiter := ratelimit.PerHour(10, 10)
 	queueAddLimiter := ratelimit.New(10, 5)
+	probeLimiter := ratelimit.New(20, 10)
 
 	queue := jobs.New(pool)
 	admit := ingest.NewService(repo, queue, ytdlp.New(cfg.Ingest.YTDLPPath, cfg.Ingest.YTDLPExtraArgs, logger))
@@ -85,6 +86,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Signer:       signer,
 		Admit:        admit,
 		LiveQueue:    liveQueue{rooms},
+		Prober:       admit,
 		Media:        mediaHandler,
 		MediaObjects: store,
 		RoomsLoaded:  rooms.Loaded,
@@ -108,6 +110,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		RoomCreateLimiter: roomCreateLimiter,
 		InviteLimiter:     inviteLimiter,
 		ReportLimiter:     reportLimiter,
+		ProbeLimiter:      probeLimiter,
 	})
 
 	srv := &http.Server{
