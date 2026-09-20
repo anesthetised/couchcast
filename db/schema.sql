@@ -158,6 +158,23 @@ CREATE TABLE invites (
 
 CREATE INDEX invites_invitee_pending_idx ON invites (invitee_id) WHERE status = 'pending';
 
+-- Invite links let anyone with the URL join as a member. Only the token's
+-- hash is stored; expiry and use limits are optional.
+CREATE TABLE room_invite_links (
+    id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    room_id    uuid        NOT NULL REFERENCES rooms (id) ON DELETE CASCADE,
+    token_hash bytea       NOT NULL,
+    created_by uuid        REFERENCES users (id) ON DELETE SET NULL,
+    expires_at timestamptz,
+    max_uses   integer,
+    uses       integer     NOT NULL DEFAULT 0,
+    revoked_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE UNIQUE INDEX room_invite_links_token_idx ON room_invite_links (token_hash);
+CREATE INDEX room_invite_links_room_idx ON room_invite_links (room_id);
+
 -- ---------------------------------------------------------------------------
 -- Queue, votes, chat
 -- ---------------------------------------------------------------------------

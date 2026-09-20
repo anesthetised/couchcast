@@ -55,7 +55,7 @@ var slugRe = regexp.MustCompile(`^[a-z0-9-]{3,32}$`)
 // must never shadow.
 var reservedSlugs = map[string]bool{
 	"api": true, "media": true, "admin": true, "login": true, "register": true, "logout": true,
-	"settings": true, "invites": true, "metrics": true, "healthz": true, "assets": true, "r": true,
+	"settings": true, "invites": true, "join": true, "metrics": true, "healthz": true, "assets": true, "r": true,
 	"rooms": true, "me": true, "new": true, "about": true, "help": true, "static": true, "public": true,
 }
 

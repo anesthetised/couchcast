@@ -1,6 +1,6 @@
 // REST calls for rooms, members, bans and invites.
 import { api } from "~/lib/api";
-import type { Ban, Directory, Invite, Member, Room, Visibility } from "~/lib/types";
+import type { Ban, Directory, Invite, InviteLink, JoinPreview, Member, Room, Visibility } from "~/lib/types";
 
 const json = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) });
 
@@ -49,6 +49,18 @@ export const rooms = {
     api<void>(`/api/v1/rooms/${slug}/bans/${username}`, { method: "DELETE" }),
 
   invite: (slug: string, username: string) => api<Invite>(`/api/v1/rooms/${slug}/invites`, json({ username })),
+};
+
+export const inviteLinks = {
+  list: (slug: string) => api<InviteLink[]>(`/api/v1/rooms/${slug}/invite-links`),
+  create: (slug: string, input: { expiresIn: string; maxUses: number | null }) =>
+    api<InviteLink>(`/api/v1/rooms/${slug}/invite-links`, json(input)),
+  revoke: (slug: string, id: string) => api<void>(`/api/v1/rooms/${slug}/invite-links/${id}`, { method: "DELETE" }),
+};
+
+export const join = {
+  preview: (token: string) => api<JoinPreview>(`/api/v1/join/${token}`),
+  accept: (token: string) => api<{ roomSlug: string }>(`/api/v1/join/${token}`, { method: "POST" }),
 };
 
 export const invites = {

@@ -4,6 +4,7 @@ import type { Component } from "solid-js";
 import Toasts from "~/components/Toasts";
 import UserMenu from "~/components/UserMenu";
 import Home from "~/routes/Home";
+import Join from "~/routes/Join";
 import Login from "~/routes/Login";
 import Profile from "~/routes/Profile";
 import NewRoom from "~/routes/NewRoom";
@@ -33,6 +34,7 @@ const App: Component = () => (
     <Route path="/new" component={NewRoom} />
     <Route path="/login" component={Login} />
     <Route path="/me" component={Profile} />
+    <Route path="/join/:token" component={Join} />
     <Route path="/register" component={Register} />
     <Route path="/r/:slug" component={Room} />
     <Route path="/r/:slug/settings" component={RoomSettings} />

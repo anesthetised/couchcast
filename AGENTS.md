@@ -137,6 +137,11 @@ and a production image build.
   moves the queue to the history and closes every connection with reason
   `session ended`; the web client treats any 1008 close with a reason as
   the end of the session (kick, ban, room deleted, left).
+- Invite links (`room_invite_links`, token hash only): moderators mint them
+  with `POST /rooms/{slug}/invite-links` (optional expiry and use limit;
+  the URL `/join/<token>` is returned once), list and revoke them;
+  `GET /api/v1/join/{token}` previews, `POST` joins as a member (existing
+  members pass without charging the link).
 - `GET /api/v1/users?q=` (signed in) is username autocomplete; the
   `UsernamePicker` component wraps it wherever usernames are typed.
 - Browser notifications (`lib/notify.ts`) are opt-in from the bell in the

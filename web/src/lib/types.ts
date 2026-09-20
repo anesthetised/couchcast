@@ -60,6 +60,25 @@ export interface Ban {
   createdAt: string;
 }
 
+export interface InviteLink {
+  id: string;
+  url?: string; // only on creation
+  createdBy: string;
+  expiresAt: string | null;
+  maxUses: number | null;
+  uses: number;
+  revokedAt: string | null;
+  createdAt: string;
+}
+
+export interface JoinPreview {
+  roomSlug: string;
+  roomName: string;
+  valid: boolean;
+  reason?: string;
+  member: boolean;
+}
+
 export interface Invite {
   id: string;
   roomSlug: string;

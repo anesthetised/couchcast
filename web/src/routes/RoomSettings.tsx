@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from "@solidjs/router";
 import { createResource, createSignal, For, Show, type Component } from "solid-js";
 
+import InviteLinks from "~/components/InviteLinks";
 import UsernamePicker from "~/components/UsernamePicker";
 import { rooms } from "~/lib/rooms";
 import { toast } from "~/lib/toast";
@@ -251,6 +252,8 @@ const RoomSettings: Component = () => {
                     </For>
                   </tbody>
                 </table>
+
+                <InviteLinks slug={params.slug} />
 
                 <div class="settings-forms">
                   <form class="form" onSubmit={invite}>

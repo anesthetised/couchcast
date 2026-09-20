@@ -71,6 +71,8 @@ type Deps struct {
 	LiveQueue LiveQueue
 	// Prober serves GET /media/probe for the add form; nil disables it.
 	Prober Prober
+	// InviteLinks serves invite links and /join; nil disables them.
+	InviteLinks InviteLinkStore
 
 	// MediaObjects deletes packaged media when an administrator removes it.
 	MediaObjects MediaDeleter
@@ -172,9 +174,19 @@ func New(deps Deps) *Server {
 					r.Put("/bans/{username}", s.handleBan)
 					r.Delete("/bans/{username}", s.handleUnban)
 					r.Post("/invites", s.handleCreateInvite)
+					if deps.InviteLinks != nil {
+						r.Post("/invite-links", s.handleCreateInviteLink)
+						r.Get("/invite-links", s.handleListInviteLinks)
+						r.Delete("/invite-links/{id}", s.handleRevokeInviteLink)
+					}
 				})
 			})
 		})
+
+		if deps.InviteLinks != nil {
+			r.Get("/join/{token}", s.handleJoinPreview)
+			r.With(auth.RequireUser).Post("/join/{token}", s.handleJoin)
+		}
 
 		r.Group(func(r chi.Router) {
 			r.Use(auth.RequireUser)

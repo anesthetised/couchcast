@@ -105,6 +105,34 @@ type Invite struct {
 	CreatedAt time.Time
 }
 
+// InviteLink lets anyone holding the URL join a room as a member.
+type InviteLink struct {
+	ID        uuid.UUID
+	RoomID    uuid.UUID
+	RoomSlug  string // populated by queries
+	RoomName  string // populated by queries
+	CreatedBy *uuid.UUID
+	Creator   string // username, populated by queries
+	ExpiresAt *time.Time
+	MaxUses   *int
+	Uses      int
+	RevokedAt *time.Time
+	CreatedAt time.Time
+}
+
+// Usable reports whether the link still admits people at time now.
+func (l *InviteLink) Usable(now time.Time) (ok bool, reason string) {
+	switch {
+	case l.RevokedAt != nil:
+		return false, "revoked"
+	case l.ExpiresAt != nil && !now.Before(*l.ExpiresAt):
+		return false, "expired"
+	case l.MaxUses != nil && l.Uses >= *l.MaxUses:
+		return false, "used up"
+	}
+	return true, ""
+}
+
 // AuditEntry records a moderator or administrator action.
 type AuditEntry struct {
 	ID         int64
