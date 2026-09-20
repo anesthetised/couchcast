@@ -1440,8 +1440,7 @@ progress {
 .stage.fullscreen.idle .fs-chat:not(:hover) .chat-form,
 .stage.fullscreen.idle .fs-chat:not(:hover) .chat-delete,
 .stage.fullscreen.idle .fs-chat:not(:hover) .chat-line.stale,
-.stage.fullscreen.idle .fs-queue:not(:hover) .queue-actions,
-.stage.fullscreen.idle .fs-queue:not(:hover) .queue-item:not(.current) .thumb {
+.stage.fullscreen.idle .fs-queue:not(:hover) .queue-actions {
   opacity: 0;
 }
 
