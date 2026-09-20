@@ -21,7 +21,14 @@ const AddToQueue: Component<Props> = (props) => {
   return (
     <Show when={canAdd()} fallback={<p class="muted small">{props.room.state.me ? "Only moderators can add videos here." : "Log in to add videos."}</p>}>
       <form class="add-form" onSubmit={submit}>
-        <input type="url" placeholder="Paste a YouTube or video link" required value={url()} onInput={(e) => setUrl(e.currentTarget.value)} />
+        <input
+          type="url"
+          placeholder="Paste a YouTube or video link"
+          required
+          value={url()}
+          onInput={(e) => setUrl(e.currentTarget.value)}
+          autofocus={(props.room.state.snapshot?.queue.length ?? 1) === 0}
+        />
         <button type="submit">Add</button>
       </form>
     </Show>

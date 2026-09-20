@@ -14,6 +14,42 @@ const Queue: Component<Props> = (props) => {
   const voteMode = () => props.room.state.snapshot?.room.settings.voteMode ?? false;
   const [reporting, setReporting] = createSignal<QueueEntry | null>(null);
 
+  // Pointer drag-and-drop in manual mode. The current item is pinned; a
+  // drop maps to queue.move with the item above the target as the anchor.
+  const canDrag = () => canManage() && !voteMode();
+  const [dragging, setDragging] = createSignal<string | null>(null);
+  const [over, setOver] = createSignal<string | null>(null);
+
+  const onDragStart = (e: DragEvent, item: QueueEntry) => {
+    if (!canDrag() || item.current) return e.preventDefault();
+    setDragging(item.id);
+    e.dataTransfer?.setData("text/plain", item.id);
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
+  };
+  const onDragOver = (e: DragEvent, item: QueueEntry) => {
+    if (!dragging() || item.current) return;
+    e.preventDefault();
+    setOver(item.id);
+  };
+  const onDrop = (e: DragEvent, target: QueueEntry) => {
+    e.preventDefault();
+    const id = dragging();
+    setDragging(null);
+    setOver(null);
+    if (!id || id === target.id || target.current) return;
+    const list = items();
+    const from = list.findIndex((q) => q.id === id);
+    const to = list.findIndex((q) => q.id === target.id);
+    if (from < 0 || to < 0) return;
+    // Moving down: land after the target; moving up: land before it.
+    const anchor = from < to ? target : list[to - 1];
+    props.room.commands.move(id, anchor && !anchor.current ? anchor.id : anchor?.current ? anchor.id : null);
+  };
+  const onDragEnd = () => {
+    setDragging(null);
+    setOver(null);
+  };
+
   const moveUp = (idx: number) => {
     const list = items();
     const item = list[idx];
@@ -42,7 +78,14 @@ const Queue: Component<Props> = (props) => {
       <ul class="list">
         <For each={items()}>
           {(item, idx) => (
-            <li class={`queue-item ${item.current ? "current" : ""}`}>
+            <li
+              class={`queue-item ${item.current ? "current" : ""} ${dragging() === item.id ? "dragging" : ""} ${over() === item.id ? "over" : ""}`}
+              draggable={canDrag() && !item.current}
+              onDragStart={(e) => onDragStart(e, item)}
+              onDragOver={(e) => onDragOver(e, item)}
+              onDrop={(e) => onDrop(e, item)}
+              onDragEnd={onDragEnd}
+            >
               <div class="thumb">
                 <Show when={item.media.thumbnailUrl} fallback={<div class="thumb-empty" />}>
                   <img src={item.media.thumbnailUrl} alt="" loading="lazy" />
