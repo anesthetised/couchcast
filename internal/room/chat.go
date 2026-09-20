@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
@@ -24,6 +25,7 @@ type ChatStore interface {
 	CreateSystemMessage(ctx context.Context, roomID uuid.UUID, body string) (*entity.Message, error)
 	ListRecentMessages(ctx context.Context, roomID uuid.UUID, limit int) ([]entity.Message, error)
 	DeleteMessage(ctx context.Context, roomID uuid.UUID, id int64, deletedBy uuid.UUID) error
+	ClearMessages(ctx context.Context, roomID uuid.UUID, deletedBy uuid.UUID) (int64, error)
 }
 
 const (
@@ -101,6 +103,9 @@ func (r *Room) ChatSend(ctx context.Context, actor access.Actor, body string) er
 	if r.deps.Chat == nil {
 		return invalid("chat is disabled")
 	}
+	if actor.Muted() {
+		return &Error{Code: protocol.CodeForbidden, Message: "you are muted until " + actor.MutedUntil.Local().Format("15:04")}
+	}
 	if err := r.requireLocked(actor, access.Chat); err != nil {
 		return err
 	}
@@ -110,6 +115,13 @@ func (r *Room) ChatSend(ctx context.Context, actor access.Actor, body string) er
 	}
 	if !r.chatLimiter(actor.User.ID).Allow() {
 		return &Error{Code: protocol.CodeRateLimit, Message: "you are sending messages too quickly"}
+	}
+	// Slow mode: non-moderators wait between messages.
+	if slow := r.info.Settings.SlowModeSec; slow > 0 && !access.Can(actor, access.ModerateChat, r.info) {
+		if wait := time.Duration(slow)*time.Second - r.now().Sub(r.lastChatAt[actor.User.ID]); wait > 0 {
+			return &Error{Code: protocol.CodeRateLimit, Message: fmt.Sprintf("slow mode: wait %d s", int(wait.Seconds())+1)}
+		}
+		r.lastChatAt[actor.User.ID] = r.now()
 	}
 
 	msg, err := r.deps.Chat.CreateMessage(ctx, r.info.ID, actor.User.ID, body)
@@ -172,6 +184,34 @@ func (r *Room) reactLimiter(userID uuid.UUID) *rate.Limiter {
 		r.reactLimits[userID] = l
 	}
 	return l
+}
+
+// ChatClear removes every message in the room (moderators only).
+func (r *Room) ChatClear(ctx context.Context, actor access.Actor) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.deps.Chat == nil {
+		return invalid("chat is disabled")
+	}
+	if err := r.requireLocked(actor, access.ModerateChat); err != nil {
+		return err
+	}
+	if _, err := r.deps.Chat.ClearMessages(ctx, r.info.ID, actor.User.ID); err != nil {
+		return err
+	}
+	out := protocol.ChatCleared{Type: protocol.TypeChatCleared}
+	for _, v := range r.viewers {
+		v.conn.Send(out)
+	}
+	r.logLocked(ctx, actor.User.Username+" cleared the chat")
+	return nil
+}
+
+// Log appends a system line from outside the room (REST moderation).
+func (r *Room) Log(ctx context.Context, line string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.logLocked(ctx, line)
 }
 
 // ChatDelete removes a message (moderators only).

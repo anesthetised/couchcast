@@ -149,6 +149,11 @@ and a production image build.
   "Playing … · N watching", the current thumbnail — cached 30 s per slug;
   private and unknown rooms get the plain shell. Only the Go server does
   this, so check it with `just build` + `couchcast serve`, not Vite.
+- Moderation: `room_mutes` (until a point in time; `PUT/DELETE/GET
+  /rooms/{slug}/mutes/{username}`, `CanTarget` like bans) is resolved into
+  `access.Actor.MutedUntil` and blocks chat, votes and adds; the
+  `slowModeSec` setting spaces non-moderators' messages; `chat.clear`
+  soft-deletes every message and broadcasts `chat.cleared`.
 - Invite links (`room_invite_links`, token hash only): moderators mint them
   with `POST /rooms/{slug}/invite-links` (optional expiry and use limit;
   the URL `/join/<token>` is returned once), list and revoke them;

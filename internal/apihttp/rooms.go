@@ -207,6 +207,16 @@ func (s *Server) actorFor(ctx context.Context, room *entity.Room, user *entity.U
 	}
 	actor.Banned = err == nil
 
+	if s.deps.Mutes != nil {
+		mute, err := s.deps.Mutes.GetMute(ctx, room.ID, user.ID)
+		if err != nil && !errors.Is(err, repository.ErrNotFound) {
+			return actor, err
+		}
+		if mute != nil && mute.Active(time.Now()) {
+			actor.MutedUntil = &mute.Until
+		}
+	}
+
 	return actor, nil
 }
 

@@ -33,6 +33,9 @@ type Settings struct {
 	ViewersCanAdd bool    `json:"viewersCanAdd"`
 	// Loop re-queues the played items when the queue runs out.
 	Loop bool `json:"loop"`
+	// SlowModeSec is the minimum gap between a non-moderator's messages
+	// (0 = off).
+	SlowModeSec int `json:"slowModeSec"`
 }
 
 // DefaultSettings is applied to new rooms.
@@ -105,6 +108,20 @@ type Invite struct {
 	Status    InviteStatus
 	CreatedAt time.Time
 }
+
+// RoomMute silences a user in a room until a point in time.
+type RoomMute struct {
+	RoomID    uuid.UUID
+	UserID    uuid.UUID
+	Username  string // populated by list queries
+	MutedBy   *uuid.UUID
+	Reason    string
+	Until     time.Time
+	CreatedAt time.Time
+}
+
+// Active reports whether the mute still applies at now.
+func (m *RoomMute) Active(now time.Time) bool { return m != nil && now.Before(m.Until) }
 
 // InviteLink lets anyone holding the URL join a room as a member.
 type InviteLink struct {

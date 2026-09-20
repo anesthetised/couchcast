@@ -146,6 +146,18 @@ CREATE TABLE room_bans (
     PRIMARY KEY (room_id, user_id)
 );
 
+-- Timed mutes: the user may watch but not chat, vote or add until `until`.
+CREATE TABLE room_mutes (
+    room_id    uuid        NOT NULL REFERENCES rooms (id) ON DELETE CASCADE,
+    user_id    uuid        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    muted_by   uuid        REFERENCES users (id) ON DELETE SET NULL,
+    reason     text        NOT NULL DEFAULT '',
+    until      timestamptz NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (room_id, user_id)
+);
+
 CREATE TABLE invites (
     id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
     room_id    uuid        NOT NULL REFERENCES rooms (id) ON DELETE CASCADE,

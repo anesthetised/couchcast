@@ -3,7 +3,11 @@
 // inspects roles.
 package access
 
-import "github.com/anesthetised/couchcast/internal/entity"
+import (
+	"time"
+
+	"github.com/anesthetised/couchcast/internal/entity"
+)
 
 // Action is something a user may try to do in a room.
 type Action string
@@ -32,7 +36,13 @@ type Actor struct {
 	User   *entity.User
 	Member *entity.RoomMember
 	Banned bool
+	// MutedUntil is set while a room mute applies: the actor may watch but
+	// not speak, vote or add.
+	MutedUntil *time.Time
 }
+
+// Muted reports whether the actor is currently muted.
+func (a Actor) Muted() bool { return a.MutedUntil != nil && time.Now().Before(*a.MutedUntil) }
 
 // Role returns the actor's room role, or "" for non-members.
 func (a Actor) Role() entity.RoomRole {
@@ -59,10 +69,12 @@ func Can(a Actor, action Action, room *entity.Room) bool {
 	switch action {
 	case ViewRoom:
 		return canView
-	case Chat, Vote, ReportMedia:
+	case ReportMedia:
 		return a.isUser() && canView
+	case Chat, Vote:
+		return a.isUser() && canView && !a.Muted()
 	case AddToQueue:
-		return a.isMod() || (a.isUser() && canView && room.Settings.ViewersCanAdd)
+		return a.isMod() || (a.isUser() && canView && room.Settings.ViewersCanAdd && !a.Muted())
 	case ControlPlayback, ManageQueue, ManageSettings, ModerateChat, Invite, BanMember, RemoveMember:
 		return a.isMod()
 	case ManageModerators, ManageRoom:

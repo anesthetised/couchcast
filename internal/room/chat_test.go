@@ -163,3 +163,50 @@ func TestTypingAndReactions(t *testing.T) {
 		assert.NotContains(t, m.Body, "🔥")
 	}
 }
+
+func TestMuteSlowModeAndClear(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	c1, c2 := &fakeConn{}, &fakeConn{}
+	f.room.Join(ctx, c1, f.owner)
+	f.room.Join(ctx, c2, f.guest)
+
+	// A muted actor cannot speak, vote or add; the message says until when.
+	until := f.now.Add(30 * time.Minute)
+	muted := f.guest
+	muted.MutedUntil = &until
+	err := f.room.ChatSend(ctx, muted, "hi")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "muted until")
+	assert.Error(t, f.room.QueueAdd(ctx, muted, "https://x", false))
+	assert.Error(t, f.room.React(muted, "🔥"))
+
+	// Slow mode throttles members but not moderators.
+	slow := 30
+	require.NoError(t, f.room.SettingsSet(ctx, f.owner, protocol.SettingsSet{SlowModeSec: &slow}))
+	bad := 7
+	assert.Error(t, f.room.SettingsSet(ctx, f.owner, protocol.SettingsSet{SlowModeSec: &bad}))
+	require.NoError(t, f.room.ChatSend(ctx, f.guest, "one"))
+	err = f.room.ChatSend(ctx, f.guest, "two")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "slow mode")
+	require.NoError(t, f.room.ChatSend(ctx, f.owner, "mods are exempt"))
+	require.NoError(t, f.room.ChatSend(ctx, f.owner, "still"))
+	f.now = f.now.Add(31 * time.Second)
+	require.NoError(t, f.room.ChatSend(ctx, f.guest, "two"))
+
+	// Clear: everyone gets chat.cleared, the backlog is empty, a line logs it.
+	assert.Error(t, f.room.ChatClear(ctx, f.guest))
+	require.NoError(t, f.room.ChatClear(ctx, f.owner))
+	var cleared bool
+	for _, m := range c2.msgs {
+		if _, ok := m.(protocol.ChatCleared); ok {
+			cleared = true
+		}
+	}
+	assert.True(t, cleared)
+	msgs, err := f.repo.ListRecentMessages(ctx, f.room.ID(), 50)
+	require.NoError(t, err)
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "owner cleared the chat", msgs[0].Body)
+}

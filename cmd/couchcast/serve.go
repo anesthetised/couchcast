@@ -89,12 +89,14 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Prober:       admit,
 		InviteLinks:  repo,
 		Meta:         repo,
+		Mutes:        repo,
 		Media:        mediaHandler,
 		MediaObjects: store,
 		RoomsLoaded:  rooms.Loaded,
 		WS:           wsHub,
 		OnBan:        func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "removed from room") },
 		OnLeave:      func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "left") },
+		OnMute:       func(roomID, _ uuid.UUID, line string) { rooms.Log(ctx, roomID, line) },
 		OnRoomChanged: func(roomID uuid.UUID) {
 			rctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()

@@ -131,6 +131,7 @@ type Room struct {
 	skipVotes   map[uuid.UUID]struct{}
 	chatLimits  map[uuid.UUID]*rate.Limiter
 	reactLimits map[uuid.UUID]*rate.Limiter
+	lastChatAt  map[uuid.UUID]time.Time // for slow mode
 	// leftAt remembers when a user's last connection closed, so a quick
 	// reconnect (reload, network blip) is not logged as a new join; the
 	// matching timer logs "left" once the grace period passes.
@@ -162,6 +163,7 @@ func load(ctx context.Context, deps Deps, id uuid.UUID) (*Room, error) {
 		skipVotes:   map[uuid.UUID]struct{}{},
 		chatLimits:  map[uuid.UUID]*rate.Limiter{},
 		reactLimits: map[uuid.UUID]*rate.Limiter{},
+		lastChatAt:  map[uuid.UUID]time.Time{},
 		leftAt:      map[uuid.UUID]time.Time{},
 		leftTimers:  map[uuid.UUID]*time.Timer{},
 		current:     info.CurrentItemID,

@@ -2744,3 +2744,17 @@ button.timecode {
   background: var(--surface-2);
   transform: scale(1.2);
 }
+
+.mute-select {
+  width: auto;
+  padding: 0 0.2rem;
+  border: none;
+  background: none;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.mute-select:hover {
+  color: var(--text);
+}

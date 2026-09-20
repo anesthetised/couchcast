@@ -108,6 +108,10 @@ export interface ChatDeleted {
   id: number;
 }
 
+export interface ChatCleared {
+  type: "chat.cleared";
+}
+
 export interface Typing {
   type: "typing";
   username: string;
@@ -137,6 +141,7 @@ export type ServerMessage =
   | PlaybackMessage
   | ChatMessage
   | ChatDeleted
+  | ChatCleared
   | Typing
   | Reaction
   | Kicked
@@ -159,9 +164,10 @@ export type ClientMessage =
   | { type: "queue.vote"; itemId: string }
   | { type: "skip.vote" }
   | { type: "session.end" }
-  | { type: "settings.set"; voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean; loop?: boolean }
+  | { type: "settings.set"; voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean; loop?: boolean; slowModeSec?: number }
   | { type: "chat.send"; body: string }
   | { type: "chat.delete"; id: number }
   | { type: "chat.typing" }
+  | { type: "chat.clear" }
   | { type: "react"; emoji: string }
   | { type: "report"; state: "playing" | "buffering" | "ended"; positionMs: number };

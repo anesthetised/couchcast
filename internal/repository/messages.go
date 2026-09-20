@@ -79,6 +79,16 @@ func (r *Repo) DeleteMessage(ctx context.Context, roomID uuid.UUID, id int64, de
 	return r.exec(ctx, q, roomID, id, deletedBy)
 }
 
+// ClearMessages soft-deletes every visible message in the room.
+func (r *Repo) ClearMessages(ctx context.Context, roomID, deletedBy uuid.UUID) (int64, error) {
+	const q = `UPDATE messages SET deleted_at = now(), deleted_by = $2 WHERE room_id = $1 AND deleted_at IS NULL`
+	tag, err := r.pool.Exec(ctx, q, roomID, deletedBy)
+	if err != nil {
+		return 0, wrapErr(err)
+	}
+	return tag.RowsAffected(), nil
+}
+
 // PurgeMessagesBefore hard-deletes messages older than the cutoff.
 func (r *Repo) PurgeMessagesBefore(ctx context.Context, cutoff time.Time) (int64, error) {
 	const q = `DELETE FROM messages WHERE created_at < $1`

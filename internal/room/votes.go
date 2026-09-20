@@ -61,6 +61,14 @@ func (r *Room) SettingsSet(ctx context.Context, actor access.Actor, in protocol.
 	if in.Loop != nil {
 		s.Loop = *in.Loop
 	}
+	if in.SlowModeSec != nil {
+		switch *in.SlowModeSec {
+		case 0, 5, 15, 30, 60:
+			s.SlowModeSec = *in.SlowModeSec
+		default:
+			return invalid("slowModeSec must be 0, 5, 15, 30 or 60")
+		}
+	}
 
 	if err := r.deps.Store.UpdateRoomSettings(ctx, r.info.ID, s); err != nil {
 		return err

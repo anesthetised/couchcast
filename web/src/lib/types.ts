@@ -33,6 +33,7 @@ export interface Settings {
   skipThreshold: number;
   viewersCanAdd: boolean;
   loop: boolean;
+  slowModeSec: number;
 }
 
 export interface Room {
@@ -57,6 +58,13 @@ export interface Member {
 export interface Ban {
   username: string;
   reason: string;
+  createdAt: string;
+}
+
+export interface Mute {
+  username: string;
+  reason: string;
+  until: string;
   createdAt: string;
 }
 

@@ -207,6 +207,10 @@ const RoomHeader: Component<{
       toast(err instanceof Error ? err.message : String(err), "error");
     }
   };
+  const clearChat = () => {
+    if (!confirm("Clear the chat for everyone?")) return;
+    props.store.commands.chatClear();
+  };
   const endSession = () => {
     if (!confirm("End the session? Playback stops, the queue moves to Played and everyone is disconnected.")) return;
     props.store.commands.endSession();
@@ -262,7 +266,20 @@ const RoomHeader: Component<{
                   <input type="checkbox" checked={s().loop} onChange={(e) => props.store.commands.settings({ loop: e.currentTarget.checked })} />
                   Loop queue
                 </label>
+                <label class="radio">
+                  Slow mode
+                  <select value={String(s().slowModeSec)} onChange={(e) => props.store.commands.settings({ slowModeSec: Number(e.currentTarget.value) })}>
+                    <option value="0">off</option>
+                    <option value="5">5 s</option>
+                    <option value="15">15 s</option>
+                    <option value="30">30 s</option>
+                    <option value="60">1 min</option>
+                  </select>
+                </label>
                 <div class="menu-sep" />
+                <button type="button" class="link danger-text" onClick={clearChat}>
+                  Clear chat
+                </button>
                 <button type="button" class="link danger-text" onClick={endSession}>
                   End session
                 </button>

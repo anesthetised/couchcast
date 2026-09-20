@@ -35,6 +35,7 @@ const (
 	TypeRateSet     = "rate.set"
 	TypeChatSend    = "chat.send"
 	TypeChatDelete  = "chat.delete"
+	TypeChatClear   = "chat.clear"
 	TypeChatTyping  = "chat.typing"
 	TypeReact       = "react"
 	TypeReport      = "report"
@@ -85,6 +86,7 @@ type SettingsSet struct {
 	SkipThreshold *float64 `json:"skipThreshold"`
 	ViewersCanAdd *bool    `json:"viewersCanAdd"`
 	Loop          *bool    `json:"loop"`
+	SlowModeSec   *int     `json:"slowModeSec"`
 }
 
 // React sends an ephemeral emoji reaction.
@@ -119,7 +121,7 @@ func Decode(data []byte) (string, any, error) {
 	switch env.Type {
 	case TypePing:
 		msg = &Ping{}
-	case TypePlay, TypePause, TypeNext, TypeSkipVote, TypeQueueClear, TypeSessionEnd, TypeChatTyping:
+	case TypePlay, TypePause, TypeNext, TypeSkipVote, TypeQueueClear, TypeSessionEnd, TypeChatTyping, TypeChatClear:
 		msg = nil
 	case TypeSeek:
 		msg = &Seek{}
@@ -163,6 +165,7 @@ const (
 	TypePlayback    = "playback"
 	TypeChatMessage = "chat.message"
 	TypeChatDeleted = "chat.deleted"
+	TypeChatCleared = "chat.cleared"
 	TypeTyping      = "typing"
 	TypeReaction    = "reaction"
 	TypeKicked      = "kicked"
@@ -272,6 +275,11 @@ type ChatMessage struct {
 type ChatDeleted struct {
 	Type string `json:"type"`
 	ID   int64  `json:"id"`
+}
+
+// ChatCleared tells clients to drop every message they hold.
+type ChatCleared struct {
+	Type string `json:"type"`
 }
 
 // Typing says a user is composing; nothing is stored.

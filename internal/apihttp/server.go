@@ -75,6 +75,8 @@ type Deps struct {
 	InviteLinks InviteLinkStore
 	// Meta feeds Open Graph tags on room pages; nil serves the plain shell.
 	Meta MetaStore
+	// Mutes serves timed chat mutes; nil disables them.
+	Mutes MuteStore
 
 	// MediaObjects deletes packaged media when an administrator removes it.
 	MediaObjects MediaDeleter
@@ -87,8 +89,10 @@ type Deps struct {
 	WS WebSocketServer
 
 	// Hooks let the live room layer react to REST changes. All optional.
-	OnBan          func(roomID, userID uuid.UUID)
-	OnLeave        func(roomID, userID uuid.UUID)
+	OnBan   func(roomID, userID uuid.UUID)
+	OnLeave func(roomID, userID uuid.UUID)
+	// OnMute lets the live room refresh the user's rights and log the line.
+	OnMute         func(roomID, userID uuid.UUID, line string)
 	OnRoomChanged  func(roomID uuid.UUID)
 	OnRoomDeleted  func(roomID uuid.UUID)
 	OnUserBanned   func(userID uuid.UUID)
@@ -176,6 +180,11 @@ func New(deps Deps) *Server {
 					r.Put("/bans/{username}", s.handleBan)
 					r.Delete("/bans/{username}", s.handleUnban)
 					r.Post("/invites", s.handleCreateInvite)
+					if deps.Mutes != nil {
+						r.Get("/mutes", s.handleListMutes)
+						r.Put("/mutes/{username}", s.handleMute)
+						r.Delete("/mutes/{username}", s.handleUnmute)
+					}
 					if deps.InviteLinks != nil {
 						r.Post("/invite-links", s.handleCreateInviteLink)
 						r.Get("/invite-links", s.handleListInviteLinks)

@@ -130,6 +130,9 @@ export function createRoomStore(slug: string) {
         // Most errors here answer a command; a pending add is the likeliest.
         setPending((p) => p.slice(0, -1));
         break;
+      case "chat.cleared":
+        setState("messages", []);
+        break;
       case "typing":
         if (msg.username === state.me) break;
         setTyping((t) => (t.includes(msg.username) ? t : [...t, msg.username]));
@@ -197,12 +200,13 @@ export function createRoomStore(slug: string) {
       vote: (itemId: string) => send({ type: "queue.vote", itemId }),
       skipVote: () => send({ type: "skip.vote" }),
       endSession: () => send({ type: "session.end" }),
-      settings: (patch: { voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean; loop?: boolean }) =>
+      settings: (patch: { voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean; loop?: boolean; slowModeSec?: number }) =>
         send({ type: "settings.set", ...patch }),
       chat: (body: string) => send({ type: "chat.send", body }),
       typing: () => send({ type: "chat.typing" }),
       react: (emoji: string) => send({ type: "react", emoji }),
       chatDelete: (id: number) => send({ type: "chat.delete", id }),
+      chatClear: () => send({ type: "chat.clear" }),
       report: (s: "playing" | "buffering" | "ended", positionMs: number) =>
         send({ type: "report", state: s, positionMs: Math.round(positionMs) }),
     },

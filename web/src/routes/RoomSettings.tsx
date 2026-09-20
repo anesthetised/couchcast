@@ -19,6 +19,16 @@ const RoomSettings: Component = () => {
     () => (isModerator(room()?.myRole) ? params.slug : undefined),
     rooms.bans,
   );
+  const [mutes, { refetch: reloadMutes }] = createResource(
+    () => (isModerator(room()?.myRole) ? params.slug : undefined),
+    rooms.mutes,
+  );
+  const muted = (username: string) => (mutes() ?? []).find((m) => m.username === username);
+  const mute = (username: string, minutes: number) =>
+    void run(`Muted ${username}.`, async () => {
+      await rooms.mute(params.slug, username, minutes);
+      void reloadMutes();
+    });
 
   const run = async (label: string, fn: () => Promise<unknown>) => {
     try {
@@ -190,6 +200,14 @@ const RoomSettings: Component = () => {
                             <Show when={banned(m.username)}>
                               {(b) => <span class="badge status-failed"> banned{b().reason ? ` · ${b().reason}` : ""}</span>}
                             </Show>
+                            <Show when={muted(m.username)}>
+                              {(mu) => (
+                                <span class="badge" title={mu().reason}>
+                                  {" "}
+                                  muted until {new Date(mu().until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              )}
+                            </Show>
                           </td>
                           <td>
                             <span class={`badge ${m.role !== "member" ? "role" : ""}`}>{m.role}</span>
@@ -200,6 +218,24 @@ const RoomSettings: Component = () => {
                               <button type="button" class="link" onClick={() => void run(`${m.username} is now a moderator.`, async () => { await rooms.addModerator(params.slug, m.username); void reloadMembers(); })}>
                                 Make moderator
                               </button>
+                            </Show>
+                            <Show when={m.role !== "owner" && (isOwner() || m.role === "member")}>
+                              <Show
+                                when={muted(m.username)}
+                                fallback={
+                                  <select class="link mute-select" aria-label={`Mute ${m.username}`} onChange={(e) => { const v = Number(e.currentTarget.value); e.currentTarget.value = ""; if (v) mute(m.username, v); }}>
+                                    <option value="">Mute…</option>
+                                    <option value="5">5 min</option>
+                                    <option value="30">30 min</option>
+                                    <option value="60">1 hour</option>
+                                    <option value="1440">1 day</option>
+                                  </select>
+                                }
+                              >
+                                <button type="button" class="link" onClick={() => void run(`Unmuted ${m.username}.`, async () => { await rooms.unmute(params.slug, m.username); void reloadMutes(); })}>
+                                  Unmute
+                                </button>
+                              </Show>
                             </Show>
                             <Show when={isOwner() && m.role !== "owner"}>
                               <button type="button" class="link" onClick={() => transfer(m.username)}>

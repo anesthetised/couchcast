@@ -124,6 +124,13 @@ func (m *Manager) Kick(roomID, userID uuid.UUID, reason string) {
 	}
 }
 
+// Log writes a system line into a room if it is loaded.
+func (m *Manager) Log(ctx context.Context, roomID uuid.UUID, line string) {
+	if r, ok := m.Peek(roomID); ok {
+		r.Log(ctx, line)
+	}
+}
+
 // KickEverywhere disconnects a user from every loaded room (site ban).
 func (m *Manager) KickEverywhere(userID uuid.UUID, reason string) {
 	m.mu.Lock()

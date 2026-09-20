@@ -3,6 +3,8 @@ import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Sh
 import LinkCard from "~/components/LinkCard";
 import { mentionQuery, mentions, parseMessage } from "~/lib/chatText";
 import { formatTime } from "~/lib/format";
+import { rooms } from "~/lib/rooms";
+import { toast } from "~/lib/toast";
 import type { ChatMessage } from "~/protocol";
 import { avatarClass } from "~/lib/types";
 import type { RoomStore } from "~/store/room";
@@ -173,6 +175,17 @@ const Chat: Component<Props> = (props) => {
     props.room.commands.typing();
   };
 
+  const muteAuthor = async (username: string) => {
+    const slug = props.room.state.snapshot?.room.slug;
+    if (!slug) return;
+    try {
+      await rooms.mute(slug, username, 5);
+      toast(`Muted ${username} for 5 minutes.`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), "error");
+    }
+  };
+
   const submit = (e: SubmitEvent) => {
     e.preventDefault();
     const text = body().trim();
@@ -272,6 +285,11 @@ const Chat: Component<Props> = (props) => {
                     <button type="button" class="link danger-text chat-delete" title="Delete" onClick={() => props.room.commands.chatDelete(m.id)}>
                       ✕
                     </button>
+                    <Show when={m.username && m.username !== me()}>
+                      <button type="button" class="link chat-delete" title={`Mute ${m.username} for 5 minutes`} onClick={() => void muteAuthor(m.username!)}>
+                        mute
+                      </button>
+                    </Show>
                   </Show>
                 </li>
               </>
