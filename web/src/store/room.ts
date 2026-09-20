@@ -2,6 +2,7 @@ import { createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 
 import { ClockSync } from "~/lib/clock";
+import { toast } from "~/lib/toast";
 import type { RoomRole } from "~/lib/types";
 import { RoomSocket, type SocketStatus } from "~/lib/ws";
 import type { ChatMessage, ClientMessage, Playback, Snapshot } from "~/protocol";
@@ -60,8 +61,7 @@ export function createRoomStore(slug: string) {
         setState("messages", (m) => m.filter((x) => x.id !== msg.id));
         break;
       case "error":
-        setLastError(msg.message);
-        window.setTimeout(() => setLastError(null), 4000);
+        toast(msg.message, "error");
         break;
       case "kicked":
         setLastError(`Disconnected: ${msg.reason}`);

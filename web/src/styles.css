@@ -1606,3 +1606,80 @@ progress {
   font-style: italic;
 }
 
+.toasts {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-width: 360px;
+}
+
+.toast {
+  text-align: left;
+  white-space: normal;
+  background: var(--surface-3);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-2);
+  font-weight: 500;
+  animation: toast-in 160ms ease-out;
+}
+
+.toast:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.toast.error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.copy {
+  color: var(--muted);
+  padding: 0;
+}
+
+.copy:hover {
+  color: var(--text);
+}
+
+.avatar {
+  position: relative;
+}
+
+.avatar-badge {
+  position: absolute;
+  top: -5px;
+  right: -7px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 0.65rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-transform: none;
+}
+
+a.username:hover {
+  color: var(--text);
+}
+

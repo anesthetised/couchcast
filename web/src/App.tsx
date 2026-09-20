@@ -1,6 +1,7 @@
 import { Route, Router, type RouteSectionProps } from "@solidjs/router";
 import type { Component } from "solid-js";
 
+import Toasts from "~/components/Toasts";
 import UserMenu from "~/components/UserMenu";
 import Home from "~/routes/Home";
 import Login from "~/routes/Login";
@@ -20,6 +21,7 @@ const Layout: Component<RouteSectionProps> = (props) => (
       <UserMenu />
     </header>
     <main class="page wide">{props.children}</main>
+    <Toasts />
   </>
 );
 

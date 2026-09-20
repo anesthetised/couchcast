@@ -1,7 +1,7 @@
 import { createResource, createRoot } from "solid-js";
 
 import { api, ApiError } from "~/lib/api";
-import type { User } from "~/lib/types";
+import type { Invite, User } from "~/lib/types";
 
 export interface Credentials {
   username: string;
@@ -43,7 +43,15 @@ function createAuthStore() {
     mutate(null);
   }
 
-  return { user, login, register, logout, refetch };
+  // Pending invites, for the topbar badge; refetched with the user and on
+  // demand by the inbox.
+  const [invites, { refetch: refetchInvites, mutate: setInvites }] = createResource(
+    () => user()?.id ?? null,
+    async (id) => (id ? api<Invite[]>("/api/v1/invites") : []),
+    { initialValue: [] },
+  );
+
+  return { user, login, register, logout, refetch, invites, refetchInvites, setInvites };
 }
 
 export const auth = createRoot(createAuthStore);

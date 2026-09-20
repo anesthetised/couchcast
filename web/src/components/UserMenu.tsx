@@ -30,12 +30,15 @@ const UserMenu: Component = () => {
             <Show when={u().role === "admin"}>
               <a href="/admin">Admin</a>
             </Show>
-            <span class="username">
+            <a class="username" href="/" title={auth.invites().length ? `${auth.invites().length} pending invites` : undefined}>
               <span class="avatar" aria-hidden="true">
                 {u().username.slice(0, 1)}
+                <Show when={auth.invites().length > 0}>
+                  <span class="avatar-badge">{auth.invites().length}</span>
+                </Show>
               </span>
               {u().username}
-            </span>
+            </a>
             <button type="button" class="link" onClick={logout}>
               Log out
             </button>

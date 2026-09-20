@@ -8,6 +8,7 @@ import Queue from "~/components/Queue";
 import { ApiError } from "~/lib/api";
 import { createFullscreen, readFullscreenPanel, storeFullscreenPanel, type FullscreenPanel } from "~/lib/fullscreen";
 import { rooms } from "~/lib/rooms";
+import { toast } from "~/lib/toast";
 import { isModerator } from "~/lib/types";
 import { createRoomStore, type RoomStore } from "~/store/room";
 
@@ -71,7 +72,7 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; canS
             </button>
           </div>
         </Show>
-        <Show when={store.lastError()}>{(e) => <p class="notice error">{e()}</p>}</Show>
+        <Show when={store.lastError()}>{(e) => <p class="notice">{e()}</p>}</Show>
 
         <div
           class={`stage ${fs.active() ? "fullscreen" : ""} ${fs.idle() ? "idle" : ""}`}
@@ -141,7 +142,9 @@ const RoomHeader: Component<{
           <Show when={props.visibility === "private"}>
             <span class="badge private">🔒 private</span>
           </Show>
-          <span class="muted small">/r/{props.slug}</span>
+          <button type="button" class="link small copy" title="Copy link" onClick={() => void copyLink(props.slug)}>
+            /r/{props.slug} ⧉
+          </button>
           <span class="muted small">·</span>
           <span class="muted small">
             {props.viewers} watching
@@ -154,7 +157,7 @@ const RoomHeader: Component<{
       <div class="actions">
         <Show when={props.store.isModerator() && settings()}>
           {(s) => (
-            <details class="menu">
+            <details class="menu" onKeyDown={(e) => e.key === "Escape" && ((e.currentTarget as HTMLDetailsElement).open = false)}>
               <summary class="button ghost">Options</summary>
               <div class="menu-body">
                 <label class="radio">
@@ -187,6 +190,16 @@ const RoomHeader: Component<{
     </header>
   );
 };
+
+async function copyLink(slug: string) {
+  const url = `${location.origin}/r/${slug}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    toast("Link copied");
+  } catch {
+    toast(url, "info");
+  }
+}
 
 // SkipVote sits next to the add form while vote mode is on.
 const SkipVote: Component<{ store: RoomStore }> = (props) => {

@@ -1,12 +1,14 @@
 import { useNavigate } from "@solidjs/router";
-import { createResource, For, Show, type Component } from "solid-js";
+import { For, Show, type Component } from "solid-js";
 
 import { invites } from "~/lib/rooms";
+import { auth } from "~/store/auth";
 
 // Compact banner with pending invites; hidden when there are none.
 const InvitesInbox: Component = () => {
   const navigate = useNavigate();
-  const [list, { refetch }] = createResource(invites.mine);
+  const list = auth.invites;
+  const refetch = auth.refetchInvites;
 
   const accept = async (id: string) => {
     const { roomSlug } = await invites.accept(id);
