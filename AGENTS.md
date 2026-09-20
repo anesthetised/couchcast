@@ -137,6 +137,11 @@ and a production image build.
   moves the queue to the history and closes every connection with reason
   `session ended`; the web client treats any 1008 close with a reason as
   the end of the session (kick, ban, room deleted, left).
+- The SPA handler injects Open Graph tags (`internal/apihttp/meta.go`)
+  into index.html for `/r/{slug}` of public rooms — name, description or
+  "Playing … · N watching", the current thumbnail — cached 30 s per slug;
+  private and unknown rooms get the plain shell. Only the Go server does
+  this, so check it with `just build` + `couchcast serve`, not Vite.
 - Invite links (`room_invite_links`, token hash only): moderators mint them
   with `POST /rooms/{slug}/invite-links` (optional expiry and use limit;
   the URL `/join/<token>` is returned once), list and revoke them;

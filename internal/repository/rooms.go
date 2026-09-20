@@ -94,6 +94,16 @@ func (r *Repo) UpdateRoom(ctx context.Context, id uuid.UUID, slug, name string, 
 	return scanRoom(r.pool.QueryRow(ctx, q, id, slug, name, visibility, description))
 }
 
+// GetCurrentMedia returns the media the room is on, or ErrNotFound when
+// nothing is current.
+func (r *Repo) GetCurrentMedia(ctx context.Context, roomID uuid.UUID) (*entity.Media, error) {
+	const q = `
+		SELECT ` + mediaColumns + ` FROM media
+		WHERE id = (SELECT qi.media_id FROM rooms r JOIN queue_items qi ON qi.id = r.current_item_id WHERE r.id = $1)
+	`
+	return scanMedia(r.pool.QueryRow(ctx, q, roomID))
+}
+
 // TransferOwnership makes a member the owner and demotes the previous
 // owner to moderator; ErrNotFound when the target is not a member.
 func (r *Repo) TransferOwnership(ctx context.Context, roomID, from, to uuid.UUID) error {

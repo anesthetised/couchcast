@@ -1,22 +1,25 @@
 package apihttp
 
 import (
+	"bytes"
 	"io/fs"
 	"net/http"
 	"path"
 	"strings"
+	"time"
 )
 
 // spaHandler serves the built frontend. Paths that do not match a file fall
 // back to index.html so that client-side routes work on reload. When the
 // bundle has not been built (development runs Vite instead) it answers 404
 // with a hint rather than an empty page.
-func spaHandler(static fs.FS) http.HandlerFunc {
+func spaHandler(static fs.FS, meta *metaInjector) http.HandlerFunc {
 	files := http.FS(static)
 	fileServer := http.FileServer(files)
 
-	_, indexErr := fs.Stat(static, "index.html")
+	index, indexErr := fs.ReadFile(static, "index.html")
 	hasIndex := indexErr == nil
+	started := time.Now()
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
@@ -45,6 +48,12 @@ func spaHandler(static fs.FS) http.HandlerFunc {
 		}
 
 		w.Header().Set("Cache-Control", "no-cache")
+		// Room pages get link-preview tags; everything else is the plain shell.
+		if slug := roomSlugFromPath(r.URL.Path); slug != "" && meta != nil {
+			body := injectMeta(index, meta.tagsFor(r, slug))
+			http.ServeContent(w, r, "index.html", started, bytes.NewReader(body))
+			return
+		}
 		r.URL.Path = "/"
 		fileServer.ServeHTTP(w, r)
 	}

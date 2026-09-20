@@ -88,6 +88,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		LiveQueue:    liveQueue{rooms},
 		Prober:       admit,
 		InviteLinks:  repo,
+		Meta:         repo,
 		Media:        mediaHandler,
 		MediaObjects: store,
 		RoomsLoaded:  rooms.Loaded,

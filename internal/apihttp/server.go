@@ -73,6 +73,8 @@ type Deps struct {
 	Prober Prober
 	// InviteLinks serves invite links and /join; nil disables them.
 	InviteLinks InviteLinkStore
+	// Meta feeds Open Graph tags on room pages; nil serves the plain shell.
+	Meta MetaStore
 
 	// MediaObjects deletes packaged media when an administrator removes it.
 	MediaObjects MediaDeleter
@@ -225,7 +227,11 @@ func New(deps Deps) *Server {
 		}
 	})
 
-	r.NotFound(spaHandler(deps.Static))
+	var meta *metaInjector
+	if deps.Meta != nil {
+		meta = newMetaInjector(deps.Meta, deps.Live)
+	}
+	r.NotFound(spaHandler(deps.Static, meta))
 
 	return s
 }
