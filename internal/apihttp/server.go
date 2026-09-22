@@ -82,6 +82,9 @@ type Deps struct {
 
 	// MediaObjects deletes packaged media when an administrator removes it.
 	MediaObjects MediaDeleter
+	// CacheBudget is the media byte budget shown on the storage page (0 =
+	// unlimited).
+	CacheBudget int64
 	// RoomsLoaded reports rooms held in memory for the stats endpoint.
 	RoomsLoaded func() int
 
@@ -239,6 +242,9 @@ func New(deps Deps) *Server {
 				r.Post("/blocklist", s.handleAdminBlock)
 				r.Delete("/blocklist/*", s.handleAdminUnblock)
 				r.Get("/audit", s.handleAdminAudit)
+				r.Get("/storage", s.handleAdminStorage)
+				r.Post("/storage/evict", s.handleAdminEvictStale)
+				r.Post("/media/{id}/evict", s.handleAdminEvictMedia)
 			})
 		}
 	})

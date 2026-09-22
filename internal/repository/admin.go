@@ -283,16 +283,30 @@ func (r *Repo) ListRooms(ctx context.Context, query string, limit int) ([]entity
 	return out, rows.Err()
 }
 
-// ListAudit returns the newest audit entries, optionally filtered.
-func (r *Repo) ListAudit(ctx context.Context, roomID *uuid.UUID, limit int) ([]entity.AuditEntry, error) {
-	const q = `
+// AuditQuery filters and pages the audit log: entries older than
+// BeforeID (0 = newest), by room, by actor and by action prefix
+// ("room." matches every room action).
+type AuditQuery struct {
+	RoomID   *uuid.UUID
+	ActorID  *uuid.UUID
+	Action   string
+	BeforeID int64
+	Limit    int
+}
+
+// ListAudit returns the newest matching audit entries.
+func (r *Repo) ListAudit(ctx context.Context, q AuditQuery) ([]entity.AuditEntry, error) {
+	const sql = `
 		SELECT a.id, a.actor_id, a.action, a.target_type, a.target_id, a.room_id, a.meta, a.created_at
 		FROM audit_log a
-		WHERE $1::uuid IS NULL OR a.room_id = $1
+		WHERE ($1::uuid IS NULL OR a.room_id = $1)
+		  AND ($2::uuid IS NULL OR a.actor_id = $2)
+		  AND ($3 = '' OR a.action LIKE $3 || '%' ESCAPE '\')
+		  AND ($4 = 0 OR a.id < $4)
 		ORDER BY a.id DESC
-		LIMIT $2
+		LIMIT $5
 	`
-	rows, err := r.pool.Query(ctx, q, roomID, limit)
+	rows, err := r.pool.Query(ctx, sql, q.RoomID, q.ActorID, escapeLike(q.Action), q.BeforeID, q.Limit)
 	if err != nil {
 		return nil, wrapErr(err)
 	}
@@ -311,6 +325,55 @@ func (r *Repo) ListAudit(ctx context.Context, roomID *uuid.UUID, limit int) ([]e
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// StorageItem is a ready media row with whether any queue still holds it.
+type StorageItem struct {
+	Media  entity.Media
+	Queued bool
+}
+
+// ListMediaBySize returns the largest ready media first.
+func (r *Repo) ListMediaBySize(ctx context.Context, limit int) ([]StorageItem, error) {
+	const q = `
+		SELECT ` + mediaColumns + `, EXISTS (SELECT 1 FROM queue_items qi WHERE qi.media_id = media.id) AS queued
+		FROM media
+		WHERE status = 'ready'
+		ORDER BY size_bytes DESC NULLS LAST, created_at
+		LIMIT $1
+	`
+	rows, err := r.pool.Query(ctx, q, limit)
+	if err != nil {
+		return nil, wrapErr(err)
+	}
+	defer rows.Close()
+	var out []StorageItem
+	for rows.Next() {
+		var (
+			mr     mediaRow
+			queued bool
+		)
+		if err := rows.Scan(append(mr.targets(), &queued)...); err != nil {
+			return nil, err
+		}
+		m, err := mr.media()
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, StorageItem{Media: *m, Queued: queued})
+	}
+	return out, rows.Err()
+}
+
+// MediaQueued reports whether any room still holds the media in its
+// queue or history.
+func (r *Repo) MediaQueued(ctx context.Context, mediaID uuid.UUID) (bool, error) {
+	const q = `SELECT EXISTS (SELECT 1 FROM queue_items WHERE media_id = $1)`
+	var queued bool
+	if err := r.pool.QueryRow(ctx, q, mediaID).Scan(&queued); err != nil {
+		return false, wrapErr(err)
+	}
+	return queued, nil
 }
 
 // UsernamesByID resolves ids to usernames for display.

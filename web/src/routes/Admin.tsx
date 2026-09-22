@@ -1,10 +1,12 @@
 import { createResource, createSignal, For, Show, type Component } from "solid-js";
 
-import { admin, type AuditEntry, type BlocklistEntry, type ReportedMedia, type Stats, type AdminUser } from "~/lib/admin";
+import { admin, type AuditEntry, type BlocklistEntry, type ReportedMedia, type Stats, type Storage, type AdminUser } from "~/lib/admin";
+import { formatAgo } from "~/lib/format";
+import { toast } from "~/lib/toast";
 import type { Room } from "~/lib/types";
 import { auth } from "~/store/auth";
 
-type Tab = "stats" | "reports" | "users" | "rooms" | "blocklist" | "audit";
+type Tab = "stats" | "reports" | "users" | "rooms" | "blocklist" | "storage" | "audit";
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "stats", label: "Stats" },
@@ -12,6 +14,7 @@ const tabs: { id: Tab; label: string }[] = [
   { id: "users", label: "Users" },
   { id: "rooms", label: "Rooms" },
   { id: "blocklist", label: "Blocklist" },
+  { id: "storage", label: "Storage" },
   { id: "audit", label: "Audit" },
 ];
 
@@ -58,6 +61,9 @@ const Admin: Component = () => {
         </Show>
         <Show when={tab() === "blocklist"}>
           <BlocklistTab run={run} />
+        </Show>
+        <Show when={tab() === "storage"}>
+          <StorageTab run={run} />
         </Show>
         <Show when={tab() === "audit"}>
           <AuditTab />
@@ -280,13 +286,136 @@ const BlocklistTab: Component<{ run: Runner }> = (props) => {
   );
 };
 
+// StorageTab: what the packaged media takes, the largest items, and the
+// two eviction paths (one item, or everything stale). Eviction only drops
+// the package — the source is not blocklisted and can be queued again.
+const StorageTab: Component<{ run: Runner }> = (props) => {
+  const [storage, { refetch }] = createResource<Storage>(admin.storage);
+  const [days, setDays] = createSignal(30);
+  const [sweeping, setSweeping] = createSignal(false);
+  const used = () => {
+    const s = storage();
+    return s && s.budgetBytes > 0 ? Math.min(1, s.totalBytes / s.budgetBytes) : 0;
+  };
+  const evict = (m: { id: string; title: string; sizeBytes: number }) => {
+    if (!confirm(`Evict “${m.title || m.id}” (${fmtBytes(m.sizeBytes)})? It will be ingested again if someone queues it.`)) return;
+    void props.run(() => admin.evictMedia(m.id), () => void refetch());
+  };
+  const sweep = async () => {
+    if (!confirm(`Evict every unqueued video not watched for ${days()} days?`)) return;
+    setSweeping(true);
+    await props.run(
+      async () => {
+        const r = await admin.evictStale(days());
+        toast(r.removed ? `Evicted ${r.removed} video${r.removed === 1 ? "" : "s"}, ${fmtBytes(r.bytes)} freed.` : "Nothing that old.");
+      },
+      () => void refetch(),
+    );
+    setSweeping(false);
+  };
+  return (
+    <Show when={storage()} fallback={<p class="muted">Loading…</p>}>
+      {(s) => (
+        <>
+          <section class="card storage-summary">
+            <div>
+              <div class="muted small">Packaged media</div>
+              <div class="stat-value">
+                {fmtBytes(s().totalBytes)}
+                <Show when={s().budgetBytes > 0}>
+                  <span class="muted"> / {fmtBytes(s().budgetBytes)}</span>
+                </Show>
+              </div>
+              <Show when={s().budgetBytes > 0}>
+                <progress class="storage-bar" max="1" value={used()} />
+              </Show>
+              <p class="muted small">The janitor evicts the least recently watched, unqueued videos when the budget is exceeded; these controls do it by hand.</p>
+            </div>
+            <form
+              class="storage-sweep"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void sweep();
+              }}
+            >
+              <label>
+                Not watched for
+                <span class="storage-days">
+                  <input type="number" min="1" max="3650" value={days()} onInput={(e) => setDays(Math.max(1, Number(e.currentTarget.value) || 1))} /> days
+                </span>
+              </label>
+              <button type="submit" class="danger" disabled={sweeping()}>
+                Evict stale
+              </button>
+            </form>
+          </section>
+          <section class="card">
+            <h2>Largest videos</h2>
+            <ul class="list compact">
+              <For each={s().media} fallback={<li class="muted">Nothing packaged.</li>}>
+                {(m) => (
+                  <li class="row small">
+                    <span class="storage-item">
+                      <strong>{m.title || m.sourceUrl}</strong>
+                      <span class="muted">
+                        {fmtBytes(m.sizeBytes)} · watched {formatAgo(new Date(m.lastAccessedAt).getTime())}
+                        <Show when={m.queued}> · queued</Show>
+                      </span>
+                    </span>
+                    <button type="button" class="link danger-text" disabled={m.queued} title={m.queued ? "Still in a queue" : "Drop the package"} onClick={() => evict(m)}>
+                      Evict
+                    </button>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </section>
+        </>
+      )}
+    </Show>
+  );
+};
+
+// AuditTab pages backwards through the log; the filters are an action
+// prefix ("room." for every room action) and an actor's username.
 const AuditTab: Component = () => {
-  const [list] = createResource<AuditEntry[]>(admin.audit);
+  const [action, setAction] = createSignal("");
+  const [actor, setActor] = createSignal("");
+  const [entries, setEntries] = createSignal<AuditEntry[]>([]);
+  const [nextBefore, setNextBefore] = createSignal(0);
+  const [loading, setLoading] = createSignal(false);
+  let seq = 0;
+
+  const load = async (before: number) => {
+    const mine = ++seq;
+    setLoading(true);
+    try {
+      const page = await admin.audit({ action: action().trim(), actor: actor().trim(), before });
+      if (mine !== seq) return;
+      setEntries(before ? [...entries(), ...page.entries] : page.entries);
+      setNextBefore(page.nextBefore);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : String(e), "error");
+    } finally {
+      if (mine === seq) setLoading(false);
+    }
+  };
+  void load(0);
+  let debounce: number | null = null;
+  const refilter = () => {
+    if (debounce !== null) window.clearTimeout(debounce);
+    debounce = window.setTimeout(() => void load(0), 300);
+  };
+
   return (
     <section class="card">
       <h2>Audit log</h2>
+      <div class="audit-filters">
+        <input type="search" placeholder="Action, e.g. room. or user.ban" value={action()} onInput={(e) => (setAction(e.currentTarget.value), refilter())} aria-label="Action prefix" />
+        <input type="search" placeholder="Actor username" value={actor()} onInput={(e) => (setActor(e.currentTarget.value), refilter())} aria-label="Actor" />
+      </div>
       <ul class="list compact">
-        <For each={list() ?? []} fallback={<li class="muted">Empty.</li>}>
+        <For each={entries()} fallback={<li class="muted">{loading() ? "Loading…" : "Nothing matches."}</li>}>
           {(a) => (
             <li class="row small">
               <span>
@@ -300,6 +429,11 @@ const AuditTab: Component = () => {
           )}
         </For>
       </ul>
+      <Show when={nextBefore() > 0}>
+        <button type="button" class="ghost" disabled={loading()} onClick={() => void load(nextBefore())}>
+          Load older
+        </button>
+      </Show>
     </section>
   );
 };

@@ -130,13 +130,67 @@ func TestAdminAPI(t *testing.T) {
 	// Audit trail captured everything.
 	rec = admin.do(http.MethodGet, "/api/v1/admin/audit", nil)
 	require.Equal(t, http.StatusOK, rec.Code)
-	audit := decodeBody[[]auditResponse](t, rec)
+	audit := decodeBody[auditPage](t, rec)
 	actions := map[string]bool{}
-	for _, a := range audit {
+	for _, a := range audit.Entries {
 		actions[a.Action] = true
 		assert.Equal(t, "boss", a.Actor)
 	}
 	for _, want := range []string{"media.delete", "source.unblock", "source.block", "user.ban", "user.unban", "room.delete"} {
 		assert.True(t, actions[want], want)
 	}
+	assert.Zero(t, audit.NextBefore, "one page")
+	// Filters: action prefix, actor (unknown actor is an empty page).
+	page := decodeBody[auditPage](t, admin.do(http.MethodGet, "/api/v1/admin/audit?action=user.", nil))
+	require.Len(t, page.Entries, 2)
+	assert.Empty(t, decodeBody[auditPage](t, admin.do(http.MethodGet, "/api/v1/admin/audit?actor=alice", nil)).Entries)
+	assert.NotEmpty(t, decodeBody[auditPage](t, admin.do(http.MethodGet, "/api/v1/admin/audit?actor=boss", nil)).Entries)
+	assert.Empty(t, decodeBody[auditPage](t, admin.do(http.MethodGet, "/api/v1/admin/audit?actor=nobody", nil)).Entries)
+
+	// Storage: a ready item shows up with its size; eviction refuses a
+	// queued item, drops an unqueued one and the stale sweep takes what is
+	// old enough.
+	big, _, err := repo.CreateMedia(ctx, repo.Pool(), "url:big", "https://big")
+	require.NoError(t, err)
+	require.NoError(t, repo.SetMediaReady(ctx, big.ID, nil, 5000, "p/big"))
+	old, _, err := repo.CreateMedia(ctx, repo.Pool(), "url:old", "https://old")
+	require.NoError(t, err)
+	require.NoError(t, repo.SetMediaReady(ctx, old.ID, nil, 700, "p/old"))
+	_, err = repo.Pool().Exec(ctx, `UPDATE media SET last_accessed_at = now() - interval '40 days' WHERE id = $1`, old.ID)
+	require.NoError(t, err)
+	rec = admin.do(http.MethodPost, "/api/v1/rooms", map[string]any{"name": "Holder", "slug": "holder"})
+	require.Equal(t, http.StatusCreated, rec.Code)
+	holder, err := repo.GetRoomBySlug(ctx, "holder")
+	require.NoError(t, err)
+	_, err = repo.AddQueueItem(ctx, repo.Pool(), holder.ID, big.ID, nil)
+	require.NoError(t, err)
+
+	storage := decodeBody[storageResponse](t, admin.do(http.MethodGet, "/api/v1/admin/storage", nil))
+	assert.EqualValues(t, 5700, storage.TotalBytes)
+	require.Len(t, storage.Media, 2)
+	assert.Equal(t, big.ID, storage.Media[0].ID)
+	assert.True(t, storage.Media[0].Queued)
+	assert.False(t, storage.Media[1].Queued)
+
+	assert.Equal(t, http.StatusConflict, admin.do(http.MethodPost, "/api/v1/admin/media/"+big.ID.String()+"/evict", nil).Code)
+	swept := decodeBody[evictResponse](t, admin.do(http.MethodPost, "/api/v1/admin/storage/evict", evictRequest{OlderThanDays: 30}))
+	assert.Equal(t, 1, swept.Removed)
+	assert.EqualValues(t, 700, swept.Bytes)
+	assert.Contains(t, deleter.prefixes, "p/old")
+	assert.Equal(t, http.StatusNotFound, admin.do(http.MethodPost, "/api/v1/admin/media/"+old.ID.String()+"/evict", nil).Code)
+	require.NoError(t, repo.DeleteQueueItem(ctx, holder.ID, mustFirstItem(t, repo, holder.ID)))
+	assert.Equal(t, http.StatusNoContent, admin.do(http.MethodPost, "/api/v1/admin/media/"+big.ID.String()+"/evict", nil).Code)
+	assert.Contains(t, deletedMedia, big.ID)
+	blocked, err = repo.IsSourceBlocked(ctx, "url:big")
+	require.NoError(t, err)
+	assert.False(t, blocked, "eviction never blocklists")
+	assert.EqualValues(t, 0, decodeBody[storageResponse](t, admin.do(http.MethodGet, "/api/v1/admin/storage", nil)).TotalBytes)
+}
+
+func mustFirstItem(t *testing.T, repo *repository.Repo, roomID uuid.UUID) uuid.UUID {
+	t.Helper()
+	items, err := repo.ListQueue(context.Background(), roomID)
+	require.NoError(t, err)
+	require.NotEmpty(t, items)
+	return items[0].ID
 }

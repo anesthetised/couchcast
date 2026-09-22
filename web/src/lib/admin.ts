@@ -62,6 +62,27 @@ export interface AuditEntry {
   createdAt: string;
 }
 
+export interface AuditPage {
+  entries: AuditEntry[];
+  nextBefore: number; // 0 at the end
+}
+
+export interface StorageMedia {
+  id: string;
+  title: string;
+  sourceUrl: string;
+  sizeBytes: number;
+  queued: boolean;
+  lastAccessedAt: string;
+  createdAt: string;
+}
+
+export interface Storage {
+  totalBytes: number;
+  budgetBytes: number;
+  media: StorageMedia[];
+}
+
 const post = (body?: unknown) => ({ method: "POST", body: body === undefined ? undefined : JSON.stringify(body) });
 
 export const reports = {
@@ -83,5 +104,15 @@ export const admin = {
   blocklist: () => api<BlocklistEntry[]>("/api/v1/admin/blocklist"),
   block: (sourceKey: string, reason: string) => api<void>("/api/v1/admin/blocklist", post({ sourceKey, reason })),
   unblock: (sourceKey: string) => api<void>(`/api/v1/admin/blocklist/${sourceKey}`, { method: "DELETE" }),
-  audit: () => api<AuditEntry[]>("/api/v1/admin/audit"),
+  audit: (params: { action?: string; actor?: string; before?: number } = {}) => {
+    const qs = new URLSearchParams();
+    if (params.action) qs.set("action", params.action);
+    if (params.actor) qs.set("actor", params.actor);
+    if (params.before) qs.set("before", String(params.before));
+    const suffix = qs.toString();
+    return api<AuditPage>(`/api/v1/admin/audit${suffix ? `?${suffix}` : ""}`);
+  },
+  storage: () => api<Storage>("/api/v1/admin/storage"),
+  evictMedia: (mediaId: string) => api<void>(`/api/v1/admin/media/${mediaId}/evict`, post()),
+  evictStale: (olderThanDays: number) => api<{ removed: number; bytes: number }>("/api/v1/admin/storage/evict", post({ olderThanDays })),
 };

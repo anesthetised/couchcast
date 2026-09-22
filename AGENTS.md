@@ -144,6 +144,12 @@ and a production image build.
   cannot be re-added, and loaded rooms reload their queues via
   `Manager.MediaDeleted`. A site ban revokes sessions and kicks the user
   from every loaded room.
+  `GET /admin/audit` pages backwards (`before=<id>`, `action=` prefix,
+  `actor=` username, `room=`); `GET /admin/storage` lists the largest
+  ready media with whether a queue still holds them, and
+  `POST /admin/media/{id}/evict` / `POST /admin/storage/evict
+  {olderThanDays}` drop packages by hand without blocklisting (the
+  Storage tab of `/admin`).
 - Developer helpers: `couchcast media enqueue <url>`, `media show <id>`,
   `media retry <id>`, `media token <id>` (run via `just sh` or
   `{{compose}} run --rm web go run ./cmd/couchcast media ...`).

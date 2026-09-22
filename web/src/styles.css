@@ -3297,3 +3297,65 @@ label .hint {
   color: var(--text-2);
   background: var(--surface-3);
 }
+
+/* --- admin: storage and audit ------------------------------------------------ */
+
+.storage-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.storage-summary > div {
+  flex: 1 1 320px;
+}
+
+.storage-bar {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: 6px;
+  margin: 0.4rem 0;
+}
+
+.storage-sweep {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.storage-days {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.storage-days input {
+  width: 5.5rem;
+}
+
+.storage-item {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.storage-item strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.audit-filters {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.audit-filters input {
+  flex: 1;
+  min-width: 0;
+}

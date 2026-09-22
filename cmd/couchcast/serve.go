@@ -93,6 +93,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		Stars:        repo,
 		Media:        mediaHandler,
 		MediaObjects: store,
+		CacheBudget:  cfg.Web.MaxCacheBytes,
 		RoomsLoaded:  rooms.Loaded,
 		WS:           wsHub,
 		OnBan:        func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "removed from room") },
