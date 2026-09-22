@@ -1010,7 +1010,7 @@ func (r *Room) QueueShuffle(ctx context.Context, actor access.Actor) error {
 	if len(rest) < 2 {
 		return nil
 	}
-	rand.Shuffle(len(rest), func(i, j int) { rest[i], rest[j] = rest[j], rest[i] })
+	rand.Shuffle(len(rest), func(i, j int) { rest[i], rest[j] = rest[j], rest[i] }) //nolint:gosec // play order, not a secret
 	ids := make([]uuid.UUID, len(r.queue))
 	for i, it := range r.queue {
 		ids[i] = it.ID
