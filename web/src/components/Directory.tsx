@@ -13,7 +13,7 @@ const MAX_PER_PAGE = 48;
 const REFRESH_MS = 30_000;
 const SEARCH_DEBOUNCE_MS = 300;
 
-type Params = { q?: string; live?: string; private?: string; mine?: string; sort?: string; page?: string };
+type Params = { q?: string; live?: string; private?: string; mine?: string; starred?: string; sort?: string; page?: string };
 const SORTS = [
   ["active", "Active"],
   ["viewers", "Most watched"],
@@ -24,16 +24,18 @@ const SORTS = [
 // Directory lists every room the visitor may open: public rooms plus the
 // private rooms they belong to. Search, the filter chips and the page live
 // in the URL so links are shareable and back works.
+type Flag = "live" | "private" | "mine" | "starred";
+
 const Directory: Component = () => {
   const [params, setParams] = useSearchParams<Params>();
 
   const q = () => params.q ?? "";
-  const flag = (name: "live" | "private" | "mine") => params[name] === "1";
+  const flag = (name: Flag) => params[name] === "1";
   const page = () => Math.max(1, Number(params.page) || 1);
   const sort = () => (SORTS.some(([k]) => k === params.sort) ? params.sort! : "active");
   const signedIn = () => auth.user() !== null;
 
-  const toggle = (name: "live" | "private" | "mine") =>
+  const toggle = (name: Flag) =>
     setParams({ ...params, [name]: flag(name) ? undefined : "1", page: undefined });
 
   // Local input state is debounced into the URL.
@@ -66,6 +68,7 @@ const Directory: Component = () => {
       live: flag("live"),
       private: signedIn() && flag("private"),
       mine: signedIn() && flag("mine"),
+      starred: signedIn() && flag("starred"),
       sort: sort(),
       page: page(),
       perPage: perPage(),
@@ -94,7 +97,7 @@ const Directory: Component = () => {
     }),
   );
 
-  const filtered = () => Boolean(q() || flag("live") || flag("private") || flag("mine"));
+  const filtered = () => Boolean(q() || flag("live") || flag("private") || flag("mine") || flag("starred"));
 
   return (
     <section class="directory" ref={(el) => observer.observe(el)}>
@@ -117,6 +120,9 @@ const Directory: Component = () => {
             </button>
             <button type="button" class="chip" aria-pressed={flag("mine")} onClick={() => toggle("mine")}>
               Mine
+            </button>
+            <button type="button" class="chip" aria-pressed={flag("starred")} onClick={() => toggle("starred")}>
+              ★ Starred
             </button>
           </Show>
           <select class="sort" value={sort()} onChange={(e) => setParams({ ...params, sort: e.currentTarget.value === "active" ? undefined : e.currentTarget.value, page: undefined })} aria-label="Sort rooms">

@@ -196,6 +196,9 @@ and a production image build.
   through `ingest.Service.Preview` → the extractor, bounded by a timeout.
 - `GET /api/v1/rooms` is the directory (public rooms plus the caller's
   private rooms; `live`/`private`/`mine` filters, search, pagination,
-  `sort=active|viewers|newest|name`, `lastActiveMs` per room).
+  `sort=active|viewers|newest|name`, `starred` filter, `lastActiveMs` and
+  `starred` per room). Stars are per user (`room_stars`, `PUT/DELETE
+  /rooms/{slug}/star`, anyone who may view the room) and come back on the
+  room response too.
   `GET /api/v1/me/rooms` is deprecated and unused by the SPA.
 - Keep `AGENTS.md` and `README.md` current when commands or layout change.

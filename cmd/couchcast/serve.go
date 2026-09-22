@@ -90,6 +90,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		InviteLinks:  repo,
 		Meta:         repo,
 		Mutes:        repo,
+		Stars:        repo,
 		Media:        mediaHandler,
 		MediaObjects: store,
 		RoomsLoaded:  rooms.Loaded,

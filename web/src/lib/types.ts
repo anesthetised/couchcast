@@ -46,6 +46,7 @@ export interface Room {
   description: string;
   memberCount: number;
   myRole?: RoomRole;
+  starred: boolean;
   createdAt: string;
 }
 
@@ -106,6 +107,7 @@ export interface DirectoryRoom {
   viewers: number;
   memberCount: number;
   live: boolean;
+  starred: boolean;
   lastActiveMs: number;
   media: {
     id: string;

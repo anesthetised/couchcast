@@ -258,6 +258,28 @@ func (r *Repo) CountMembers(ctx context.Context, roomID uuid.UUID) (int, error) 
 	return n, wrapErr(err)
 }
 
+// SetStar adds or removes the user's star on a room.
+func (r *Repo) SetStar(ctx context.Context, userID, roomID uuid.UUID, on bool) error {
+	if on {
+		const q = `INSERT INTO room_stars (user_id, room_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`
+		_, err := r.pool.Exec(ctx, q, userID, roomID)
+		return wrapErr(err)
+	}
+	const q = `DELETE FROM room_stars WHERE user_id = $1 AND room_id = $2`
+	_, err := r.pool.Exec(ctx, q, userID, roomID)
+	return wrapErr(err)
+}
+
+// IsStarred reports whether the user starred the room.
+func (r *Repo) IsStarred(ctx context.Context, userID, roomID uuid.UUID) (bool, error) {
+	const q = `SELECT EXISTS (SELECT 1 FROM room_stars WHERE user_id = $1 AND room_id = $2)`
+	var on bool
+	if err := r.pool.QueryRow(ctx, q, userID, roomID).Scan(&on); err != nil {
+		return false, wrapErr(err)
+	}
+	return on, nil
+}
+
 // DirectoryRoom is a directory entry: the room, its current media (nil
 // when nothing is queued), counts and the viewer's own role.
 type DirectoryRoom struct {
@@ -268,6 +290,7 @@ type DirectoryRoom struct {
 	Viewers     int
 	Live        bool            // a ready video is playing right now
 	MyRole      entity.RoomRole // "" when the viewer is not a member
+	Starred     bool            // by the viewer
 }
 
 // DirectoryQuery selects and pages the room directory. Public rooms are
@@ -284,6 +307,7 @@ type DirectoryQuery struct {
 	OnlyLive    bool
 	OnlyPrivate bool // requires ViewerID
 	OnlyMine    bool // requires ViewerID
+	OnlyStarred bool // requires ViewerID
 	Sort        DirectorySort
 	Offset      int
 	Limit       int
@@ -336,7 +360,7 @@ func (r *Repo) ListDirectory(ctx context.Context, q DirectoryQuery) ([]Directory
 		q.LiveCounts = []int{}
 	}
 	if q.ViewerID == nil {
-		q.OnlyPrivate, q.OnlyMine = false, false
+		q.OnlyPrivate, q.OnlyMine, q.OnlyStarred = false, false, false
 	}
 
 	sql := `
@@ -347,6 +371,7 @@ func (r *Repo) ListDirectory(ctx context.Context, q DirectoryQuery) ([]Directory
 		       coalesce(v.viewers, 0),
 		       (r.playing AND m.status = 'ready') AS live,
 		       coalesce(me.role, ''),
+		       st.user_id IS NOT NULL,
 		       m.id, coalesce(m.source_key, ''), coalesce(m.source_url, ''), coalesce(m.title, ''), coalesce(m.duration_ms, 0), coalesce(m.thumbnail_url, ''),
 		       m.status, m.progress, coalesce(m.error, ''), coalesce(m.size_bytes, 0), m.renditions, coalesce(m.s3_prefix, ''),
 		       m.created_at, m.updated_at, m.last_accessed_at,
@@ -354,6 +379,7 @@ func (r *Repo) ListDirectory(ctx context.Context, q DirectoryQuery) ([]Directory
 		FROM rooms r
 		JOIN users u ON u.id = r.owner_id
 		LEFT JOIN room_members me ON me.room_id = r.id AND me.user_id = $7
+		LEFT JOIN room_stars st ON st.room_id = r.id AND st.user_id = $7
 		LEFT JOIN unnest($1::uuid[], $2::int[]) AS v(id, viewers) ON v.id = r.id
 		LEFT JOIN queue_items qi ON qi.id = r.current_item_id
 		LEFT JOIN media m ON m.id = qi.media_id
@@ -363,11 +389,12 @@ func (r *Repo) ListDirectory(ctx context.Context, q DirectoryQuery) ([]Directory
 		  AND (NOT $4 OR (r.playing AND m.status = 'ready'))
 		  AND (NOT $8 OR r.visibility = 'private')
 		  AND (NOT $9 OR me.user_id IS NOT NULL)
+		  AND (NOT $10 OR st.user_id IS NOT NULL)
 		ORDER BY ` + q.Sort.orderBy() + `
 		OFFSET $5 LIMIT $6
 	`
 	rows, err := r.pool.Query(ctx, sql, q.LiveIDs, q.LiveCounts, escapeLike(q.Search), q.OnlyLive, q.Offset, q.Limit,
-		q.ViewerID, q.OnlyPrivate, q.OnlyMine)
+		q.ViewerID, q.OnlyPrivate, q.OnlyMine, q.OnlyStarred)
 	if err != nil {
 		return nil, 0, wrapErr(err)
 	}
@@ -391,7 +418,7 @@ func (r *Repo) ListDirectory(ctx context.Context, q DirectoryQuery) ([]Directory
 		rm := &dr.Room
 		if err := rows.Scan(&rm.ID, &rm.Slug, &rm.Name, &rm.OwnerID, &rm.Visibility, &settings, &rm.CurrentItemID,
 			&rm.Playing, &rm.PositionMs, &rm.PositionAt, &rm.Rate, &rm.CreatedAt, &rm.UpdatedAt,
-			&dr.Owner, &dr.MemberCount, &dr.Viewers, &dr.Live, &dr.MyRole,
+			&dr.Owner, &dr.MemberCount, &dr.Viewers, &dr.Live, &dr.MyRole, &dr.Starred,
 			&mediaID, &m.SourceKey, &m.SourceURL, &m.Title, &m.DurationMs, &m.ThumbnailURL,
 			&mStatus, &mProg, &m.Error, &m.SizeBytes, &mRend, &m.S3Prefix,
 			&mCreated, &mUpdated, &mAccessed,

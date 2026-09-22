@@ -38,13 +38,13 @@ const Room: Component = () => {
   return (
     <Show when={!room.error} fallback={<div class="empty">{errorMessage()}</div>}>
       <Show when={room()} fallback={<p class="muted">Loading…</p>}>
-        {(r) => <LiveRoom slug={r().slug} name={r().name} visibility={r().visibility} description={r().description} canSettings={isModerator(r().myRole)} />}
+        {(r) => <LiveRoom slug={r().slug} name={r().name} visibility={r().visibility} description={r().description} starred={r().starred} canSettings={isModerator(r().myRole)} />}
       </Show>
     </Show>
   );
 };
 
-const LiveRoom: Component<{ slug: string; name: string; visibility: string; description: string; canSettings: boolean }> = (props) => {
+const LiveRoom: Component<{ slug: string; name: string; visibility: string; description: string; starred: boolean; canSettings: boolean }> = (props) => {
   const navigate = useNavigate();
   const store = createRoomStore(props.slug);
   // Leaving on purpose ends at the directory, not on an end screen.
@@ -149,6 +149,7 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
           description={snap()?.room.description ?? props.description}
           live={live()}
           viewers={viewers()}
+          starred={props.starred}
           canSettings={props.canSettings}
         />
 
@@ -276,8 +277,20 @@ const RoomHeader: Component<{
   description: string;
   live: boolean;
   viewers: number;
+  starred: boolean;
   canSettings: boolean;
 }> = (props) => {
+  const [starred, setStarred] = createSignal(props.starred);
+  const toggleStar = async () => {
+    const next = !starred();
+    setStarred(next);
+    try {
+      await rooms.star(props.slug, next);
+    } catch (err) {
+      setStarred(!next);
+      toast(err instanceof Error ? err.message : String(err), "error");
+    }
+  };
   const settings = () => props.store.state.snapshot?.room.settings;
   const me = () => props.store.state.me;
   const canLeave = () => me() !== null && props.store.state.role !== undefined && props.store.state.role !== "owner";
@@ -317,6 +330,12 @@ const RoomHeader: Component<{
           <span class="muted small">
             {props.viewers} watching
           </span>
+          <Show when={me()}>
+            <span class="muted small">·</span>
+            <button type="button" class={`link small star-link ${starred() ? "on" : ""}`} onClick={() => void toggleStar()} aria-pressed={starred()}>
+              {starred() ? "★ Starred" : "☆ Star"}
+            </button>
+          </Show>
         </div>
         <Show when={props.description}>
           <p class="room-description">{props.description}</p>

@@ -2971,3 +2971,48 @@ button.timecode {
 .add-preview.warn .add-preview-body {
   flex: 1;
 }
+
+/* --- stars ------------------------------------------------------------------- */
+
+.room-card-wrap {
+  position: relative;
+}
+
+.room-card-wrap .star {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.5rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity 150ms, color 150ms;
+}
+
+.room-card-wrap:hover .star,
+.room-card-wrap .star:focus-visible,
+.room-card-wrap .star.on {
+  opacity: 1;
+}
+
+.room-card-wrap .star:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.room-card-wrap .star.on {
+  color: var(--accent);
+}
+
+.star-link.on {
+  color: var(--accent);
+}
+
+@media (hover: none) {
+  .room-card-wrap .star {
+    opacity: 1;
+  }
+}

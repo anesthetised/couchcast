@@ -20,15 +20,17 @@ export const rooms = {
   remove: (slug: string) => api<void>(`/api/v1/rooms/${slug}`, { method: "DELETE" }),
   leave: (slug: string, username: string) => api<void>(`/api/v1/rooms/${slug}/members/${username}`, { method: "DELETE" }),
   transfer: (slug: string, username: string) => api<void>(`/api/v1/rooms/${slug}/owner`, json({ username })),
+  star: (slug: string, on: boolean) => api<void>(`/api/v1/rooms/${slug}/star`, { method: on ? "PUT" : "DELETE" }),
   /** @deprecated superseded by `directory({ mine: true })`; the endpoint stays for compatibility. */
   mine: () => api<Room[]>("/api/v1/me/rooms"),
-  directory: (params: { q?: string; live?: boolean; private?: boolean; mine?: boolean; sort?: string; page?: number; perPage?: number }) => {
+  directory: (params: { q?: string; live?: boolean; private?: boolean; mine?: boolean; starred?: boolean; sort?: string; page?: number; perPage?: number }) => {
     const qs = new URLSearchParams();
     if (params.q) qs.set("q", params.q);
     if (params.sort && params.sort !== "active") qs.set("sort", params.sort);
     if (params.live) qs.set("live", "1");
     if (params.private) qs.set("private", "1");
     if (params.mine) qs.set("mine", "1");
+    if (params.starred) qs.set("starred", "1");
     if (params.page && params.page > 1) qs.set("page", String(params.page));
     if (params.perPage) qs.set("perPage", String(params.perPage));
     const suffix = qs.toString();

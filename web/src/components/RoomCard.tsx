@@ -2,7 +2,10 @@ import { createSignal, onCleanup, Show, type Component } from "solid-js";
 
 import { formatAgo, formatTime } from "~/lib/format";
 import { Player } from "~/lib/player";
+import { rooms } from "~/lib/rooms";
+import { toast } from "~/lib/toast";
 import type { DirectoryRoom } from "~/lib/types";
+import { auth } from "~/store/auth";
 
 type Props = {
   room: DirectoryRoom;
@@ -78,6 +81,20 @@ const RoomCard: Component<Props> = (props) => {
 
   onCleanup(stopPreview);
 
+  // The star is optimistic and per user; the card itself is a link, so
+  // the button lives next to it rather than inside.
+  const [starred, setStarred] = createSignal(props.room.starred);
+  const toggleStar = async () => {
+    const next = !starred();
+    setStarred(next);
+    try {
+      await rooms.star(props.room.slug, next);
+    } catch (err) {
+      setStarred(!next);
+      toast(err instanceof Error ? err.message : String(err), "error");
+    }
+  };
+
   const status = () => {
     if (!media()) return null;
     if (!playable()) return "preparing…";
@@ -86,57 +103,64 @@ const RoomCard: Component<Props> = (props) => {
   };
 
   return (
-    <a class="room-card" href={`/r/${props.room.slug}`} onMouseEnter={onEnter} onMouseLeave={stopPreview}>
-      <div class="room-card-media">
-        <Show
-          when={media()?.thumbnailUrl}
-          fallback={
-            <div class="room-card-empty">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                <rect x="3" y="5" width="18" height="14" rx="2" />
-                <path d="M10 9.5v5l4.5-2.5z" fill="currentColor" stroke="none" />
-              </svg>
-              <Show when={!media()}>Nothing playing</Show>
-            </div>
-          }
-        >
-          {(src) => <img src={src()} alt="" loading="lazy" />}
-        </Show>
-        <video ref={video} muted playsinline autoplay={props.room.playback?.playing ?? false} classList={{ visible: previewing() }} />
-        <div class="room-card-top">
-          <span class="actions" style={{ gap: "0.3rem" }}>
-            <Show when={props.room.live}>
-              <span class="badge live">live</span>
-            </Show>
-            <Show when={status()}>{(s) => <span class="badge">{s()}</span>}</Show>
-          </span>
-          <span class="actions" style={{ gap: "0.3rem" }}>
-            <Show when={props.room.myRole && props.room.myRole !== "member"}>
-              <span class="badge role">{props.room.myRole === "moderator" ? "mod" : props.room.myRole}</span>
-            </Show>
-            <Show when={props.room.visibility === "private"}>
-              <span class="badge private">🔒 private</span>
-            </Show>
-          </span>
+    <div class="room-card-wrap">
+      <a class="room-card" href={`/r/${props.room.slug}`} onMouseEnter={onEnter} onMouseLeave={stopPreview}>
+        <div class="room-card-media">
+          <Show
+            when={media()?.thumbnailUrl}
+            fallback={
+              <div class="room-card-empty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                  <rect x="3" y="5" width="18" height="14" rx="2" />
+                  <path d="M10 9.5v5l4.5-2.5z" fill="currentColor" stroke="none" />
+                </svg>
+                <Show when={!media()}>Nothing playing</Show>
+              </div>
+            }
+          >
+            {(src) => <img src={src()} alt="" loading="lazy" />}
+          </Show>
+          <video ref={video} muted playsinline autoplay={props.room.playback?.playing ?? false} classList={{ visible: previewing() }} />
+          <div class="room-card-top">
+            <span class="actions" style={{ gap: "0.3rem" }}>
+              <Show when={props.room.live}>
+                <span class="badge live">live</span>
+              </Show>
+              <Show when={status()}>{(s) => <span class="badge">{s()}</span>}</Show>
+            </span>
+            <span class="actions" style={{ gap: "0.3rem" }}>
+              <Show when={props.room.myRole && props.room.myRole !== "member"}>
+                <span class="badge role">{props.room.myRole === "moderator" ? "mod" : props.room.myRole}</span>
+              </Show>
+              <Show when={props.room.visibility === "private"}>
+                <span class="badge private">🔒 private</span>
+              </Show>
+            </span>
+          </div>
+          <Show when={media()?.durationMs}>{(d) => <span class="room-card-duration">{formatTime(d())}</span>}</Show>
         </div>
-        <Show when={media()?.durationMs}>{(d) => <span class="room-card-duration">{formatTime(d())}</span>}</Show>
-      </div>
-      <div class="room-card-body">
-        <div class="room-card-title">{media()?.title || props.room.name}</div>
-        <Show when={props.room.description}>{(d) => <div class="room-card-desc">{d()}</div>}</Show>
-        <div class="room-card-meta">
-          <Show when={media()}>
-            <span>{props.room.name}</span>
+        <div class="room-card-body">
+          <div class="room-card-title">{media()?.title || props.room.name}</div>
+          <Show when={props.room.description}>{(d) => <div class="room-card-desc">{d()}</div>}</Show>
+          <div class="room-card-meta">
+            <Show when={media()}>
+              <span>{props.room.name}</span>
+              <span>·</span>
+            </Show>
+            <span>{props.room.owner}</span>
             <span>·</span>
-          </Show>
-          <span>{props.room.owner}</span>
-          <span>·</span>
-          <Show when={media() || props.room.viewers > 0} fallback={<span title="Last activity">active {formatAgo(props.room.lastActiveMs)}</span>}>
-            <span>{props.room.viewers} watching</span>
-          </Show>
+            <Show when={media() || props.room.viewers > 0} fallback={<span title="Last activity">active {formatAgo(props.room.lastActiveMs)}</span>}>
+              <span>{props.room.viewers} watching</span>
+            </Show>
+          </div>
         </div>
-      </div>
-    </a>
+      </a>
+      <Show when={auth.user()}>
+        <button type="button" class={`star ${starred() ? "on" : ""}`} onClick={() => void toggleStar()} title={starred() ? "Unstar" : "Star this room"} aria-pressed={starred()}>
+          {starred() ? "★" : "☆"}
+        </button>
+      </Show>
+    </div>
   );
 };
 

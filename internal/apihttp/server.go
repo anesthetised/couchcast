@@ -77,6 +77,8 @@ type Deps struct {
 	Meta MetaStore
 	// Mutes serves timed chat mutes; nil disables them.
 	Mutes MuteStore
+	// Stars serves per-user starred rooms; nil disables them.
+	Stars StarStore
 
 	// MediaObjects deletes packaged media when an administrator removes it.
 	MediaObjects MediaDeleter
@@ -184,6 +186,10 @@ func New(deps Deps) *Server {
 						r.Get("/mutes", s.handleListMutes)
 						r.Put("/mutes/{username}", s.handleMute)
 						r.Delete("/mutes/{username}", s.handleUnmute)
+					}
+					if deps.Stars != nil {
+						r.Put("/star", s.handleStar)
+						r.Delete("/star", s.handleUnstar)
 					}
 					if deps.InviteLinks != nil {
 						r.Post("/invite-links", s.handleCreateInviteLink)

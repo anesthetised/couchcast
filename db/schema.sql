@@ -160,6 +160,17 @@ CREATE TABLE room_bans (
     PRIMARY KEY (room_id, user_id)
 );
 
+-- Starred rooms: a per-user shortlist, filterable in the directory.
+CREATE TABLE room_stars (
+    user_id    uuid        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    room_id    uuid        NOT NULL REFERENCES rooms (id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now(),
+
+    PRIMARY KEY (user_id, room_id)
+);
+
+CREATE INDEX room_stars_room_id_idx ON room_stars (room_id);
+
 -- Timed mutes: the user may watch but not chat, vote or add until `until`.
 CREATE TABLE room_mutes (
     room_id    uuid        NOT NULL REFERENCES rooms (id) ON DELETE CASCADE,

@@ -129,6 +129,7 @@ type roomResponse struct {
 	Description string            `json:"description"`
 	MemberCount int               `json:"memberCount"`
 	MyRole      entity.RoomRole   `json:"myRole,omitempty"`
+	Starred     bool              `json:"starred"`
 	CreatedAt   time.Time         `json:"createdAt"`
 }
 
@@ -291,10 +292,16 @@ func (s *Server) roomResponse(ctx context.Context, rc roomCtx) (roomResponse, er
 	if err != nil {
 		return roomResponse{}, err
 	}
+	starred := false
+	if s.deps.Stars != nil && rc.actor.User != nil {
+		if starred, err = s.deps.Stars.IsStarred(ctx, rc.actor.User.ID, rc.room.ID); err != nil {
+			return roomResponse{}, err
+		}
+	}
 	return roomResponse{
 		ID: rc.room.ID, Slug: rc.room.Slug, Name: rc.room.Name, Visibility: rc.room.Visibility,
 		Settings: rc.room.Settings, Owner: owner.Username, Description: rc.room.Description, MemberCount: count, MyRole: rc.actor.Role(),
-		CreatedAt: rc.room.CreatedAt,
+		Starred: starred, CreatedAt: rc.room.CreatedAt,
 	}, nil
 }
 
