@@ -1,7 +1,7 @@
 import { createSignal, For, onCleanup, Show, type Component } from "solid-js";
 
 import ReportDialog from "~/components/ReportDialog";
-import { formatDuration, formatTime } from "~/lib/format";
+import { formatDuration, formatTime, progressDetail } from "~/lib/format";
 import type { RoomStore } from "~/store/room";
 import type { QueueEntry } from "~/protocol";
 
@@ -144,8 +144,13 @@ const Queue: Component<Props> = (props) => {
                   <Show when={item.addedBy}>by {item.addedBy} · </Show>
                   <StatusBadge item={item} />
                 </div>
-                <Show when={item.media.status === "downloading"}>
-                  <progress max="1" value={item.media.progress} />
+                <Show when={progressDetail(item.media)}>
+                  {(detail) => (
+                    <div class="queue-progress">
+                      <progress max="1" value={item.media.progress} />
+                      <span class="muted small">{detail()}</span>
+                    </div>
+                  )}
                 </Show>
               </div>
               <div class="queue-actions">

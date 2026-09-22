@@ -13,7 +13,7 @@ import (
 )
 
 const mediaColumns = `id, source_key, source_url, coalesce(title, ''), coalesce(duration_ms, 0), coalesce(thumbnail_url, ''),
-	status, progress, coalesce(error, ''), coalesce(size_bytes, 0), renditions, subtitles, chapters, coalesce(s3_prefix, ''),
+	status, progress, coalesce(speed_bps, 0), coalesce(eta_ms, 0), coalesce(error, ''), coalesce(size_bytes, 0), renditions, subtitles, chapters, coalesce(s3_prefix, ''),
 	created_at, updated_at, last_accessed_at`
 
 // mediaRow receives one mediaColumns row; the JSON columns are decoded by
@@ -26,7 +26,7 @@ type mediaRow struct {
 func (mr *mediaRow) targets() []any {
 	m := &mr.m
 	return []any{&m.ID, &m.SourceKey, &m.SourceURL, &m.Title, &m.DurationMs, &m.ThumbnailURL,
-		&m.Status, &m.Progress, &m.Error, &m.SizeBytes, &mr.renditions, &mr.subtitles, &mr.chapters, &m.S3Prefix,
+		&m.Status, &m.Progress, &m.SpeedBps, &m.EtaMs, &m.Error, &m.SizeBytes, &mr.renditions, &mr.subtitles, &mr.chapters, &m.S3Prefix,
 		&m.CreatedAt, &m.UpdatedAt, &m.LastAccessedAt}
 }
 
@@ -110,14 +110,15 @@ func (r *Repo) GetMediaBatch(ctx context.Context, ids []uuid.UUID) (map[uuid.UUI
 
 // SetMediaStatus moves the item to a new step and resets step progress.
 func (r *Repo) SetMediaStatus(ctx context.Context, id uuid.UUID, status entity.MediaStatus) error {
-	const q = `UPDATE media SET status = $2, progress = 0, error = NULL, updated_at = now() WHERE id = $1`
+	const q = `UPDATE media SET status = $2, progress = 0, speed_bps = NULL, eta_ms = NULL, error = NULL, updated_at = now() WHERE id = $1`
 	return r.exec(ctx, q, id, status)
 }
 
-// SetMediaProgress updates progress within the current step.
-func (r *Repo) SetMediaProgress(ctx context.Context, id uuid.UUID, progress float32) error {
-	const q = `UPDATE media SET progress = $2, updated_at = now() WHERE id = $1`
-	return r.exec(ctx, q, id, progress)
+// SetMediaProgress updates progress within the current step; zero speed
+// or ETA means unknown.
+func (r *Repo) SetMediaProgress(ctx context.Context, id uuid.UUID, progress float32, speedBps, etaMs int64) error {
+	const q = `UPDATE media SET progress = $2, speed_bps = nullif($3, 0), eta_ms = nullif($4, 0), updated_at = now() WHERE id = $1`
+	return r.exec(ctx, q, id, progress, speedBps, etaMs)
 }
 
 // SetMediaProbed stores the metadata learned from the source.

@@ -31,6 +31,8 @@ export interface MediaInfo {
   thumbnailUrl: string;
   status: MediaStatus;
   progress: number;
+  speedBps?: number;
+  etaMs?: number;
   error?: string;
   renditions: Rendition[];
   subtitles?: Subtitle[];

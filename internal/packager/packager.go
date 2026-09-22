@@ -4,6 +4,7 @@
 package packager
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -45,7 +46,8 @@ func New(ffmpeg string, segmentSeconds int) *Packager {
 // input becomes a second adaptation set. Segment type follows the codecs:
 // WebM for VP9/Opus, fMP4 for H.264/AAC.
 func (p *Packager) Args(inputs []Input, outDir string) []string {
-	args := []string{"-y", "-hide_banner", "-loglevel", "error", "-nostdin"}
+	// -progress on stdout gives key=value blocks per second; Run reads them.
+	args := []string{"-y", "-hide_banner", "-loglevel", "error", "-nostdin", "-nostats", "-progress", "pipe:1"}
 
 	for _, in := range inputs {
 		args = append(args, "-i", in.Path)
@@ -96,15 +98,43 @@ func (p *Packager) Args(inputs []Input, outDir string) []string {
 
 // Run executes ffmpeg and returns a readable error with ffmpeg's last
 // stderr lines on failure.
-func (p *Packager) Run(ctx context.Context, inputs []Input, outDir string) error {
+// Run packages the inputs; progress, when not nil, receives the output
+// timestamp in milliseconds as ffmpeg advances.
+func (p *Packager) Run(ctx context.Context, inputs []Input, outDir string, progress func(outTimeMs int64)) error {
 	cmd := exec.CommandContext(ctx, p.FFmpeg, p.Args(inputs, outDir)...) //nolint:gosec // binary from config, args built here
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return err
+	}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("ffmpeg: %w", err)
+	}
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		if ms, ok := ParseProgressLine(scanner.Text()); ok && progress != nil {
+			progress(ms)
+		}
+	}
+	if err := cmd.Wait(); err != nil {
 		return fmt.Errorf("ffmpeg: %w: %s", err, tail(stderr.String(), 3))
 	}
 	return nil
+}
+
+// ParseProgressLine reads the out_time_us line of ffmpeg's -progress
+// output; other lines are ignored.
+func ParseProgressLine(line string) (outTimeMs int64, ok bool) {
+	v, found := strings.CutPrefix(strings.TrimSpace(line), "out_time_us=")
+	if !found {
+		return 0, false
+	}
+	us, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || us < 0 {
+		return 0, false
+	}
+	return us / 1000, true
 }
 
 // referenceAspect returns the dimensions of the largest video input.

@@ -3246,3 +3246,22 @@ button.timecode {
 .fs-chat .emoji-picker {
   background: var(--overlay-strong);
 }
+
+/* --- ingest progress --------------------------------------------------------- */
+
+.queue-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+.queue-progress progress {
+  flex: 1;
+  min-width: 0;
+}
+
+.queue-progress span {
+  flex: none;
+  white-space: nowrap;
+}

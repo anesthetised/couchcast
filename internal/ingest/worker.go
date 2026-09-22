@@ -162,7 +162,11 @@ func (w *Worker) process(ctx context.Context, media *entity.Media, log *slog.Log
 		return err
 	}
 	start = time.Now()
-	reporter := &progressReporter{repo: w.repo, queue: w.queue, mediaID: media.ID, interval: time.Second, now: time.Now}
+	var totalBytes int64
+	for _, f := range sel.Formats() {
+		totalBytes += f.Filesize
+	}
+	reporter := &progressReporter{repo: w.repo, queue: w.queue, mediaID: media.ID, interval: time.Second, now: time.Now, totalBytes: totalBytes}
 	files, err := w.extractor.Download(ctx, media.SourceURL, sel.Formats(), srcDir, func(v float64) {
 		reporter.report(ctx, v, false)
 	})
@@ -194,9 +198,17 @@ func (w *Worker) process(ctx context.Context, media *entity.Media, log *slog.Log
 	}
 	inputs = append(inputs, packager.Input{Path: files[sel.Audio.ID], Audio: true})
 
-	if err := w.packager.Run(ctx, inputs, outDir); err != nil {
+	// ffmpeg reports the output timestamp; against the duration that is
+	// the packaging progress.
+	pkgReporter := &progressReporter{repo: w.repo, queue: w.queue, mediaID: media.ID, interval: time.Second, now: time.Now}
+	if err := w.packager.Run(ctx, inputs, outDir, func(outTimeMs int64) {
+		if probe.DurationMs > 0 {
+			pkgReporter.report(ctx, min(float64(outTimeMs)/float64(probe.DurationMs), 1), false)
+		}
+	}); err != nil {
 		return jobs.Permanent(fmt.Errorf("package: %w", err))
 	}
+	pkgReporter.report(ctx, 1, true)
 	_ = os.RemoveAll(srcDir)
 	w.metrics.IngestStep("package", time.Since(start))
 

@@ -53,6 +53,8 @@ type Media struct {
 	ThumbnailURL   string
 	Status         MediaStatus
 	Progress       float32 // 0..1 within the current step
+	SpeedBps       int64   // bytes per second while downloading, 0 when unknown
+	EtaMs          int64   // time left in the current step, 0 when unknown
 	Error          string
 	SizeBytes      int64
 	Renditions     []Rendition

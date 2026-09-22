@@ -48,6 +48,9 @@ CREATE TABLE media (
     thumbnail_url    text,
     status           text        NOT NULL DEFAULT 'queued',
     progress         real        NOT NULL DEFAULT 0,
+    -- Throughput and time left within the current step, when known.
+    speed_bps        bigint,
+    eta_ms           bigint,
     error            text,
     size_bytes       bigint,
     renditions       jsonb       NOT NULL DEFAULT '[]'::jsonb,

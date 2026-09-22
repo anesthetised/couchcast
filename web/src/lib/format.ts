@@ -29,3 +29,30 @@ export function formatDuration(ms: number): string {
   const m = min % 60;
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
+
+// formatSpeed renders bytes per second: "1.2 MB/s", "340 KB/s".
+export function formatSpeed(bps: number): string {
+  if (bps >= 1 << 20) return `${(bps / (1 << 20)).toFixed(1)} MB/s`;
+  if (bps >= 1 << 10) return `${Math.round(bps / (1 << 10))} KB/s`;
+  return `${Math.round(bps)} B/s`;
+}
+
+// formatEta renders time left in the coarsest useful unit: "12 s", "3 min",
+// "1h 05m".
+export function formatEta(ms: number): string {
+  const s = Math.max(1, Math.round(ms / 1000));
+  if (s < 90) return `${s} s`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, "0")}m`;
+}
+
+// progressDetail describes an ingest step in flight: percentage plus
+// speed and time left when known.
+export function progressDetail(m: { status: string; progress: number; speedBps?: number; etaMs?: number }): string | null {
+  if (m.status !== "downloading" && m.status !== "packaging") return null;
+  const parts = [`${Math.round(m.progress * 100)}%`];
+  if (m.speedBps) parts.push(formatSpeed(m.speedBps));
+  if (m.etaMs) parts.push(`${formatEta(m.etaMs)} left`);
+  return parts.join(" · ");
+}

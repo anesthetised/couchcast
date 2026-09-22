@@ -46,7 +46,7 @@ type MediaRepo interface {
 	GetMediaByKey(ctx context.Context, sourceKey string) (*entity.Media, error)
 	IsSourceBlocked(ctx context.Context, sourceKey string) (bool, error)
 	SetMediaStatus(ctx context.Context, id uuid.UUID, status entity.MediaStatus) error
-	SetMediaProgress(ctx context.Context, id uuid.UUID, progress float32) error
+	SetMediaProgress(ctx context.Context, id uuid.UUID, progress float32, speedBps, etaMs int64) error
 	SetMediaProbed(ctx context.Context, id uuid.UUID, title string, durationMs int64, thumbnailURL string, chapters []entity.Chapter) error
 	SetMediaThumbnail(ctx context.Context, id uuid.UUID, thumbnailURL string) error
 	SetMediaReady(ctx context.Context, id uuid.UUID, renditions []entity.Rendition, sizeBytes int64, s3Prefix string) error
@@ -162,14 +162,29 @@ func (s *Service) Retry(ctx context.Context, media *entity.Media) error {
 
 // progressReporter throttles progress writes and notifications to once
 // per interval, always flushing the final value.
+// progressReporter throttles step progress into the database and derives
+// a rate from it: with totalBytes set the rate is a byte throughput, and
+// the time left follows from the rate either way. The rate is smoothed
+// over the last few samples so a stalled second does not zero the ETA.
 type progressReporter struct {
-	repo     MediaRepo
-	queue    *jobs.Queue
-	mediaID  uuid.UUID
-	interval time.Duration
-	last     time.Time
-	now      func() time.Time
+	repo       MediaRepo
+	queue      *jobs.Queue
+	mediaID    uuid.UUID
+	interval   time.Duration
+	totalBytes int64
+	last       time.Time
+	now        func() time.Time
+
+	samples []progressSample
 }
+
+type progressSample struct {
+	at   time.Time
+	frac float64
+}
+
+// rateWindow is how far back the rate looks.
+const rateWindow = 8 * time.Second
 
 func (p *progressReporter) report(ctx context.Context, v float64, force bool) {
 	now := p.now()
@@ -177,6 +192,33 @@ func (p *progressReporter) report(ctx context.Context, v float64, force bool) {
 		return
 	}
 	p.last = now
-	_ = p.repo.SetMediaProgress(ctx, p.mediaID, float32(v))
+	speed, eta := p.estimate(now, v)
+	if force && v >= 1 {
+		speed, eta = 0, 0
+	}
+	_ = p.repo.SetMediaProgress(ctx, p.mediaID, float32(v), speed, eta)
 	_ = p.queue.Notify(ctx, ProgressChannel, p.mediaID.String())
+}
+
+// estimate records the sample and returns bytes per second (0 without a
+// known total) and the milliseconds left (0 when there is no rate yet).
+func (p *progressReporter) estimate(now time.Time, frac float64) (speedBps, etaMs int64) {
+	p.samples = append(p.samples, progressSample{at: now, frac: frac})
+	cut := 0
+	for cut < len(p.samples)-1 && now.Sub(p.samples[cut].at) > rateWindow {
+		cut++
+	}
+	p.samples = p.samples[cut:]
+	first := p.samples[0]
+	dt := now.Sub(first.at).Seconds()
+	dfrac := frac - first.frac
+	if dt <= 0 || dfrac <= 0 {
+		return 0, 0
+	}
+	rate := dfrac / dt // fraction per second
+	if p.totalBytes > 0 {
+		speedBps = int64(rate * float64(p.totalBytes))
+	}
+	etaMs = int64((1 - frac) / rate * 1000)
+	return speedBps, etaMs
 }

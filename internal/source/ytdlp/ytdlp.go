@@ -309,7 +309,7 @@ func (e *Extractor) Download(ctx context.Context, rawURL string, formats []sourc
 	args := make([]string, 0, 12+len(e.ExtraArgs))
 	args = append(args,
 		"--no-playlist", "--no-warnings", "--newline", "--no-part",
-		"--progress-template", "download:cc-progress:%(progress.downloaded_bytes)s/%(progress.total_bytes_estimate|0)s",
+		"--progress-template", "download:cc-progress:%(progress.downloaded_bytes)s/%(progress.total_bytes,progress.total_bytes_estimate|0)s",
 		"-f", strings.Join(formatIDs, ","),
 		"-o", filepath.Join(dir, "%(format_id)s.%(ext)s"),
 	)
@@ -317,6 +317,9 @@ func (e *Extractor) Download(ctx context.Context, rawURL string, formats []sourc
 	args = append(args, "--", rawURL)
 
 	cmd := exec.CommandContext(ctx, e.Path, args...) //nolint:gosec // binary from config; url passed after "--"
+	// Python buffers stdout when it is a pipe, which would batch the
+	// progress lines into 8 KB bursts.
+	cmd.Env = append(os.Environ(), "PYTHONUNBUFFERED=1")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	stdout, err := cmd.StdoutPipe()

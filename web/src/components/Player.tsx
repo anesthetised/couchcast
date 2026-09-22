@@ -1,7 +1,7 @@
 import { createEffect, createSignal, on, onCleanup, onMount, Show, For, type Component } from "solid-js";
 
 import HotkeysSheet from "~/components/HotkeysSheet";
-import { formatTime } from "~/lib/format";
+import { formatTime, progressDetail } from "~/lib/format";
 import { Player as ShakaPlayer, type QualityOption } from "~/lib/player";
 import { Synchronizer, type SyncDebug } from "~/lib/sync";
 import type { Chapter } from "~/protocol";
@@ -424,8 +424,13 @@ const Player: Component<Props> = (props) => {
             <Show when={current()!.media.thumbnailUrl}>{(src) => <img class="poster" src={src()} alt="" />}</Show>
             <div class="preparing-body">
               <p>{statusLabel(current()!.media.status)}</p>
-              <Show when={current()!.media.status === "downloading"}>
-                <progress max="1" value={current()!.media.progress} />
+              <Show when={progressDetail(current()!.media)}>
+                {(detail) => (
+                  <>
+                    <progress max="1" value={current()!.media.progress} />
+                    <span class="muted small">{detail()}</span>
+                  </>
+                )}
               </Show>
               <Show when={current()!.media.error}>
                 <p class="error">{current()!.media.error}</p>

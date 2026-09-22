@@ -215,6 +215,8 @@ type MediaInfo struct {
 	ThumbnailURL string             `json:"thumbnailUrl"`
 	Status       entity.MediaStatus `json:"status"`
 	Progress     float32            `json:"progress"`
+	SpeedBps     int64              `json:"speedBps,omitempty"`
+	EtaMs        int64              `json:"etaMs,omitempty"`
 	Error        string             `json:"error,omitempty"`
 	Renditions   []entity.Rendition `json:"renditions"`
 	Subtitles    []entity.Subtitle  `json:"subtitles,omitempty"`

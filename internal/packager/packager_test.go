@@ -27,3 +27,13 @@ func TestArgs(t *testing.T) {
 	noDims := p.Args([]Input{{Path: "v.mp4"}, {Path: "a.m4a", Audio: true}}, "/out")
 	assert.NotContains(t, strings.Join(noDims, " "), "-aspect")
 }
+
+func TestParseProgressLine(t *testing.T) {
+	ms, ok := ParseProgressLine("out_time_us=1500000")
+	assert.True(t, ok)
+	assert.EqualValues(t, 1500, ms)
+	_, ok = ParseProgressLine("frame=12")
+	assert.False(t, ok)
+	_, ok = ParseProgressLine("out_time_us=N/A")
+	assert.False(t, ok)
+}

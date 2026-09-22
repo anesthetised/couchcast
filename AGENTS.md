@@ -70,7 +70,11 @@ and a production image build.
   through Postgres and S3: `internal/jobs` is the queue (`SKIP LOCKED`
   claims, `LISTEN/NOTIFY` wake-ups, backoff, stale-lock recovery),
   `internal/ingest` runs probe → download → package → upload and publishes
-  progress on the `media_progress` channel.
+  progress on the `media_progress` channel. `progressReporter` also derives
+  `media.speed_bps` / `media.eta_ms` from the recent progress samples
+  (download: bytes from the selected formats; packaging: ffmpeg
+  `-progress` out_time against the duration), shown in the queue and on
+  the preparing overlay.
 - `internal/source` abstracts extractors; `source/ytdlp` shells out to
   yt-dlp (fixture in `testdata/`). `source.SelectFormats` picks one codec
   family and the best format per ladder height — never transcode.

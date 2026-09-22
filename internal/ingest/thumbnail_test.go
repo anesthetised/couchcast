@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -53,4 +54,33 @@ func TestFetchThumbnail(t *testing.T) {
 
 	assert.Equal(t, "thumb.webp", ThumbnailFile("image/webp; charset=binary"))
 	assert.Equal(t, "", ThumbnailFile("image/gif"))
+}
+
+func TestProgressEstimate(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	p := &progressReporter{totalBytes: 100 << 20}
+
+	speed, eta := p.estimate(start, 0)
+	assert.Zero(t, speed)
+	assert.Zero(t, eta)
+
+	// 10 % in 2 s of a 100 MB file: 5 MB/s, 18 s to go.
+	speed, eta = p.estimate(start.Add(2*time.Second), 0.1)
+	assert.EqualValues(t, 5<<20, speed)
+	assert.EqualValues(t, 18_000, eta)
+
+	// The window drops old samples: a stall then a burst is measured over
+	// the recent samples only, not since the beginning.
+	speed, eta = p.estimate(start.Add(20*time.Second), 0.1)
+	assert.Zero(t, speed, "no progress inside the window")
+	assert.Zero(t, eta)
+	speed, _ = p.estimate(start.Add(21*time.Second), 0.2)
+	assert.EqualValues(t, 10<<20, speed)
+
+	// Without a byte total there is an ETA but no throughput.
+	q := &progressReporter{}
+	q.estimate(start, 0)
+	speed, eta = q.estimate(start.Add(4*time.Second), 0.5)
+	assert.Zero(t, speed)
+	assert.EqualValues(t, 4_000, eta)
 }
