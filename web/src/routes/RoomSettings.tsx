@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from "@solidjs/router";
-import { createResource, createSignal, For, Show, type Component } from "solid-js";
+import { createEffect, createResource, createSignal, For, Show, type Component } from "solid-js";
 
 import InviteLinks from "~/components/InviteLinks";
 import UsernamePicker from "~/components/UsernamePicker";
@@ -14,6 +14,10 @@ const RoomSettings: Component = () => {
   const params = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const [room, { mutate: setRoom }] = createResource(() => params.slug, rooms.get);
+  createEffect(() => {
+    const r = room();
+    if (r && r.slug !== params.slug) navigate(`/r/${r.slug}/settings`, { replace: true });
+  });
   const [members, { refetch: reloadMembers }] = createResource(() => params.slug, rooms.members);
   const [bans, { refetch: reloadBans }] = createResource(
     () => (isModerator(room()?.myRole) ? params.slug : undefined),

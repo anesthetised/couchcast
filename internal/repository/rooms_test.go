@@ -142,3 +142,46 @@ func TestInvites(t *testing.T) {
 		ActorID: &owner.ID, Action: "invite.create", TargetType: "user", TargetID: carol.ID.String(), RoomID: &room.ID,
 	}))
 }
+
+func TestSlugHistory(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+	owner, err := repo.CreateUser(ctx, "owner", "h")
+	require.NoError(t, err)
+	room, err := repo.CreateRoom(ctx, "friday", "Friday", owner.ID, entity.VisibilityPublic, entity.DefaultSettings())
+	require.NoError(t, err)
+
+	// After a rename the old slug still resolves, to the current slug.
+	_, err = repo.UpdateRoom(ctx, room.ID, "friday-night", "Friday", entity.VisibilityPublic, "")
+	require.NoError(t, err)
+	got, err := repo.GetRoomBySlug(ctx, "friday")
+	require.NoError(t, err)
+	assert.Equal(t, room.ID, got.ID)
+	assert.Equal(t, "friday-night", got.Slug)
+
+	// A second rename keeps both; renaming back frees the newer one.
+	_, err = repo.UpdateRoom(ctx, room.ID, "saturday", "Saturday", entity.VisibilityPublic, "")
+	require.NoError(t, err)
+	for _, s := range []string{"friday", "friday-night", "saturday"} {
+		got, err = repo.GetRoomBySlug(ctx, s)
+		require.NoError(t, err, s)
+		assert.Equal(t, "saturday", got.Slug)
+	}
+	_, err = repo.UpdateRoom(ctx, room.ID, "friday", "Friday", entity.VisibilityPublic, "")
+	require.NoError(t, err)
+	got, err = repo.GetRoomBySlug(ctx, "friday")
+	require.NoError(t, err)
+	assert.Equal(t, "friday", got.Slug)
+
+	// A new room claims a historical slug outright.
+	other, err := repo.CreateRoom(ctx, "saturday", "Other", owner.ID, entity.VisibilityPublic, entity.DefaultSettings())
+	require.NoError(t, err)
+	got, err = repo.GetRoomBySlug(ctx, "saturday")
+	require.NoError(t, err)
+	assert.Equal(t, other.ID, got.ID)
+
+	// Deleting the room drops its history.
+	require.NoError(t, repo.DeleteRoom(ctx, room.ID))
+	_, err = repo.GetRoomBySlug(ctx, "friday-night")
+	assert.ErrorIs(t, err, ErrNotFound)
+}

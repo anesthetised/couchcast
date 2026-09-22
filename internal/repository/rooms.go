@@ -51,6 +51,11 @@ func (r *Repo) CreateRoom(ctx context.Context, slug, name string, ownerID uuid.U
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
 
+	// A new room claims the slug from whichever room used to have it.
+	if _, err := tx.Exec(ctx, `DELETE FROM room_slug_history WHERE slug = $1`, slug); err != nil {
+		return nil, wrapErr(err)
+	}
+
 	const insertRoom = `
 		INSERT INTO rooms (slug, name, owner_id, visibility, settings)
 		VALUES ($1, $2, $3, $4, $5)
@@ -73,9 +78,16 @@ func (r *Repo) CreateRoom(ctx context.Context, slug, name string, ownerID uuid.U
 	return room, nil
 }
 
-// GetRoomBySlug returns a room or ErrNotFound.
+// GetRoomBySlug returns a room or ErrNotFound. A former slug resolves to
+// the room that used to have it; the caller sees the current slug on the
+// returned room and can redirect.
 func (r *Repo) GetRoomBySlug(ctx context.Context, slug string) (*entity.Room, error) {
-	const q = `SELECT ` + roomColumns + ` FROM rooms WHERE slug = $1`
+	const q = `
+		SELECT ` + roomColumns + ` FROM rooms
+		WHERE slug = $1 OR id = (SELECT room_id FROM room_slug_history WHERE slug = $1)
+		ORDER BY slug = $1 DESC
+		LIMIT 1
+	`
 	return scanRoom(r.pool.QueryRow(ctx, q, slug))
 }
 
@@ -85,13 +97,36 @@ func (r *Repo) GetRoomByID(ctx context.Context, id uuid.UUID) (*entity.Room, err
 	return scanRoom(r.pool.QueryRow(ctx, q, id))
 }
 
-// UpdateRoom changes the fields an owner may edit.
+// UpdateRoom changes the fields an owner may edit. A slug change keeps
+// the old slug in the history and reclaims the new one from it.
 func (r *Repo) UpdateRoom(ctx context.Context, id uuid.UUID, slug, name string, visibility entity.Visibility, description string) (*entity.Room, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
+
+	const remember = `
+		INSERT INTO room_slug_history (slug, room_id)
+		SELECT slug, id FROM rooms WHERE id = $1 AND slug <> $2
+		ON CONFLICT (slug) DO UPDATE SET room_id = EXCLUDED.room_id, created_at = now()
+	`
+	if _, err := tx.Exec(ctx, remember, id, slug); err != nil {
+		return nil, wrapErr(err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM room_slug_history WHERE slug = $1`, slug); err != nil {
+		return nil, wrapErr(err)
+	}
+
 	const q = `
 		UPDATE rooms SET slug = $2, name = $3, visibility = $4, description = $5, updated_at = now()
 		WHERE id = $1
 		RETURNING ` + roomColumns
-	return scanRoom(r.pool.QueryRow(ctx, q, id, slug, name, visibility, description))
+	room, err := scanRoom(tx.QueryRow(ctx, q, id, slug, name, visibility, description))
+	if err != nil {
+		return nil, err
+	}
+	return room, tx.Commit(ctx)
 }
 
 // GetCurrentMedia returns the media the room is on, or ErrNotFound when

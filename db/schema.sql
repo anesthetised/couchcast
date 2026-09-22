@@ -124,6 +124,16 @@ CREATE TABLE rooms (
 CREATE UNIQUE INDEX rooms_slug_idx ON rooms (slug);
 CREATE INDEX rooms_owner_id_idx ON rooms (owner_id);
 
+-- Former slugs keep resolving to the room after a rename, until a new
+-- room claims the slug or the room renames back to it.
+CREATE TABLE room_slug_history (
+    slug       text        PRIMARY KEY,
+    room_id    uuid        NOT NULL REFERENCES rooms (id) ON DELETE CASCADE,
+    created_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX room_slug_history_room_id_idx ON room_slug_history (room_id);
+
 ALTER TABLE media_reports
     ADD CONSTRAINT media_reports_room_fk
     FOREIGN KEY (room_id) REFERENCES rooms (id) ON DELETE SET NULL;

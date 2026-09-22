@@ -21,7 +21,13 @@ const SWIPE_PX = 60;
 // the WebSocket store drives everything live.
 const Room: Component = () => {
   const params = useParams<{ slug: string }>();
+  const navigate = useNavigate();
   const [room] = createResource(() => params.slug, rooms.get);
+  // A former slug still resolves; the address bar catches up.
+  createEffect(() => {
+    const r = room();
+    if (r && r.slug !== params.slug) navigate(`/r/${r.slug}${window.location.search}`, { replace: true });
+  });
 
   const errorMessage = () => {
     const err = room.error as unknown;
