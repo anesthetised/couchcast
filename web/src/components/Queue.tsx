@@ -16,6 +16,11 @@ const Queue: Component<Props> = (props) => {
   const me = () => props.room.state.me;
   const voteMode = () => props.room.state.snapshot?.room.settings.voteMode ?? false;
   const [reporting, setReporting] = createSignal<QueueEntry | null>(null);
+  const waiting = () => items().filter((q) => !q.current).length;
+  const clearQueue = () => {
+    if (!confirm(`Remove ${waiting()} waiting ${waiting() === 1 ? "video" : "videos"} from the queue?`)) return;
+    props.room.commands.clear();
+  };
 
   // Time left in the whole queue: the rest of the current item plus every
   // item after it. Ticks coarsely; the header only shows minutes.
@@ -98,6 +103,18 @@ const Queue: Component<Props> = (props) => {
         <Show when={remainingMs() > 0}>
           <span class="muted queue-total" title="Time left in the queue">
             · {formatDuration(remainingMs())}
+          </span>
+        </Show>
+        <Show when={canManage() && waiting() >= 2}>
+          <span class="section-actions">
+            <Show when={!voteMode()}>
+              <button type="button" class="link small" onClick={() => props.room.commands.shuffle()} title="Reorder the waiting videos at random">
+                Shuffle
+              </button>
+            </Show>
+            <button type="button" class="link small danger-text" onClick={clearQueue} title="Remove every waiting video">
+              Clear
+            </button>
           </span>
         </Show>
       </h2>

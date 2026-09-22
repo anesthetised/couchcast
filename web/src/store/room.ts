@@ -11,6 +11,9 @@ import type { ChatMessage, ClientMessage, Playback, Snapshot } from "~/protocol"
 
 export type RoomEnd = { kind: "gone" } | { kind: "kicked"; reason: string };
 export type PendingAdd = { id: number; url: string; title?: string; next: boolean };
+// DuplicateAdd is a queue.add the server refused because the video is
+// already queued or played; the add form asks before forcing it.
+export type DuplicateAdd = { url: string; title?: string; next: boolean; message: string };
 export type FloatingReaction = { id: number; username: string; emoji: string };
 
 const TYPING_TTL_MS = 4_000;
@@ -46,6 +49,7 @@ export function createRoomStore(slug: string) {
   // pending holds links sent with queue.add until the snapshot lists them
   // (or the server rejects them), so the queue can show them right away.
   const [pending, setPending] = createSignal<PendingAdd[]>([]);
+  const [duplicate, setDuplicate] = createSignal<DuplicateAdd | null>(null);
   // typing holds who is composing, each entry expiring on its own; reactions
   // are a short-lived list the player animates and drops.
   const [typing, setTyping] = createSignal<string[]>([]);
@@ -125,11 +129,17 @@ export function createRoomStore(slug: string) {
       case "chat.deleted":
         setState("messages", (m) => m.filter((x) => x.id !== msg.id));
         break;
-      case "error":
-        toast(msg.message, "error");
+      case "error": {
         // Most errors here answer a command; a pending add is the likeliest.
+        const last = pending().at(-1);
         setPending((p) => p.slice(0, -1));
+        if (msg.code === "duplicate" && last) {
+          setDuplicate({ url: last.url, title: last.title, next: last.next, message: msg.message });
+          break;
+        }
+        toast(msg.message, "error");
         break;
+      }
       case "chat.cleared":
         setState("messages", []);
         break;
@@ -170,6 +180,8 @@ export function createRoomStore(slug: string) {
     unread,
     clearUnread: () => setUnread(0),
     pending,
+    duplicate,
+    dismissDuplicate: () => setDuplicate(null),
     typing,
     reactions,
     lastError,
@@ -186,14 +198,17 @@ export function createRoomStore(slug: string) {
       rate: (rate: number) => send({ type: "rate.set", rate }),
       next: () => send({ type: "next" }),
       jump: (itemId: string) => send({ type: "jump", itemId }),
-      add: (url: string, opts: { next?: boolean; title?: string } = {}) => {
+      add: (url: string, opts: { next?: boolean; title?: string; force?: boolean } = {}) => {
         const id = ++pendingSeq;
+        setDuplicate(null);
         setPending((p) => [...p, { id, url, title: opts.title, next: opts.next ?? false }]);
         window.setTimeout(() => dropPending(id), PENDING_TTL_MS);
-        return send({ type: "queue.add", url, next: opts.next || undefined });
+        return send({ type: "queue.add", url, next: opts.next || undefined, force: opts.force || undefined });
       },
       replay: (itemId: string) => send({ type: "queue.replay", itemId }),
       clearPlayed: () => send({ type: "queue.clearPlayed" }),
+      clear: () => send({ type: "queue.clear" }),
+      shuffle: () => send({ type: "queue.shuffle" }),
       remove: (itemId: string) => send({ type: "queue.remove", itemId }),
       move: (itemId: string, afterId: string | null) => send({ type: "queue.move", itemId, afterId }),
       retry: (itemId: string) => send({ type: "queue.retry", itemId }),

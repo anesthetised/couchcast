@@ -73,6 +73,14 @@ const AddToQueue: Component<Props> = (props) => {
     add(false);
   };
 
+  // The server refused a duplicate; the form asks once and forces it.
+  const dup = () => props.room.duplicate();
+  const addAnyway = () => {
+    const d = dup();
+    if (!d) return;
+    props.room.commands.add(d.url, { next: d.next, title: d.title, force: true });
+  };
+
   return (
     <Show when={canAdd()} fallback={<p class="muted small">{props.room.state.me ? "Only moderators can add videos here." : "Log in to add videos."}</p>}>
       <form class="add-form" onSubmit={submit}>
@@ -88,6 +96,22 @@ const AddToQueue: Component<Props> = (props) => {
             }}
             autofocus={(props.room.state.snapshot?.queue.length ?? 1) === 0}
           />
+          <Show when={dup()}>
+            {(d) => (
+              <div class="add-preview warn" role="alert">
+                <span class="add-preview-body">
+                  <strong>{d().title || d().url}</strong>
+                  <span>{capitalize(d().message)}.</span>
+                </span>
+                <button type="button" class="ghost small" onClick={addAnyway}>
+                  Add anyway
+                </button>
+                <button type="button" class="link small" onClick={props.room.dismissDuplicate}>
+                  Cancel
+                </button>
+              </div>
+            )}
+          </Show>
           <Show when={lookup()}>
             {(l) => (
               <div class="add-preview" classList={{ error: l().state === "error" }}>
@@ -131,5 +155,7 @@ const AddToQueue: Component<Props> = (props) => {
     </Show>
   );
 };
+
+const capitalize = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
 
 export default AddToQueue;

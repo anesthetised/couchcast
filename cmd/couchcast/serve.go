@@ -241,5 +241,5 @@ func (q liveQueue) QueueAdd(ctx context.Context, roomID uuid.UUID, actor access.
 	if err != nil {
 		return err
 	}
-	return r.QueueAdd(ctx, actor, rawURL, false)
+	return r.QueueAdd(ctx, actor, rawURL, false, true)
 }

@@ -144,7 +144,7 @@ export interface Kicked {
 
 export interface ErrorMessage {
   type: "error";
-  code: "forbidden" | "invalid" | "not_found" | "internal" | "rate_limited";
+  code: "forbidden" | "invalid" | "not_found" | "internal" | "rate_limited" | "duplicate";
   message: string;
 }
 
@@ -169,9 +169,11 @@ export type ClientMessage =
   | { type: "rate.set"; rate: number }
   | { type: "next" }
   | { type: "jump"; itemId: string }
-  | { type: "queue.add"; url: string; next?: boolean }
+  | { type: "queue.add"; url: string; next?: boolean; force?: boolean }
   | { type: "queue.replay"; itemId: string }
   | { type: "queue.clearPlayed" }
+  | { type: "queue.clear" }
+  | { type: "queue.shuffle" }
   | { type: "queue.remove"; itemId: string }
   | { type: "queue.move"; itemId: string; afterId: string | null }
   | { type: "queue.retry"; itemId: string }

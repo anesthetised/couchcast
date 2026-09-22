@@ -2950,3 +2950,24 @@ button.timecode {
 .stage.theater .fs-panel {
   bottom: 44px;
 }
+
+/* --- queue header actions ---------------------------------------------------- */
+
+.section-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 0.75rem;
+  font-weight: 400;
+}
+
+.add-preview.warn {
+  color: var(--text);
+}
+
+.add-preview.warn .add-preview-body span {
+  color: var(--warn);
+}
+
+.add-preview.warn .add-preview-body {
+  flex: 1;
+}

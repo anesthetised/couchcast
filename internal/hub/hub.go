@@ -241,11 +241,15 @@ func (c *conn) dispatch(ctx context.Context, data []byte) {
 		err = c.room.Jump(cmdCtx, actor, msg.(*protocol.ItemRef).ItemID)
 	case protocol.TypeQueueAdd:
 		m := msg.(*protocol.QueueAdd)
-		err = c.room.QueueAdd(cmdCtx, actor, m.URL, m.Next)
+		err = c.room.QueueAdd(cmdCtx, actor, m.URL, m.Next, m.Force)
 	case protocol.TypeQueueReplay:
 		err = c.room.QueueReplay(cmdCtx, actor, msg.(*protocol.ItemRef).ItemID)
-	case protocol.TypeQueueClear:
+	case protocol.TypeQueueClearPlayed:
 		err = c.room.QueueClearPlayed(cmdCtx, actor)
+	case protocol.TypeQueueClear:
+		err = c.room.QueueClear(cmdCtx, actor)
+	case protocol.TypeQueueShuffle:
+		err = c.room.QueueShuffle(cmdCtx, actor)
 	case protocol.TypeQueueRemove:
 		err = c.room.QueueRemove(cmdCtx, actor, msg.(*protocol.ItemRef).ItemID)
 	case protocol.TypeQueueMove:

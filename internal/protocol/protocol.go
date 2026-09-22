@@ -16,29 +16,31 @@ import (
 
 // Client message types.
 const (
-	TypePing        = "ping"
-	TypePlay        = "play"
-	TypePause       = "pause"
-	TypeSeek        = "seek"
-	TypeNext        = "next"
-	TypeJump        = "jump"
-	TypeQueueAdd    = "queue.add"
-	TypeQueueRemove = "queue.remove"
-	TypeQueueMove   = "queue.move"
-	TypeQueueRetry  = "queue.retry"
-	TypeQueueVote   = "queue.vote"
-	TypeQueueReplay = "queue.replay"
-	TypeQueueClear  = "queue.clearPlayed"
-	TypeSkipVote    = "skip.vote"
-	TypeSettingsSet = "settings.set"
-	TypeSessionEnd  = "session.end"
-	TypeRateSet     = "rate.set"
-	TypeChatSend    = "chat.send"
-	TypeChatDelete  = "chat.delete"
-	TypeChatClear   = "chat.clear"
-	TypeChatTyping  = "chat.typing"
-	TypeReact       = "react"
-	TypeReport      = "report"
+	TypePing             = "ping"
+	TypePlay             = "play"
+	TypePause            = "pause"
+	TypeSeek             = "seek"
+	TypeNext             = "next"
+	TypeJump             = "jump"
+	TypeQueueAdd         = "queue.add"
+	TypeQueueRemove      = "queue.remove"
+	TypeQueueMove        = "queue.move"
+	TypeQueueRetry       = "queue.retry"
+	TypeQueueVote        = "queue.vote"
+	TypeQueueReplay      = "queue.replay"
+	TypeQueueClearPlayed = "queue.clearPlayed"
+	TypeQueueClear       = "queue.clear"
+	TypeQueueShuffle     = "queue.shuffle"
+	TypeSkipVote         = "skip.vote"
+	TypeSettingsSet      = "settings.set"
+	TypeSessionEnd       = "session.end"
+	TypeRateSet          = "rate.set"
+	TypeChatSend         = "chat.send"
+	TypeChatDelete       = "chat.delete"
+	TypeChatClear        = "chat.clear"
+	TypeChatTyping       = "chat.typing"
+	TypeReact            = "react"
+	TypeReport           = "report"
 )
 
 // Envelope is the first pass of decoding: only the type.
@@ -71,6 +73,9 @@ type ItemRef struct {
 type QueueAdd struct {
 	URL  string `json:"url"`
 	Next bool   `json:"next,omitempty"`
+	// Force adds a video that is already queued or in the history; without
+	// it the server answers CodeDuplicate and the client asks first.
+	Force bool `json:"force,omitempty"`
 }
 
 // QueueMove places ItemID right after AfterID, or at the head when
@@ -121,7 +126,7 @@ func Decode(data []byte) (string, any, error) {
 	switch env.Type {
 	case TypePing:
 		msg = &Ping{}
-	case TypePlay, TypePause, TypeNext, TypeSkipVote, TypeQueueClear, TypeSessionEnd, TypeChatTyping, TypeChatClear:
+	case TypePlay, TypePause, TypeNext, TypeSkipVote, TypeQueueClearPlayed, TypeQueueClear, TypeQueueShuffle, TypeSessionEnd, TypeChatTyping, TypeChatClear:
 		msg = nil
 	case TypeSeek:
 		msg = &Seek{}
@@ -317,4 +322,5 @@ const (
 	CodeNotFound  = "not_found"
 	CodeInternal  = "internal"
 	CodeRateLimit = "rate_limited"
+	CodeDuplicate = "duplicate"
 )

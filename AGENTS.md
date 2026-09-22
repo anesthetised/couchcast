@@ -88,7 +88,11 @@ and a production image build.
   in the snapshot as `played`; `queue.replay` re-queues one,
   `queue.clearPlayed` empties it); the `loop` setting re-queues the history
   in play order when the queue runs out; `queue.add` with `next` lands
-  right after the current item. Old history is purged hourly. Room events (join/leave,
+  right after the current item; a video already queued or in the history
+  is refused with `duplicate` until the client repeats it with `force`
+  (the add form asks). `queue.clear` drops the waiting items (the current
+  one keeps playing), `queue.shuffle` reorders them (manual mode). Old
+  history is purged hourly. Room events (join/leave,
   add, skip, jump, vote skip) are written to chat as system messages
   (`messages.system`, no author); a leave is logged only after
   `Deps.RejoinGrace` (2 min) without a return, and a rejoin within it is

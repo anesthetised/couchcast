@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math/rand/v2"
 	"sort"
 	"sync"
 	"time"
@@ -41,6 +42,7 @@ type Store interface {
 	MarkQueueItemPlayed(ctx context.Context, roomID, itemID uuid.UUID, at time.Time) error
 	RequeuePlayed(ctx context.Context, roomID uuid.UUID) error
 	ClearPlayed(ctx context.Context, roomID uuid.UUID) error
+	ClearQueue(ctx context.Context, roomID uuid.UUID, keep *uuid.UUID) error
 	SetQueueRanks(ctx context.Context, roomID uuid.UUID, ordered []uuid.UUID) error
 	UpdateRoomPlayback(ctx context.Context, roomID uuid.UUID, p entity.PlaybackState) error
 	ToggleQueueVote(ctx context.Context, itemID, userID uuid.UUID) (bool, error)
@@ -885,7 +887,7 @@ func (r *Room) Jump(ctx context.Context, actor access.Actor, itemID uuid.UUID) e
 
 // QueueAdd admits a URL and appends it to the queue, or places it right
 // after the current item when next is set (manual mode only).
-func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, next bool) error {
+func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, next, force bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := r.requireLocked(actor, access.AddToQueue); err != nil {
@@ -907,6 +909,11 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, 
 	media, err := r.deps.Admit.EnsureMedia(ctx, tx, rawURL)
 	if err != nil {
 		return &Error{Code: protocol.CodeInvalid, Message: admitMessage(err)}
+	}
+	if !force {
+		if err := r.duplicateLocked(media.ID); err != nil {
+			return err
+		}
 	}
 	var addedBy *uuid.UUID
 	if actor.User != nil {
@@ -942,6 +949,90 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, 
 	}
 	r.broadcastLocked()
 	return nil
+}
+
+// duplicateLocked answers CodeDuplicate when the media is already queued
+// or was played in this session, so the client can ask before doubling.
+func (r *Room) duplicateLocked(mediaID uuid.UUID) error {
+	for _, it := range r.queue {
+		if it.MediaID == mediaID {
+			return &Error{Code: protocol.CodeDuplicate, Message: "this video is already in the queue"}
+		}
+	}
+	for _, it := range r.played {
+		if it.MediaID == mediaID {
+			return &Error{Code: protocol.CodeDuplicate, Message: "this video has already been played"}
+		}
+	}
+	return nil
+}
+
+// QueueClear drops every waiting item; the current one keeps playing.
+func (r *Room) QueueClear(ctx context.Context, actor access.Actor) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.requireLocked(actor, access.ManageQueue); err != nil {
+		return err
+	}
+	if err := r.deps.Store.ClearQueue(ctx, r.info.ID, r.current); err != nil {
+		return err
+	}
+	kept := r.queue[:0]
+	for _, it := range r.queue {
+		if r.current != nil && it.ID == *r.current {
+			kept = append(kept, it)
+		}
+	}
+	dropped := len(r.queue) - len(kept)
+	r.queue = kept
+	if actor.User != nil && dropped > 0 {
+		r.logLocked(ctx, fmt.Sprintf("%s cleared the queue (%d %s)", actor.User.Username, dropped, plural(dropped, "video", "videos")))
+	}
+	r.broadcastLocked()
+	return nil
+}
+
+// QueueShuffle reorders the waiting items at random; the current one
+// stays first. Vote mode owns the order and refuses.
+func (r *Room) QueueShuffle(ctx context.Context, actor access.Actor) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.requireLocked(actor, access.ManageQueue); err != nil {
+		return err
+	}
+	if r.info.Settings.VoteMode {
+		return invalid("the queue is ordered by votes while vote mode is on")
+	}
+	rest := r.queue
+	if r.current != nil && len(r.queue) > 0 && r.queue[0].ID == *r.current {
+		rest = r.queue[1:]
+	}
+	if len(rest) < 2 {
+		return nil
+	}
+	rand.Shuffle(len(rest), func(i, j int) { rest[i], rest[j] = rest[j], rest[i] })
+	ids := make([]uuid.UUID, len(r.queue))
+	for i, it := range r.queue {
+		ids[i] = it.ID
+	}
+	if err := r.deps.Store.SetQueueRanks(ctx, r.info.ID, ids); err != nil {
+		return err
+	}
+	for i, it := range r.queue {
+		it.Rank = fmt.Sprintf("%08d", i+1)
+	}
+	if actor.User != nil {
+		r.logLocked(ctx, actor.User.Username+" shuffled the queue")
+	}
+	r.broadcastLocked()
+	return nil
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }
 
 // QueueReplay re-queues an item from the history as a fresh entry.

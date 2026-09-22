@@ -106,8 +106,8 @@ func TestRoomLog(t *testing.T) {
 	assert.Equal(t, []string{"owner joined", "guest joined", "guest left", "guest joined"}, systemLines(owner))
 
 	f.ready("https://a", 10_000)
-	require.NoError(t, f.room.QueueAdd(ctx, f.guest, "https://a", false))
-	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://b", false))
+	require.NoError(t, f.room.QueueAdd(ctx, f.guest, "https://a", false, false))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://b", false, false))
 	require.NoError(t, f.room.Next(ctx, f.owner))
 	lines := systemLines(owner)
 	assert.Equal(t, []string{"guest added “T https://a”", "owner added a video from b", "owner skipped “T https://a”"}, lines[4:])
@@ -123,7 +123,7 @@ func TestRoomLog(t *testing.T) {
 	// Skip by vote is logged too.
 	on := true
 	require.NoError(t, f.room.SettingsSet(ctx, f.owner, protocol.SettingsSet{VoteMode: &on}))
-	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://c", false))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://c", false, false))
 	require.NoError(t, f.room.SkipVote(ctx, f.owner))
 	require.NoError(t, f.room.SkipVote(ctx, f.guest))
 	lines = systemLines(owner)
@@ -178,7 +178,7 @@ func TestMuteSlowModeAndClear(t *testing.T) {
 	err := f.room.ChatSend(ctx, muted, "hi")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "muted until")
-	assert.Error(t, f.room.QueueAdd(ctx, muted, "https://x", false))
+	assert.Error(t, f.room.QueueAdd(ctx, muted, "https://x", false, false))
 	assert.Error(t, f.room.React(muted, "🔥"))
 
 	// Slow mode throttles members but not moderators.

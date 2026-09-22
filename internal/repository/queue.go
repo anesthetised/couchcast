@@ -119,6 +119,13 @@ func (r *Repo) AddQueueItem(ctx context.Context, q Querier, roomID, mediaID uuid
 	return &it, nil
 }
 
+// ClearQueue drops every unplayed item except keep (the current one).
+func (r *Repo) ClearQueue(ctx context.Context, roomID uuid.UUID, keep *uuid.UUID) error {
+	const q = `DELETE FROM queue_items WHERE room_id = $1 AND played_at IS NULL AND ($2::uuid IS NULL OR id <> $2)`
+	_, err := r.pool.Exec(ctx, q, roomID, keep)
+	return wrapErr(err)
+}
+
 // DeleteQueueItem removes an item; returns ErrNotFound when absent.
 func (r *Repo) DeleteQueueItem(ctx context.Context, roomID, itemID uuid.UUID) error {
 	const q = `DELETE FROM queue_items WHERE room_id = $1 AND id = $2`
