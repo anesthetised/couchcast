@@ -31,7 +31,7 @@ func main() {
 		os.Exit(2)
 	}
 	dir := os.Args[1]
-	if err := os.MkdirAll(dir, 0o750); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // a developer tool; the directory is its argument
 		fail(err)
 	}
 	for _, spec := range []struct {
