@@ -257,6 +257,8 @@ type RoomInfo struct {
 	Description string            `json:"description,omitempty"`
 	// Pinned is the message a moderator pinned above the chat.
 	Pinned *ChatMessage `json:"pinned,omitempty"`
+	// ScheduledMs is the announced start, cleared once playback starts.
+	ScheduledMs int64 `json:"scheduledMs,omitempty"`
 }
 
 // Snapshot is the full room state.

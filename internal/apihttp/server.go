@@ -212,6 +212,7 @@ func New(deps Deps) *Server {
 			r.Get("/me/rooms", s.handleMyRooms)
 			r.Get("/users", s.handleSearchUsers)
 			r.Get("/invites", s.handleMyInvites)
+			r.Get("/me/upcoming", s.handleMyUpcoming)
 			r.Post("/invites/{id}/accept", s.handleAcceptInvite)
 			r.Post("/invites/{id}/decline", s.handleDeclineInvite)
 			if deps.Admin != nil {

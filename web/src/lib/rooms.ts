@@ -1,6 +1,6 @@
 // REST calls for rooms, members, bans and invites.
 import { api } from "~/lib/api";
-import type { Ban, Directory, Invite, InviteLink, JoinPreview, Member, Mute, Room, Visibility } from "~/lib/types";
+import type { Ban, Directory, Invite, InviteLink, JoinPreview, Member, Mute, Room, UpcomingRoom, Visibility } from "~/lib/types";
 
 const json = (body: unknown) => ({ method: "POST", body: JSON.stringify(body) });
 
@@ -10,12 +10,13 @@ export const rooms = {
     slug?: string;
     visibility: Visibility;
     description?: string;
+    scheduledAt?: string;
     firstUrl?: string;
     settings?: { voteMode?: boolean; viewersCanAdd?: boolean };
     invites?: string[];
   }) => api<Room & { warnings?: string[] }>("/api/v1/rooms", json(input)),
   get: (slug: string) => api<Room>(`/api/v1/rooms/${slug}`),
-  update: (slug: string, patch: { name?: string; slug?: string; visibility?: Visibility; description?: string }) =>
+  update: (slug: string, patch: { name?: string; slug?: string; visibility?: Visibility; description?: string; scheduledAt?: string | null }) =>
     api<Room>(`/api/v1/rooms/${slug}`, { method: "PATCH", body: JSON.stringify(patch) }),
   remove: (slug: string) => api<void>(`/api/v1/rooms/${slug}`, { method: "DELETE" }),
   leave: (slug: string, username: string) => api<void>(`/api/v1/rooms/${slug}/members/${username}`, { method: "DELETE" }),
@@ -23,7 +24,8 @@ export const rooms = {
   star: (slug: string, on: boolean) => api<void>(`/api/v1/rooms/${slug}/star`, { method: on ? "PUT" : "DELETE" }),
   /** @deprecated superseded by `directory({ mine: true })`; the endpoint stays for compatibility. */
   mine: () => api<Room[]>("/api/v1/me/rooms"),
-  directory: (params: { q?: string; live?: boolean; private?: boolean; mine?: boolean; starred?: boolean; sort?: string; page?: number; perPage?: number }) => {
+  upcoming: () => api<UpcomingRoom[]>("/api/v1/me/upcoming"),
+  directory: (params: { q?: string; live?: boolean; private?: boolean; mine?: boolean; starred?: boolean; upcoming?: boolean; sort?: string; page?: number; perPage?: number }) => {
     const qs = new URLSearchParams();
     if (params.q) qs.set("q", params.q);
     if (params.sort && params.sort !== "active") qs.set("sort", params.sort);
@@ -31,6 +33,7 @@ export const rooms = {
     if (params.private) qs.set("private", "1");
     if (params.mine) qs.set("mine", "1");
     if (params.starred) qs.set("starred", "1");
+    if (params.upcoming) qs.set("upcoming", "1");
     if (params.page && params.page > 1) qs.set("page", String(params.page));
     if (params.perPage) qs.set("perPage", String(params.perPage));
     const suffix = qs.toString();

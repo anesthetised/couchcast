@@ -1,6 +1,6 @@
 import { createSignal, onCleanup, Show, type Component } from "solid-js";
 
-import { formatAgo, formatTime } from "~/lib/format";
+import { formatAgo, formatStart, formatTime } from "~/lib/format";
 import { Player } from "~/lib/player";
 import { rooms } from "~/lib/rooms";
 import { toast } from "~/lib/toast";
@@ -149,8 +149,19 @@ const RoomCard: Component<Props> = (props) => {
             </Show>
             <span>{props.room.owner}</span>
             <span>·</span>
-            <Show when={media() || props.room.viewers > 0} fallback={<span title="Last activity">active {formatAgo(props.room.lastActiveMs)}</span>}>
-              <span>{props.room.viewers} watching</span>
+            <Show
+              when={props.room.live ? null : props.room.scheduledMs}
+              fallback={
+                <Show when={media() || props.room.viewers > 0} fallback={<span title="Last activity">active {formatAgo(props.room.lastActiveMs)}</span>}>
+                  <span>{props.room.viewers} watching</span>
+                </Show>
+              }
+            >
+              {(at) => (
+                <span class="upcoming" title={new Date(at()).toLocaleString()}>
+                  {formatStart(at())}
+                </span>
+              )}
             </Show>
           </div>
         </div>

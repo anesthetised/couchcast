@@ -45,6 +45,7 @@ type Store interface {
 	ClearQueue(ctx context.Context, roomID uuid.UUID, keep *uuid.UUID) error
 	SetQueueRanks(ctx context.Context, roomID uuid.UUID, ordered []uuid.UUID) error
 	UpdateRoomPlayback(ctx context.Context, roomID uuid.UUID, p entity.PlaybackState) error
+	SetRoomSchedule(ctx context.Context, roomID uuid.UUID, at *time.Time) error
 	ToggleQueueVote(ctx context.Context, itemID, userID uuid.UUID) (bool, error)
 	ListQueueVotesByUser(ctx context.Context, roomID, userID uuid.UUID) ([]uuid.UUID, error)
 	UpdateRoomSettings(ctx context.Context, id uuid.UUID, settings entity.Settings) error
@@ -197,6 +198,13 @@ func load(ctx context.Context, deps Deps, id uuid.UUID) (*Room, error) {
 	}
 
 	return r, nil
+}
+
+func unixMs(t *time.Time) int64 {
+	if t == nil {
+		return 0
+	}
+	return t.UnixMilli()
 }
 
 // ID returns the room id.
@@ -474,6 +482,13 @@ func (r *Room) nextLocked(ctx context.Context) error {
 
 func (r *Room) persistLocked(ctx context.Context) error {
 	r.lastPersist = r.now()
+	// The session has started: the announcement has served its purpose.
+	if r.playing && r.info.ScheduledAt != nil {
+		r.info.ScheduledAt = nil
+		if err := r.deps.Store.SetRoomSchedule(ctx, r.info.ID, nil); err != nil {
+			r.deps.Logger.Warn("clear schedule", "room", r.info.Slug, "error", err)
+		}
+	}
 	return r.deps.Store.UpdateRoomPlayback(ctx, r.info.ID, r.stateLocked())
 }
 
@@ -504,6 +519,7 @@ func (r *Room) snapshotLocked() protocol.Snapshot {
 		Room: protocol.RoomInfo{
 			ID: r.info.ID, Slug: r.info.Slug, Name: r.info.Name, Visibility: r.info.Visibility,
 			Settings: r.info.Settings, Owner: r.owner, Description: r.info.Description, Pinned: r.pinned,
+			ScheduledMs: unixMs(r.info.ScheduledAt),
 		},
 		Playback: r.playbackLocked(),
 		Queue:    make([]protocol.QueueEntry, 0, len(r.queue)),

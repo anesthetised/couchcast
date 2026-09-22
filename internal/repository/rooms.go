@@ -14,7 +14,7 @@ import (
 	"github.com/anesthetised/couchcast/internal/entity"
 )
 
-const roomColumns = `id, slug, name, owner_id, visibility, description, settings, current_item_id, playing, position_ms, position_at, rate, pinned_message_id, created_at, updated_at`
+const roomColumns = `id, slug, name, owner_id, visibility, description, settings, current_item_id, playing, position_ms, position_at, rate, pinned_message_id, scheduled_at, created_at, updated_at`
 
 func scanRoom(row pgx.Row) (*entity.Room, error) {
 	var (
@@ -22,7 +22,7 @@ func scanRoom(row pgx.Row) (*entity.Room, error) {
 		settings []byte
 	)
 	err := row.Scan(&r.ID, &r.Slug, &r.Name, &r.OwnerID, &r.Visibility, &r.Description, &settings,
-		&r.CurrentItemID, &r.Playing, &r.PositionMs, &r.PositionAt, &r.Rate, &r.PinnedMessageID, &r.CreatedAt, &r.UpdatedAt)
+		&r.CurrentItemID, &r.Playing, &r.PositionMs, &r.PositionAt, &r.Rate, &r.PinnedMessageID, &r.ScheduledAt, &r.CreatedAt, &r.UpdatedAt)
 	if err != nil {
 		return nil, wrapErr(err)
 	}
@@ -99,7 +99,7 @@ func (r *Repo) GetRoomByID(ctx context.Context, id uuid.UUID) (*entity.Room, err
 
 // UpdateRoom changes the fields an owner may edit. A slug change keeps
 // the old slug in the history and reclaims the new one from it.
-func (r *Repo) UpdateRoom(ctx context.Context, id uuid.UUID, slug, name string, visibility entity.Visibility, description string) (*entity.Room, error) {
+func (r *Repo) UpdateRoom(ctx context.Context, id uuid.UUID, slug, name string, visibility entity.Visibility, description string, scheduledAt *time.Time) (*entity.Room, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, err
@@ -119,14 +119,52 @@ func (r *Repo) UpdateRoom(ctx context.Context, id uuid.UUID, slug, name string, 
 	}
 
 	const q = `
-		UPDATE rooms SET slug = $2, name = $3, visibility = $4, description = $5, updated_at = now()
+		UPDATE rooms SET slug = $2, name = $3, visibility = $4, description = $5, scheduled_at = $6, updated_at = now()
 		WHERE id = $1
 		RETURNING ` + roomColumns
-	room, err := scanRoom(tx.QueryRow(ctx, q, id, slug, name, visibility, description))
+	room, err := scanRoom(tx.QueryRow(ctx, q, id, slug, name, visibility, description, scheduledAt))
 	if err != nil {
 		return nil, err
 	}
 	return room, tx.Commit(ctx)
+}
+
+// SetRoomSchedule sets or clears the announced start.
+func (r *Repo) SetRoomSchedule(ctx context.Context, id uuid.UUID, at *time.Time) error {
+	const q = `UPDATE rooms SET scheduled_at = $2, updated_at = now() WHERE id = $1`
+	return r.exec(ctx, q, id, at)
+}
+
+// UpcomingRoom is a room the user belongs to with a start announced.
+type UpcomingRoom struct {
+	Slug        string
+	Name        string
+	ScheduledAt time.Time
+}
+
+// ListUpcomingForUser returns the user's rooms whose start lies between
+// now and until, soonest first.
+func (r *Repo) ListUpcomingForUser(ctx context.Context, userID uuid.UUID, now, until time.Time) ([]UpcomingRoom, error) {
+	const q = `
+		SELECT r.slug, r.name, r.scheduled_at
+		FROM rooms r JOIN room_members m ON m.room_id = r.id AND m.user_id = $1
+		WHERE r.scheduled_at > $2 AND r.scheduled_at <= $3
+		ORDER BY r.scheduled_at
+	`
+	rows, err := r.pool.Query(ctx, q, userID, now, until)
+	if err != nil {
+		return nil, wrapErr(err)
+	}
+	defer rows.Close()
+	var out []UpcomingRoom
+	for rows.Next() {
+		var u UpcomingRoom
+		if err := rows.Scan(&u.Slug, &u.Name, &u.ScheduledAt); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
 }
 
 // GetCurrentMedia returns the media the room is on, or ErrNotFound when
@@ -195,7 +233,7 @@ type RoomWithRole struct {
 func (r *Repo) ListRoomsForUser(ctx context.Context, userID uuid.UUID) ([]RoomWithRole, error) {
 	const q = `
 		SELECT r.id, r.slug, r.name, r.owner_id, r.visibility, r.description, r.settings, r.current_item_id,
-		       r.playing, r.position_ms, r.position_at, r.rate, r.created_at, r.updated_at, m.role
+		       r.playing, r.position_ms, r.position_at, r.rate, r.scheduled_at, r.created_at, r.updated_at, m.role
 		FROM room_members m
 		JOIN rooms r ON r.id = m.room_id
 		WHERE m.user_id = $1
@@ -215,7 +253,7 @@ func (r *Repo) ListRoomsForUser(ctx context.Context, userID uuid.UUID) ([]RoomWi
 		)
 		rm := &item.Room
 		if err := rows.Scan(&rm.ID, &rm.Slug, &rm.Name, &rm.OwnerID, &rm.Visibility, &rm.Description, &settings, &rm.CurrentItemID,
-			&rm.Playing, &rm.PositionMs, &rm.PositionAt, &rm.Rate, &rm.CreatedAt, &rm.UpdatedAt, &item.Role); err != nil {
+			&rm.Playing, &rm.PositionMs, &rm.PositionAt, &rm.Rate, &rm.ScheduledAt, &rm.CreatedAt, &rm.UpdatedAt, &item.Role); err != nil {
 			return nil, err
 		}
 		rm.Settings = entity.DefaultSettings()
@@ -308,9 +346,11 @@ type DirectoryQuery struct {
 	OnlyPrivate bool // requires ViewerID
 	OnlyMine    bool // requires ViewerID
 	OnlyStarred bool // requires ViewerID
-	Sort        DirectorySort
-	Offset      int
-	Limit       int
+	// OnlyUpcoming lists rooms with a start announced, soonest first.
+	OnlyUpcoming bool
+	Sort         DirectorySort
+	Offset       int
+	Limit        int
 }
 
 // DirectorySort orders the directory; the zero value is "active".
@@ -363,9 +403,13 @@ func (r *Repo) ListDirectory(ctx context.Context, q DirectoryQuery) ([]Directory
 		q.OnlyPrivate, q.OnlyMine, q.OnlyStarred = false, false, false
 	}
 
+	orderBy := q.Sort.orderBy()
+	if q.OnlyUpcoming {
+		orderBy = "r.scheduled_at, r.created_at DESC"
+	}
 	sql := `
 		SELECT r.id, r.slug, r.name, r.owner_id, r.visibility, r.settings, r.current_item_id,
-		       r.playing, r.position_ms, r.position_at, r.rate, r.created_at, r.updated_at,
+		       r.playing, r.position_ms, r.position_at, r.rate, r.scheduled_at, r.created_at, r.updated_at,
 		       u.username,
 		       (SELECT count(*) FROM room_members m WHERE m.room_id = r.id),
 		       coalesce(v.viewers, 0),
@@ -390,11 +434,12 @@ func (r *Repo) ListDirectory(ctx context.Context, q DirectoryQuery) ([]Directory
 		  AND (NOT $8 OR r.visibility = 'private')
 		  AND (NOT $9 OR me.user_id IS NOT NULL)
 		  AND (NOT $10 OR st.user_id IS NOT NULL)
-		ORDER BY ` + q.Sort.orderBy() + `
+		  AND (NOT $11 OR r.scheduled_at > now())
+		ORDER BY ` + orderBy + `
 		OFFSET $5 LIMIT $6
 	`
 	rows, err := r.pool.Query(ctx, sql, q.LiveIDs, q.LiveCounts, escapeLike(q.Search), q.OnlyLive, q.Offset, q.Limit,
-		q.ViewerID, q.OnlyPrivate, q.OnlyMine, q.OnlyStarred)
+		q.ViewerID, q.OnlyPrivate, q.OnlyMine, q.OnlyStarred, q.OnlyUpcoming)
 	if err != nil {
 		return nil, 0, wrapErr(err)
 	}
@@ -417,7 +462,7 @@ func (r *Repo) ListDirectory(ctx context.Context, q DirectoryQuery) ([]Directory
 		)
 		rm := &dr.Room
 		if err := rows.Scan(&rm.ID, &rm.Slug, &rm.Name, &rm.OwnerID, &rm.Visibility, &settings, &rm.CurrentItemID,
-			&rm.Playing, &rm.PositionMs, &rm.PositionAt, &rm.Rate, &rm.CreatedAt, &rm.UpdatedAt,
+			&rm.Playing, &rm.PositionMs, &rm.PositionAt, &rm.Rate, &rm.ScheduledAt, &rm.CreatedAt, &rm.UpdatedAt,
 			&dr.Owner, &dr.MemberCount, &dr.Viewers, &dr.Live, &dr.MyRole, &dr.Starred,
 			&mediaID, &m.SourceKey, &m.SourceURL, &m.Title, &m.DurationMs, &m.ThumbnailURL,
 			&mStatus, &mProg, &m.Error, &m.SizeBytes, &mRend, &m.S3Prefix,

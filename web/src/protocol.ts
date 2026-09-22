@@ -68,6 +68,7 @@ export interface RoomInfo {
   owner: string;
   description?: string;
   pinned?: ChatMessage;
+  scheduledMs?: number;
 }
 
 export interface Playback {

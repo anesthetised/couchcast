@@ -172,7 +172,13 @@ and a production image build.
 - Rooms carry a `description` (≤ 300 chars, patchable, on cards and in the
   snapshot). A slug change records the old slug in `room_slug_history`;
   `GetRoomBySlug` resolves former slugs too (the SPA replaces the URL with
-  the current one), and a new room or a rename back reclaims a slug. Members leave with `DELETE /rooms/{slug}/members/{me}` (the
+  the current one), and a new room or a rename back reclaims a slug.
+  `rooms.scheduled_at` announces the next session (RFC 3339 on create and
+  patch, null clears; must be in the future): a countdown badge in the
+  room, "Starts …" on idle cards, the `upcoming` directory filter (soonest
+  first) and `GET /me/upcoming` (member rooms starting within 30 min),
+  which the auth store polls to fire a reminder ten minutes before. The
+  room clears it the first time playback persists as playing. Members leave with `DELETE /rooms/{slug}/members/{me}` (the
   owner first hands over with `POST /rooms/{slug}/owner {username}`, which
   makes the former owner a moderator). `session.end` (moderators) pauses,
   moves the queue to the history and closes every connection with reason

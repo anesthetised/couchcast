@@ -7,6 +7,7 @@ import Player from "~/components/Player";
 import Queue from "~/components/Queue";
 import { ApiError } from "~/lib/api";
 import { createFullscreen, readFullscreenPanel, readTheater, storeFullscreenPanel, storeTheater, type FullscreenPanel } from "~/lib/fullscreen";
+import { formatStart } from "~/lib/format";
 import { notify } from "~/lib/notify";
 import { recordVisit } from "~/lib/recent";
 import { rooms } from "~/lib/rooms";
@@ -149,6 +150,7 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
           description={snap()?.room.description ?? props.description}
           live={live()}
           viewers={viewers()}
+          scheduledMs={snap()?.room.scheduledMs ?? null}
           starred={props.starred}
           canSettings={props.canSettings}
         />
@@ -277,9 +279,15 @@ const RoomHeader: Component<{
   description: string;
   live: boolean;
   viewers: number;
+  scheduledMs: number | null;
   starred: boolean;
   canSettings: boolean;
 }> = (props) => {
+  // The countdown ticks; a passed start stays visible as "Started …"
+  // until playback clears it.
+  const [now, setNow] = createSignal(Date.now());
+  const tick = window.setInterval(() => setNow(Date.now()), 30_000);
+  onCleanup(() => window.clearInterval(tick));
   const [starred, setStarred] = createSignal(props.starred);
   const toggleStar = async () => {
     const next = !starred();
@@ -322,6 +330,13 @@ const RoomHeader: Component<{
           </Show>
           <Show when={props.visibility === "private"}>
             <span class="badge private">🔒 private</span>
+          </Show>
+          <Show when={props.live ? null : props.scheduledMs}>
+            {(at) => (
+              <span class={`badge upcoming ${at() <= now() ? "due" : ""}`} title={new Date(at()).toLocaleString()}>
+                {formatStart(at(), now())}
+              </span>
+            )}
           </Show>
           <button type="button" class="link small copy" title="Copy link" onClick={() => void copyLink(props.slug)}>
             /r/{props.slug} ⧉

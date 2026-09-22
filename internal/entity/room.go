@@ -61,6 +61,7 @@ type Room struct {
 	Rate          float64
 
 	PinnedMessageID *int64
+	ScheduledAt     *time.Time
 
 	CreatedAt time.Time
 	UpdatedAt time.Time

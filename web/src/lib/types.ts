@@ -47,7 +47,15 @@ export interface Room {
   memberCount: number;
   myRole?: RoomRole;
   starred: boolean;
+  scheduledAt: string | null;
   createdAt: string;
+}
+
+// UpcomingRoom is a member room with a start announced soon.
+export interface UpcomingRoom {
+  slug: string;
+  name: string;
+  scheduledAt: string;
 }
 
 export interface Member {
@@ -108,6 +116,7 @@ export interface DirectoryRoom {
   memberCount: number;
   live: boolean;
   starred: boolean;
+  scheduledMs?: number;
   lastActiveMs: number;
   media: {
     id: string;

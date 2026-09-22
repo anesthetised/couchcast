@@ -3,6 +3,7 @@ package apihttp
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"regexp"
@@ -23,7 +24,8 @@ import (
 type RoomStore interface {
 	CreateRoom(ctx context.Context, slug, name string, ownerID uuid.UUID, visibility entity.Visibility, settings entity.Settings) (*entity.Room, error)
 	GetRoomBySlug(ctx context.Context, slug string) (*entity.Room, error)
-	UpdateRoom(ctx context.Context, id uuid.UUID, slug, name string, visibility entity.Visibility, description string) (*entity.Room, error)
+	UpdateRoom(ctx context.Context, id uuid.UUID, slug, name string, visibility entity.Visibility, description string, scheduledAt *time.Time) (*entity.Room, error)
+	ListUpcomingForUser(ctx context.Context, userID uuid.UUID, now, until time.Time) ([]repository.UpcomingRoom, error)
 	TransferOwnership(ctx context.Context, roomID, from, to uuid.UUID) error
 	DeleteRoom(ctx context.Context, id uuid.UUID) error
 	ListRoomsForUser(ctx context.Context, userID uuid.UUID) ([]repository.RoomWithRole, error)
@@ -130,6 +132,7 @@ type roomResponse struct {
 	MemberCount int               `json:"memberCount"`
 	MyRole      entity.RoomRole   `json:"myRole,omitempty"`
 	Starred     bool              `json:"starred"`
+	ScheduledAt *time.Time        `json:"scheduledAt"`
 	CreatedAt   time.Time         `json:"createdAt"`
 }
 
@@ -301,7 +304,7 @@ func (s *Server) roomResponse(ctx context.Context, rc roomCtx) (roomResponse, er
 	return roomResponse{
 		ID: rc.room.ID, Slug: rc.room.Slug, Name: rc.room.Name, Visibility: rc.room.Visibility,
 		Settings: rc.room.Settings, Owner: owner.Username, Description: rc.room.Description, MemberCount: count, MyRole: rc.actor.Role(),
-		Starred: starred, CreatedAt: rc.room.CreatedAt,
+		Starred: starred, ScheduledAt: rc.room.ScheduledAt, CreatedAt: rc.room.CreatedAt,
 	}, nil
 }
 
@@ -325,6 +328,7 @@ type createRoomRequest struct {
 	Slug        string   `json:"slug"`
 	Visibility  string   `json:"visibility"`
 	Description string   `json:"description"`
+	ScheduledAt *string  `json:"scheduledAt"`
 	FirstURL    string   `json:"firstUrl"`
 	Invites     []string `json:"invites"`
 	Settings    *struct {
@@ -361,6 +365,13 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		writeError(w, http.StatusBadRequest, "visibility must be public or private")
 		return
+	}
+	var scheduledAt *time.Time
+	if req.ScheduledAt != nil && *req.ScheduledAt != "" {
+		if scheduledAt, msg = parseSchedule(*req.ScheduledAt); msg != "" {
+			writeError(w, http.StatusBadRequest, msg)
+			return
+		}
 	}
 
 	if !allowUser(w, s.deps.RoomCreateLimiter, user.ID) {
@@ -429,8 +440,8 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 		slug = generateSlug()
 	}
 
-	if description != "" {
-		if updated, err := s.deps.Rooms.UpdateRoom(r.Context(), room.ID, room.Slug, room.Name, room.Visibility, description); err == nil {
+	if description != "" || scheduledAt != nil {
+		if updated, err := s.deps.Rooms.UpdateRoom(r.Context(), room.ID, room.Slug, room.Name, room.Visibility, description, scheduledAt); err == nil {
 			room = updated
 		} else {
 			s.internalError(w, r, "set description", err)
@@ -495,6 +506,21 @@ type updateRoomRequest struct {
 	Slug        *string `json:"slug"`
 	Visibility  *string `json:"visibility"`
 	Description *string `json:"description"`
+	// ScheduledAt is RFC 3339; an explicit null clears the announced start.
+	ScheduledAt json.RawMessage `json:"scheduledAt"`
+}
+
+// parseSchedule reads an RFC 3339 start; it must be in the future.
+func parseSchedule(raw string) (*time.Time, string) {
+	at, err := time.Parse(time.RFC3339, raw)
+	if err != nil {
+		return nil, "scheduledAt must be an RFC 3339 time"
+	}
+	if at.Before(time.Now()) {
+		return nil, "the scheduled start must be in the future"
+	}
+	at = at.UTC()
+	return &at, ""
 }
 
 func (s *Server) handleUpdateRoom(w http.ResponseWriter, r *http.Request) {
@@ -509,7 +535,23 @@ func (s *Server) handleUpdateRoom(w http.ResponseWriter, r *http.Request) {
 	}
 
 	name, slug, visibility, description := rc.room.Name, rc.room.Slug, rc.room.Visibility, rc.room.Description
+	scheduledAt := rc.room.ScheduledAt
 	var msg string
+	if len(req.ScheduledAt) > 0 {
+		if string(req.ScheduledAt) == "null" {
+			scheduledAt = nil
+		} else {
+			var raw string
+			if err := json.Unmarshal(req.ScheduledAt, &raw); err != nil {
+				writeError(w, http.StatusBadRequest, "scheduledAt must be a string or null")
+				return
+			}
+			if scheduledAt, msg = parseSchedule(raw); msg != "" {
+				writeError(w, http.StatusBadRequest, msg)
+				return
+			}
+		}
+	}
 	if req.Description != nil {
 		if description, msg = validateDescription(*req.Description); msg != "" {
 			writeError(w, http.StatusBadRequest, msg)
@@ -537,7 +579,7 @@ func (s *Server) handleUpdateRoom(w http.ResponseWriter, r *http.Request) {
 		visibility = v
 	}
 
-	room, err := s.deps.Rooms.UpdateRoom(r.Context(), rc.room.ID, slug, name, visibility, description)
+	room, err := s.deps.Rooms.UpdateRoom(r.Context(), rc.room.ID, slug, name, visibility, description, scheduledAt)
 	switch {
 	case errors.Is(err, repository.ErrConflict):
 		writeError(w, http.StatusConflict, "slug is taken")
@@ -914,6 +956,32 @@ func (s *Server) handleMyInvites(w http.ResponseWriter, r *http.Request) {
 	out := make([]inviteResponse, 0, len(invites))
 	for i := range invites {
 		out = append(out, toInviteResponse(&invites[i]))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// upcomingResponse is a member room with a start announced soon.
+type upcomingResponse struct {
+	Slug        string    `json:"slug"`
+	Name        string    `json:"name"`
+	ScheduledAt time.Time `json:"scheduledAt"`
+}
+
+// upcomingHorizon is how far ahead /me/upcoming looks; the client warns
+// ten minutes before, so a polling gap never misses a start.
+const upcomingHorizon = 30 * time.Minute
+
+func (s *Server) handleMyUpcoming(w http.ResponseWriter, r *http.Request) {
+	user := auth.UserFrom(r.Context())
+	now := time.Now()
+	rooms, err := s.deps.Rooms.ListUpcomingForUser(r.Context(), user.ID, now, now.Add(upcomingHorizon))
+	if err != nil {
+		s.internalError(w, r, "list upcoming", err)
+		return
+	}
+	out := make([]upcomingResponse, 0, len(rooms))
+	for _, u := range rooms {
+		out = append(out, upcomingResponse{Slug: u.Slug, Name: u.Name, ScheduledAt: u.ScheduledAt})
 	}
 	writeJSON(w, http.StatusOK, out)
 }

@@ -56,3 +56,33 @@ export function progressDetail(m: { status: string; progress: number; speedBps?:
   if (m.etaMs) parts.push(`${formatEta(m.etaMs)} left`);
   return parts.join(" · ");
 }
+
+// toLocalInput renders a moment for a datetime-local input (local time,
+// minute precision); fromLocalInput parses it back to RFC 3339.
+export function toLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+export function fromLocalInput(value: string): string | null {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+// formatStart describes an announced start relative to now: "Starts in
+// 12 min", "Starts Fri 20:00", or "Started 5m ago" once it has passed.
+export function formatStart(ms: number, now = Date.now()): string {
+  const diff = ms - now;
+  if (diff <= 0) return `Started ${formatAgo(ms, now)}`;
+  if (diff < 60_000) return "Starts in a moment";
+  if (diff < 90 * 60_000) return `Starts in ${Math.round(diff / 60_000)} min`;
+  const d = new Date(ms);
+  const sameDay = d.toDateString() === new Date(now).toDateString();
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (sameDay) return `Starts today ${time}`;
+  if (diff < 6 * 24 * 60 * 60_000) return `Starts ${d.toLocaleDateString([], { weekday: "short" })} ${time}`;
+  return `Starts ${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
+}

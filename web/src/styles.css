@@ -3265,3 +3265,35 @@ button.timecode {
   flex: none;
   white-space: nowrap;
 }
+
+/* --- scheduled sessions ------------------------------------------------------ */
+
+.schedule-input {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.schedule-input input {
+  width: auto;
+}
+
+label .hint {
+  display: block;
+  margin-top: 0.3rem;
+  font-weight: 400;
+}
+
+.room-card-meta .upcoming,
+.badge.upcoming {
+  color: var(--accent);
+}
+
+.badge.upcoming {
+  background: var(--accent-soft);
+}
+
+.badge.upcoming.due {
+  color: var(--text-2);
+  background: var(--surface-3);
+}

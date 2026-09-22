@@ -59,6 +59,7 @@ type directoryRoom struct {
 	MemberCount int                `json:"memberCount"`
 	Live        bool               `json:"live"`
 	Starred     bool               `json:"starred"`
+	ScheduledMs int64              `json:"scheduledMs,omitempty"`
 	LastActive  int64              `json:"lastActiveMs"`
 	Media       *directoryMedia    `json:"media"`
 	Playback    *directoryPlayback `json:"playback"`
@@ -98,7 +99,7 @@ func (s *Server) handleDirectory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	query := repository.DirectoryQuery{
-		Search: search, OnlyLive: flag("live"), OnlyPrivate: flag("private"), OnlyMine: flag("mine"), OnlyStarred: flag("starred"),
+		Search: search, OnlyLive: flag("live"), OnlyPrivate: flag("private"), OnlyMine: flag("mine"), OnlyStarred: flag("starred"), OnlyUpcoming: flag("upcoming"),
 		Sort: repository.ParseDirectorySort(qs.Get("sort")), Offset: (page - 1) * perPage, Limit: perPage,
 	}
 	if user != nil {
@@ -124,6 +125,9 @@ func (s *Server) handleDirectory(w http.ResponseWriter, r *http.Request) {
 			Slug: pr.Room.Slug, Name: pr.Room.Name, Owner: pr.Owner, Visibility: pr.Room.Visibility, Description: pr.Room.Description, MyRole: pr.MyRole,
 			LastActive: pr.Room.UpdatedAt.UnixMilli(),
 			Viewers:    pr.Viewers, MemberCount: pr.MemberCount, Live: pr.Live, Starred: pr.Starred,
+		}
+		if pr.Room.ScheduledAt != nil {
+			dr.ScheduledMs = pr.Room.ScheduledAt.UnixMilli()
 		}
 		if pr.Media != nil {
 			m := &directoryMedia{ID: pr.Media.ID, Title: pr.Media.Title, ThumbnailURL: pr.Media.ThumbnailURL, DurationMs: pr.Media.DurationMs}

@@ -3,6 +3,7 @@ import { createEffect, createResource, createSignal, For, Show, type Component }
 
 import InviteLinks from "~/components/InviteLinks";
 import UsernamePicker from "~/components/UsernamePicker";
+import { fromLocalInput, toLocalInput } from "~/lib/format";
 import { rooms } from "~/lib/rooms";
 import { toast } from "~/lib/toast";
 import { isModerator, type Visibility } from "~/lib/types";
@@ -50,6 +51,7 @@ const RoomSettings: Component = () => {
   const [slug, setSlug] = createSignal("");
   const [visibility, setVisibility] = createSignal<Visibility>("public");
   const [description, setDescription] = createSignal("");
+  const [scheduled, setScheduled] = createSignal("");
   const seedGeneral = () => {
     const r = room();
     if (!r) return;
@@ -57,12 +59,19 @@ const RoomSettings: Component = () => {
     setSlug(r.slug);
     setVisibility(r.visibility);
     setDescription(r.description);
+    setScheduled(toLocalInput(r.scheduledAt));
   };
 
   const saveGeneral = (e: SubmitEvent) => {
     e.preventDefault();
     void run("Saved.", async () => {
-      const updated = await rooms.update(params.slug, { name: name().trim(), slug: slug().trim(), visibility: visibility(), description: description().trim() });
+      const updated = await rooms.update(params.slug, {
+        name: name().trim(),
+        slug: slug().trim(),
+        visibility: visibility(),
+        description: description().trim(),
+        scheduledAt: fromLocalInput(scheduled()),
+      });
       setRoom(updated);
       if (updated.slug !== params.slug) navigate(`/r/${updated.slug}/settings`, { replace: true });
     });
@@ -155,6 +164,20 @@ const RoomSettings: Component = () => {
                       Description <span class="muted">(optional)</span>
                     </span>
                     <textarea rows={2} maxLength={300} value={description()} onInput={(e) => setDescription(e.currentTarget.value)} />
+                  </label>
+                  <label>
+                    <span>
+                      Next session <span class="muted">(optional)</span>
+                    </span>
+                    <div class="schedule-input">
+                      <input type="datetime-local" value={scheduled()} min={toLocalInput(new Date().toISOString())} onInput={(e) => setScheduled(e.currentTarget.value)} />
+                      <Show when={scheduled()}>
+                        <button type="button" class="link small" onClick={() => setScheduled("")}>
+                          Clear
+                        </button>
+                      </Show>
+                    </div>
+                    <span class="hint muted small">Shown as a countdown on the card and in the room; members get a reminder ten minutes before. Cleared when playback starts.</span>
                   </label>
                   <label>
                     Link

@@ -2,9 +2,11 @@ import { createEffect, createResource, createRoot, onCleanup } from "solid-js";
 
 import { api, ApiError } from "~/lib/api";
 import { notify } from "~/lib/notify";
-import type { Invite, User } from "~/lib/types";
+import { rooms } from "~/lib/rooms";
+import type { Invite, UpcomingRoom, User } from "~/lib/types";
 
 const INVITE_POLL_MS = 60_000;
+const REMIND_BEFORE_MS = 10 * 60_000;
 
 export interface Credentials {
   username: string;
@@ -74,12 +76,40 @@ function createAuthStore() {
     }
     known = new Set(list.map((i) => i.id));
   });
+  // Announced sessions: the same poll checks the member rooms starting
+  // soon and reminds ten minutes before, once per start.
+  const remindUpcoming = async () => {
+    let list: UpcomingRoom[];
+    try {
+      list = await rooms.upcoming();
+    } catch {
+      return;
+    }
+    const now = Date.now();
+    for (const u of list) {
+      const at = new Date(u.scheduledAt).getTime();
+      if (at - now > REMIND_BEFORE_MS) continue;
+      const key = `couchcast.reminded.${u.slug}.${at}`;
+      try {
+        if (localStorage.getItem(key)) continue;
+        localStorage.setItem(key, "1");
+      } catch {
+        // storage unavailable: remind every poll rather than never
+      }
+      const min = Math.max(1, Math.round((at - now) / 60_000));
+      notify(`${u.name} starts in ${min} min`, "Your watch party is about to begin.", `start-${u.slug}-${at}`);
+    }
+  };
   createEffect(() => {
     if (!user()) {
       known = null;
       return;
     }
-    const timer = window.setInterval(() => void refetchInvites(), INVITE_POLL_MS);
+    void remindUpcoming();
+    const timer = window.setInterval(() => {
+      void refetchInvites();
+      void remindUpcoming();
+    }, INVITE_POLL_MS);
     onCleanup(() => window.clearInterval(timer));
   });
 

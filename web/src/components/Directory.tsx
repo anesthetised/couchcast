@@ -13,7 +13,7 @@ const MAX_PER_PAGE = 48;
 const REFRESH_MS = 30_000;
 const SEARCH_DEBOUNCE_MS = 300;
 
-type Params = { q?: string; live?: string; private?: string; mine?: string; starred?: string; sort?: string; page?: string };
+type Params = { q?: string; live?: string; private?: string; mine?: string; starred?: string; upcoming?: string; sort?: string; page?: string };
 const SORTS = [
   ["active", "Active"],
   ["viewers", "Most watched"],
@@ -24,7 +24,7 @@ const SORTS = [
 // Directory lists every room the visitor may open: public rooms plus the
 // private rooms they belong to. Search, the filter chips and the page live
 // in the URL so links are shareable and back works.
-type Flag = "live" | "private" | "mine" | "starred";
+type Flag = "live" | "private" | "mine" | "starred" | "upcoming";
 
 const Directory: Component = () => {
   const [params, setParams] = useSearchParams<Params>();
@@ -69,6 +69,7 @@ const Directory: Component = () => {
       private: signedIn() && flag("private"),
       mine: signedIn() && flag("mine"),
       starred: signedIn() && flag("starred"),
+      upcoming: flag("upcoming"),
       sort: sort(),
       page: page(),
       perPage: perPage(),
@@ -97,7 +98,7 @@ const Directory: Component = () => {
     }),
   );
 
-  const filtered = () => Boolean(q() || flag("live") || flag("private") || flag("mine") || flag("starred"));
+  const filtered = () => Boolean(q() || flag("live") || flag("private") || flag("mine") || flag("starred") || flag("upcoming"));
 
   return (
     <section class="directory" ref={(el) => observer.observe(el)}>
@@ -113,6 +114,9 @@ const Directory: Component = () => {
           <button type="button" class="chip" aria-pressed={flag("live")} onClick={() => toggle("live")}>
             <span class="dot" />
             Live
+          </button>
+          <button type="button" class="chip" aria-pressed={flag("upcoming")} onClick={() => toggle("upcoming")} title="Rooms with a session announced">
+            Upcoming
           </button>
           <Show when={signedIn()}>
             <button type="button" class="chip" aria-pressed={flag("private")} onClick={() => toggle("private")}>

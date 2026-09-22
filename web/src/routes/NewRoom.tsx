@@ -3,6 +3,7 @@ import { createEffect, createSignal, on, onCleanup, Show, type Component } from 
 
 import UsernamePicker from "~/components/UsernamePicker";
 import { ApiError } from "~/lib/api";
+import { fromLocalInput, toLocalInput } from "~/lib/format";
 import { rooms } from "~/lib/rooms";
 import type { Visibility } from "~/lib/types";
 import { auth } from "~/store/auth";
@@ -26,6 +27,7 @@ const NewRoom: Component = () => {
   const [slugState, setSlugState] = createSignal<SlugState>("idle");
   const [visibility, setVisibility] = createSignal<Visibility>("public");
   const [description, setDescription] = createSignal("");
+  const [scheduled, setScheduled] = createSignal("");
   const [firstUrl, setFirstUrl] = createSignal("");
   const [voteMode, setVoteMode] = createSignal(false);
   const [viewersCanAdd, setViewersCanAdd] = createSignal(true);
@@ -67,6 +69,7 @@ const NewRoom: Component = () => {
         slug: slug().trim() || undefined,
         visibility: visibility(),
         description: description().trim() || undefined,
+        scheduledAt: fromLocalInput(scheduled()) ?? undefined,
         firstUrl: firstUrl().trim() || undefined,
         settings: { voteMode: voteMode(), viewersCanAdd: viewersCanAdd() },
         invites: visibility() === "private" ? invites() : undefined,
@@ -113,6 +116,19 @@ const NewRoom: Component = () => {
               Description <span class="muted">(optional)</span>
             </span>
             <textarea rows={2} maxLength={300} placeholder="What this room is for, when you watch" value={description()} onInput={(e) => setDescription(e.currentTarget.value)} />
+          </label>
+          <label>
+            <span>
+              First session <span class="muted">(optional)</span>
+            </span>
+            <div class="schedule-input">
+              <input type="datetime-local" value={scheduled()} min={toLocalInput(new Date().toISOString())} onInput={(e) => setScheduled(e.currentTarget.value)} />
+              <Show when={scheduled()}>
+                <button type="button" class="link small" onClick={() => setScheduled("")}>
+                  Clear
+                </button>
+              </Show>
+            </div>
           </label>
           <fieldset class="radio-row">
             <label class="radio">

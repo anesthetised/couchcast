@@ -117,6 +117,9 @@ CREATE TABLE rooms (
     position_at     timestamptz NOT NULL DEFAULT now(),
     -- Playback speed for the whole room (1 = normal).
     rate            real        NOT NULL DEFAULT 1,
+    -- When the next session is announced to start; cleared when playback
+    -- starts.
+    scheduled_at    timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now(),
 
