@@ -13,31 +13,45 @@ import (
 )
 
 const mediaColumns = `id, source_key, source_url, coalesce(title, ''), coalesce(duration_ms, 0), coalesce(thumbnail_url, ''),
-	status, progress, coalesce(error, ''), coalesce(size_bytes, 0), renditions, subtitles, coalesce(s3_prefix, ''),
+	status, progress, coalesce(error, ''), coalesce(size_bytes, 0), renditions, subtitles, chapters, coalesce(s3_prefix, ''),
 	created_at, updated_at, last_accessed_at`
 
-func scanMedia(row pgx.Row) (*entity.Media, error) {
-	var (
-		m                     entity.Media
-		renditions, subtitles []byte
-	)
-	err := row.Scan(&m.ID, &m.SourceKey, &m.SourceURL, &m.Title, &m.DurationMs, &m.ThumbnailURL,
-		&m.Status, &m.Progress, &m.Error, &m.SizeBytes, &renditions, &subtitles, &m.S3Prefix,
-		&m.CreatedAt, &m.UpdatedAt, &m.LastAccessedAt)
-	if err != nil {
-		return nil, wrapErr(err)
-	}
-	if len(renditions) > 0 {
-		if err := json.Unmarshal(renditions, &m.Renditions); err != nil {
-			return nil, err
+// mediaRow receives one mediaColumns row; the JSON columns are decoded by
+// media(). Queries that select extra columns append their own targets.
+type mediaRow struct {
+	m                               entity.Media
+	renditions, subtitles, chapters []byte
+}
+
+func (mr *mediaRow) targets() []any {
+	m := &mr.m
+	return []any{&m.ID, &m.SourceKey, &m.SourceURL, &m.Title, &m.DurationMs, &m.ThumbnailURL,
+		&m.Status, &m.Progress, &m.Error, &m.SizeBytes, &mr.renditions, &mr.subtitles, &mr.chapters, &m.S3Prefix,
+		&m.CreatedAt, &m.UpdatedAt, &m.LastAccessedAt}
+}
+
+func (mr *mediaRow) media() (*entity.Media, error) {
+	m := mr.m
+	for _, f := range []struct {
+		raw []byte
+		dst any
+	}{{mr.renditions, &m.Renditions}, {mr.subtitles, &m.Subtitles}, {mr.chapters, &m.Chapters}} {
+		if len(f.raw) == 0 {
+			continue
 		}
-	}
-	if len(subtitles) > 0 {
-		if err := json.Unmarshal(subtitles, &m.Subtitles); err != nil {
+		if err := json.Unmarshal(f.raw, f.dst); err != nil {
 			return nil, err
 		}
 	}
 	return &m, nil
+}
+
+func scanMedia(row pgx.Row) (*entity.Media, error) {
+	var mr mediaRow
+	if err := row.Scan(mr.targets()...); err != nil {
+		return nil, wrapErr(err)
+	}
+	return mr.media()
 }
 
 // CreateMedia inserts a queued media row for the source key, or returns the
@@ -107,9 +121,16 @@ func (r *Repo) SetMediaProgress(ctx context.Context, id uuid.UUID, progress floa
 }
 
 // SetMediaProbed stores the metadata learned from the source.
-func (r *Repo) SetMediaProbed(ctx context.Context, id uuid.UUID, title string, durationMs int64, thumbnailURL string) error {
-	const q = `UPDATE media SET title = $2, duration_ms = $3, thumbnail_url = $4, updated_at = now() WHERE id = $1`
-	return r.exec(ctx, q, id, title, durationMs, thumbnailURL)
+func (r *Repo) SetMediaProbed(ctx context.Context, id uuid.UUID, title string, durationMs int64, thumbnailURL string, chapters []entity.Chapter) error {
+	if chapters == nil {
+		chapters = []entity.Chapter{}
+	}
+	b, err := json.Marshal(chapters)
+	if err != nil {
+		return err
+	}
+	const q = `UPDATE media SET title = $2, duration_ms = $3, thumbnail_url = $4, chapters = $5, updated_at = now() WHERE id = $1`
+	return r.exec(ctx, q, id, title, durationMs, thumbnailURL, b)
 }
 
 // SetMediaSubtitles records the text tracks packaged with the media.

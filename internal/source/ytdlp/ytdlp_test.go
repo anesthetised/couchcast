@@ -108,3 +108,21 @@ func TestPickSubtitles(t *testing.T) {
 	}
 	assert.Len(t, pickSubtitles(info), maxSubtitleTracks)
 }
+
+func TestChapters(t *testing.T) {
+	info := infoJSON{Chapters: []chapterJSON{
+		{StartTime: 0, EndTime: 12.5, Title: "Intro"},
+		{StartTime: 12.5, EndTime: 12.5, Title: "empty"}, // zero length
+		{StartTime: 12.5, EndTime: 60, Title: "  "},      // no title
+		{StartTime: 60, EndTime: 635, Title: "Main"},
+		{StartTime: 30, EndTime: 40, Title: "out of order"},
+	}}
+	got := chapters(info)
+	require.Len(t, got, 2)
+	assert.Equal(t, source.Chapter{StartMs: 0, EndMs: 12500, Title: "Intro"}, got[0])
+	assert.Equal(t, source.Chapter{StartMs: 60000, EndMs: 635000, Title: "Main"}, got[1])
+
+	// A single chapter is not a table of contents.
+	assert.Nil(t, chapters(infoJSON{Chapters: []chapterJSON{{EndTime: 10, Title: "All"}}}))
+	assert.Nil(t, chapters(infoJSON{}))
+}

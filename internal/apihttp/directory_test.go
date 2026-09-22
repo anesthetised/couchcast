@@ -59,7 +59,7 @@ func TestDirectory(t *testing.T) {
 	}
 
 	m1, _, _ := repo.CreateMedia(ctx, repo.Pool(), "youtube:one", "https://youtu.be/one")
-	require.NoError(t, repo.SetMediaProbed(ctx, m1.ID, "One", 60000, "http://t1"))
+	require.NoError(t, repo.SetMediaProbed(ctx, m1.ID, "One", 60000, "http://t1", nil))
 	require.NoError(t, repo.SetMediaReady(ctx, m1.ID, nil, 1, "p"))
 	i1, _ := repo.AddQueueItem(ctx, repo.Pool(), ready.ID, m1.ID, &owner.ID)
 	require.NoError(t, repo.UpdateRoomPlayback(ctx, ready.ID, entity.PlaybackState{CurrentItemID: &i1.ID, Playing: true, PositionMs: 1000, PositionAt: time.Now()}))

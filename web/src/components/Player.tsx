@@ -4,6 +4,7 @@ import HotkeysSheet from "~/components/HotkeysSheet";
 import { formatTime } from "~/lib/format";
 import { Player as ShakaPlayer, type QualityOption } from "~/lib/player";
 import { Synchronizer, type SyncDebug } from "~/lib/sync";
+import type { Chapter } from "~/protocol";
 import type { RoomStore } from "~/store/room";
 
 type Props = {
@@ -69,6 +70,31 @@ const Player: Component<Props> = (props) => {
   const [pip, setPip] = createSignal(false);
   const [showKeys, setShowKeys] = createSignal(false);
   const [showReactions, setShowReactions] = createSignal(false);
+  const [showChapters, setShowChapters] = createSignal(false);
+  const chapters = () => current()?.media.chapters ?? [];
+  const chapterAt = (ms: number) => {
+    let found: Chapter | null = null;
+    for (const c of chapters()) {
+      if (c.startMs <= ms) found = c;
+      else break;
+    }
+    return found;
+  };
+  const currentChapter = () => chapterAt(nowMs());
+  const seekChapter = (dir: 1 | -1) => {
+    if (!canControl() || !current()) return;
+    const list = chapters();
+    if (!list.length) return;
+    const idx = list.findIndex((c) => c === currentChapter());
+    // Backwards inside a chapter restarts it, like a track on a CD player.
+    const target = dir < 0 && idx >= 0 && nowMs() - list[idx]!.startMs > 3000 ? idx : idx + dir;
+    const c = list[Math.max(0, Math.min(list.length - 1, target))];
+    if (c) props.room.commands.seek(c.startMs);
+  };
+  const jumpToChapter = (c: Chapter) => {
+    setShowChapters(false);
+    if (canControl()) props.room.commands.seek(c.startMs);
+  };
   const canReact = () => props.room.state.me !== null;
   const react = (emoji: string) => {
     props.room.commands.react(emoji);
@@ -353,6 +379,12 @@ const Player: Component<Props> = (props) => {
       case ".":
         stepRate(1);
         break;
+      case "[":
+        seekChapter(-1);
+        break;
+      case "]":
+        seekChapter(1);
+        break;
     }
   };
 
@@ -436,31 +468,61 @@ const Player: Component<Props> = (props) => {
       </div>
 
       <div class="controls">
-        <button type="button" class="icon" onClick={togglePlay} disabled={!canControl() || !current()} title={canControl() ? "Play/pause (Space)" : "Only moderators control playback"}>
-          {props.room.state.playback?.playing ? "❚❚" : "▶"}
-        </button>
-        <span class="time">{formatTime(nowMs())}</span>
-        <div class="seek-wrap" onMouseMove={onSeekHover} onMouseLeave={() => setSeekTip(null)}>
-          <input
-            ref={seekBar}
-            type="range"
-            class="seek"
-            min="0"
-            max={duration() || 0}
-            value={Math.min(nowMs(), duration() || 0)}
-            disabled={!canControl() || !duration()}
-            onChange={onSeekInput}
-            aria-label="Position"
-          />
-          <Show when={seekTip()}>
-            {(t) => (
-              <span class="seek-tip" style={{ left: `${t().x}px` }}>
-                {formatTime(t().ms)}
-              </span>
-            )}
-          </Show>
+        <div class="transport">
+          <button type="button" class="icon" onClick={togglePlay} disabled={!canControl() || !current()} title={canControl() ? "Play/pause (Space)" : "Only moderators control playback"}>
+            {props.room.state.playback?.playing ? "❚❚" : "▶"}
+          </button>
+          <span class="time">{formatTime(nowMs())}</span>
+          <div class="seek-wrap" onMouseMove={onSeekHover} onMouseLeave={() => setSeekTip(null)}>
+            <input
+              ref={seekBar}
+              type="range"
+              class="seek"
+              min="0"
+              max={duration() || 0}
+              value={Math.min(nowMs(), duration() || 0)}
+              disabled={!canControl() || !duration()}
+              onChange={onSeekInput}
+              aria-label="Position"
+            />
+            <Show when={duration() > 0 && chapters().length > 0}>
+              <div class="chapter-marks" aria-hidden="true">
+                <For each={chapters().slice(1)}>{(c) => <span style={{ left: `${(c.startMs / duration()) * 100}%` }} />}</For>
+              </div>
+            </Show>
+            <Show when={seekTip()}>
+              {(t) => (
+                <span class="seek-tip" style={{ left: `${t().x}px` }}>
+                  <Show when={chapterAt(t().ms)}>{(c) => <span class="seek-tip-chapter">{c().title}</span>}</Show>
+                  {formatTime(t().ms)}
+                </span>
+              )}
+            </Show>
+          </div>
+          <span class="time">{formatTime(duration())}</span>
         </div>
-        <span class="time">{formatTime(duration())}</span>
+        <Show when={chapters().length > 0}>
+          <div class="chapter-menu">
+            <button type="button" class="chapter-btn" onClick={() => setShowChapters(!showChapters())} title="Chapters ([ ])" aria-expanded={showChapters()}>
+              <span class="chapter-icon" aria-hidden="true">§</span>
+              <span class="chapter-title">{currentChapter()?.title ?? "Chapters"}</span>
+            </button>
+            <Show when={showChapters()}>
+              <ol class="chapter-list" role="menu">
+                <For each={chapters()}>
+                  {(c) => (
+                    <li>
+                      <button type="button" role="menuitem" class={c === currentChapter() ? "active" : ""} onClick={() => jumpToChapter(c)} disabled={!canControl()}>
+                        <span class="time">{formatTime(c.startMs)}</span>
+                        <span class="chapter-name">{c.title}</span>
+                      </button>
+                    </li>
+                  )}
+                </For>
+              </ol>
+            </Show>
+          </div>
+        </Show>
         <button type="button" class="icon" onClick={toggleMute} title="Mute (M)">
           {muted() ? "🔇" : "🔊"}
         </button>

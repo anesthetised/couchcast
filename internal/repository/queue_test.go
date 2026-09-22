@@ -85,7 +85,7 @@ func TestQueueAndPlayback(t *testing.T) {
 	// Media status transitions.
 	require.NoError(t, repo.SetMediaStatus(ctx, m1.ID, entity.MediaDownloading))
 	require.NoError(t, repo.SetMediaProgress(ctx, m1.ID, 0.5))
-	require.NoError(t, repo.SetMediaProbed(ctx, m1.ID, "Title", 60000, "http://thumb"))
+	require.NoError(t, repo.SetMediaProbed(ctx, m1.ID, "Title", 60000, "http://thumb", nil))
 	require.NoError(t, repo.SetMediaReady(ctx, m1.ID, []entity.Rendition{{ID: "0", Height: 720}}, 123, "media/x/"))
 	mm, err := repo.GetMedia(ctx, m1.ID)
 	require.NoError(t, err)

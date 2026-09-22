@@ -145,7 +145,11 @@ func (w *Worker) process(ctx context.Context, media *entity.Media, log *slog.Log
 	if err != nil {
 		return jobs.Permanent(err)
 	}
-	if err := w.repo.SetMediaProbed(ctx, media.ID, probe.Title, probe.DurationMs, probe.ThumbnailURL); err != nil {
+	chapters := make([]entity.Chapter, 0, len(probe.Chapters))
+	for _, c := range probe.Chapters {
+		chapters = append(chapters, entity.Chapter{StartMs: c.StartMs, EndMs: c.EndMs, Title: c.Title})
+	}
+	if err := w.repo.SetMediaProbed(ctx, media.ID, probe.Title, probe.DurationMs, probe.ThumbnailURL, chapters); err != nil {
 		return err
 	}
 	w.metrics.IngestStep("probe", time.Since(start))

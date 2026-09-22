@@ -7,6 +7,7 @@ const KEYS: { key: string; what: string; mod?: boolean }[] = [
   { key: "← →", what: "Seek 5 seconds", mod: true },
   { key: "N", what: "Next video", mod: true },
   { key: "< >", what: "Slower / faster", mod: true },
+  { key: "[ ]", what: "Previous / next chapter", mod: true },
   { key: "F", what: "Fullscreen" },
   { key: "M", what: "Mute" },
   { key: "C", what: "Subtitles on / off" },

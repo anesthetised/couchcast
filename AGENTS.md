@@ -72,6 +72,10 @@ and a production image build.
   `sub-<lang>.vtt` (same media prefix, same token) and records
   `media.subtitles`. The web player attaches them with
   `addTextTrackAsync`; a failure to fetch subtitles never fails the ingest.
+- Chapters come from the extractor at probe time (`media.chapters`, at
+  least two well-formed entries or none) and ride along in `MediaInfo`;
+  the player draws them as ticks on the seek bar, names the current one in
+  the controls and offers a list (`[`/`]` step for playback controllers).
 - `internal/packager` builds the ffmpeg `-c copy -f dash` command;
   `internal/mediastore` uploads to S3, signs HMAC media tokens and proxies
   `/media/{id}/{file}?t=` with Range support.

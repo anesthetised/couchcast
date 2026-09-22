@@ -37,7 +37,7 @@ func TestListDirectory(t *testing.T) {
 	_ = other
 
 	media, _, _ := repo.CreateMedia(ctx, repo.Pool(), "youtube:abc", "https://youtu.be/abc")
-	require.NoError(t, repo.SetMediaProbed(ctx, media.ID, "Big Movie", 1000, "http://thumb"))
+	require.NoError(t, repo.SetMediaProbed(ctx, media.ID, "Big Movie", 1000, "http://thumb", nil))
 	require.NoError(t, repo.SetMediaReady(ctx, media.ID, nil, 1, "p"))
 	item, err := repo.AddQueueItem(ctx, repo.Pool(), playing.ID, media.ID, &owner.ID)
 	require.NoError(t, err)

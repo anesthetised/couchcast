@@ -18,6 +18,12 @@ export interface Subtitle {
   auto?: boolean;
 }
 
+export interface Chapter {
+  startMs: number;
+  endMs: number;
+  title: string;
+}
+
 export interface MediaInfo {
   id: string;
   title: string;
@@ -28,6 +34,7 @@ export interface MediaInfo {
   error?: string;
   renditions: Rendition[];
   subtitles?: Subtitle[];
+  chapters?: Chapter[];
   manifest?: string;
   token?: string;
   sourceUrl: string;

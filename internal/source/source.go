@@ -58,6 +58,13 @@ type Subtitle struct {
 	Auto bool   // machine-generated captions
 }
 
+// Chapter is a named section of the video.
+type Chapter struct {
+	StartMs int64
+	EndMs   int64
+	Title   string
+}
+
 // Probe is what an extractor learns about a URL without downloading it.
 type Probe struct {
 	Title        string
@@ -65,6 +72,7 @@ type Probe struct {
 	ThumbnailURL string
 	Formats      []Format
 	Subtitles    []Subtitle
+	Chapters     []Chapter
 }
 
 // Selection is the set of formats chosen for packaging.

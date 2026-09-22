@@ -61,17 +61,24 @@ func (e *Extractor) Key(raw string) (string, bool) {
 
 // infoJSON is the subset of yt-dlp's -J output we read.
 type infoJSON struct {
-	ID           string       `json:"id"`
-	Title        string       `json:"title"`
-	Duration     float64      `json:"duration"`
-	Thumbnail    string       `json:"thumbnail"`
-	ExtractorKey string       `json:"extractor_key"`
-	Language     string       `json:"language"`
-	Formats      []formatJSON `json:"formats"`
+	ID           string        `json:"id"`
+	Title        string        `json:"title"`
+	Duration     float64       `json:"duration"`
+	Thumbnail    string        `json:"thumbnail"`
+	ExtractorKey string        `json:"extractor_key"`
+	Language     string        `json:"language"`
+	Formats      []formatJSON  `json:"formats"`
+	Chapters     []chapterJSON `json:"chapters"`
 	// Subtitles are uploaded tracks; automatic captions are machine-made,
 	// one per language the site offers (dozens on YouTube).
 	Subtitles         map[string][]subtitleJSON `json:"subtitles"`
 	AutomaticCaptions map[string][]subtitleJSON `json:"automatic_captions"`
+}
+
+type chapterJSON struct {
+	StartTime float64 `json:"start_time"`
+	EndTime   float64 `json:"end_time"`
+	Title     string  `json:"title"`
 }
 
 type subtitleJSON struct {
@@ -151,7 +158,35 @@ func ParseInfo(data []byte) (*source.Probe, error) {
 	}
 
 	p.Subtitles = pickSubtitles(info)
+	p.Chapters = chapters(info)
 	return p, nil
+}
+
+// maxChapters bounds the list; a few hundred is already a table of
+// contents nobody scrolls.
+const maxChapters = 200
+
+// chapters keeps well-formed, ordered entries; a single chapter spanning
+// the whole video says nothing and is dropped.
+func chapters(info infoJSON) []source.Chapter {
+	out := make([]source.Chapter, 0, len(info.Chapters))
+	var last int64 = -1
+	for _, c := range info.Chapters {
+		start, end := int64(c.StartTime*1000), int64(c.EndTime*1000)
+		title := strings.TrimSpace(c.Title)
+		if title == "" || start < last || end <= start {
+			continue
+		}
+		out = append(out, source.Chapter{StartMs: start, EndMs: end, Title: title})
+		last = start
+		if len(out) == maxChapters {
+			break
+		}
+	}
+	if len(out) < 2 {
+		return nil
+	}
+	return out
 }
 
 // pickSubtitles takes every uploaded track (up to the cap, in language

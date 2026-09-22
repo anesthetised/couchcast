@@ -995,6 +995,7 @@ input[type="radio"] {
   border-radius: var(--radius);
   overflow: hidden;
   border: 1px solid var(--border);
+  container-type: inline-size;
 }
 
 .video-wrap {
@@ -1149,10 +1150,21 @@ kbd {
 
 .controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
   background: var(--surface);
+}
+
+/* Play, times and the seek bar; takes its own row when the settings
+   crowd it out. */
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 340px;
+  min-width: 0;
 }
 
 .controls .icon:disabled {
@@ -2083,11 +2095,6 @@ a.username:hover {
     display: none;
   }
 
-  .controls .seek {
-    flex-basis: 100%;
-    order: -1;
-  }
-
   /* The stage stays put; Chat / Queue live in tabs below it. */
   .stage:not(.fullscreen) {
     position: sticky;
@@ -2797,4 +2804,127 @@ button.timecode {
   background-color: var(--surface-2);
   color: var(--text-2);
   margin-left: 0.4rem;
+}
+
+/* --- chapters --------------------------------------------------------------- */
+
+.chapter-marks {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 0;
+  pointer-events: none;
+}
+
+.chapter-marks span {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 6px;
+  margin-left: -1px;
+  background: var(--surface);
+  opacity: 0.9;
+}
+
+.seek-tip-chapter {
+  display: block;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+  font-variant-numeric: normal;
+}
+
+.chapter-menu {
+  position: relative;
+  min-width: 0;
+}
+
+.chapter-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  max-width: 160px;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+}
+
+.chapter-btn:hover {
+  color: var(--text);
+}
+
+.chapter-icon {
+  color: var(--accent);
+}
+
+.chapter-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chapter-list {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  width: 280px;
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0.3rem;
+  list-style: none;
+  border-radius: var(--radius);
+  background: var(--surface-3);
+  box-shadow: var(--shadow-1);
+  z-index: 6;
+}
+
+.chapter-list button {
+  display: flex;
+  justify-content: flex-start;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font-size: var(--fs-sm);
+  text-align: left;
+}
+
+.chapter-list button:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.chapter-list button:disabled {
+  cursor: default;
+}
+
+.chapter-list button.active {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.chapter-list .time {
+  min-width: 2.6rem;
+  flex: none;
+  text-align: right;
+}
+
+.chapter-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A narrow player keeps the seek bar; the chapter name moves to the tooltip. */
+@container (max-width: 760px) {
+  .chapter-btn .chapter-title {
+    display: none;
+  }
 }

@@ -63,7 +63,7 @@ func TestRoomMeta(t *testing.T) {
 	require.NoError(t, err)
 	m, _, err := repo.CreateMedia(ctx, repo.Pool(), "url:x", "https://x")
 	require.NoError(t, err)
-	require.NoError(t, repo.SetMediaProbed(ctx, m.ID, "Big Buck Bunny", 1000, "https://img/bbb.jpg"))
+	require.NoError(t, repo.SetMediaProbed(ctx, m.ID, "Big Buck Bunny", 1000, "https://img/bbb.jpg", nil))
 	require.NoError(t, repo.SetMediaReady(ctx, m.ID, nil, 1, "p"))
 	item, err := repo.AddQueueItem(ctx, repo.Pool(), room.ID, m.ID, nil)
 	require.NoError(t, err)

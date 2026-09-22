@@ -121,7 +121,7 @@ func (f *fixture) ready(url string, durationMs int64) *entity.Media {
 	ctx := context.Background()
 	m, _, err := f.repo.CreateMedia(ctx, f.repo.Pool(), "url:"+url, url)
 	require.NoError(f.t, err)
-	require.NoError(f.t, f.repo.SetMediaProbed(ctx, m.ID, "T "+url, durationMs, ""))
+	require.NoError(f.t, f.repo.SetMediaProbed(ctx, m.ID, "T "+url, durationMs, "", nil))
 	require.NoError(f.t, f.repo.SetMediaReady(ctx, m.ID, []entity.Rendition{{ID: "0", Height: 720}}, 1, "p"))
 	m, err = f.repo.GetMedia(ctx, m.ID)
 	require.NoError(f.t, err)

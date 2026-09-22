@@ -28,8 +28,6 @@ type Rendition struct {
 	Bitrate int    `json:"bitrate"` // kbit/s
 }
 
-// Media is a video that has been (or is being) ingested. It is shared by
-// every room that queues the same source, keyed by SourceKey.
 // Subtitle is one text track packaged with the media (sub-<lang>.vtt).
 type Subtitle struct {
 	Lang string `json:"lang"`
@@ -37,6 +35,15 @@ type Subtitle struct {
 	Auto bool   `json:"auto,omitempty"` // machine-generated captions
 }
 
+// Chapter is a named section of the video as the source reports it.
+type Chapter struct {
+	StartMs int64  `json:"startMs"`
+	EndMs   int64  `json:"endMs"`
+	Title   string `json:"title"`
+}
+
+// Media is a video that has been (or is being) ingested. It is shared by
+// every room that queues the same source, keyed by SourceKey.
 type Media struct {
 	ID             uuid.UUID
 	SourceKey      string
@@ -50,6 +57,7 @@ type Media struct {
 	SizeBytes      int64
 	Renditions     []Rendition
 	Subtitles      []Subtitle
+	Chapters       []Chapter
 	S3Prefix       string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
