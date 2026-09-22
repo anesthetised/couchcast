@@ -206,7 +206,8 @@ code {
   font-size: var(--fs-sm);
 }
 
-.usermenu a {
+.usermenu a,
+.usermenu .install {
   color: var(--text-2);
 }
 

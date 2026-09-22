@@ -30,14 +30,21 @@ func TestHealthz(t *testing.T) {
 
 func TestSPAFallback(t *testing.T) {
 	static := fstest.MapFS{
-		"index.html":    {Data: []byte("<html>app</html>")},
-		"assets/app.js": {Data: []byte("js")},
+		"index.html":           {Data: []byte("<html>app</html>")},
+		"assets/app.js":        {Data: []byte("js")},
+		"sw.js":                {Data: []byte("sw")},
+		"manifest.webmanifest": {Data: []byte("{}")},
 	}
 	env := newTestEnv(t, static)
 
 	get := func(p string) *httptest.ResponseRecorder { return env.do(http.MethodGet, p, nil) }
 
 	assert.Equal(t, "js", get("/assets/app.js").Body.String())
+	// The PWA files are served uncached with the manifest media type.
+	assert.Equal(t, "no-cache", get("/sw.js").Header().Get("Cache-Control"))
+	manifest := get("/manifest.webmanifest")
+	assert.Equal(t, "no-cache", manifest.Header().Get("Cache-Control"))
+	assert.Equal(t, "application/manifest+json", manifest.Header().Get("Content-Type"))
 	assert.Equal(t, "<html>app</html>", get("/r/some-room").Body.String())
 	assert.Equal(t, "<html>app</html>", get("/").Body.String())
 	assert.Equal(t, http.StatusNotFound, get("/api/v1/nope").Code)

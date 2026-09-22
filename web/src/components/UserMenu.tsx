@@ -1,6 +1,7 @@
 import { useNavigate } from "@solidjs/router";
 import { Show, type Component } from "solid-js";
 
+import { installAvailable, promptInstall } from "~/lib/install";
 import { enabled as notifyOn, notificationsSupported, setEnabled as setNotify } from "~/lib/notify";
 import { toast } from "~/lib/toast";
 import { avatarClass } from "~/lib/types";
@@ -24,6 +25,11 @@ const UserMenu: Component = () => {
 
   return (
     <nav class="usermenu">
+      <Show when={installAvailable()}>
+        <button type="button" class="link install" onClick={() => void promptInstall()} title="Install couchcast as an app">
+          Install app
+        </button>
+      </Show>
       <Show
         when={auth.user()}
         fallback={

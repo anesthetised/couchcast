@@ -34,9 +34,14 @@ func spaHandler(static fs.FS, meta *metaInjector) http.HandlerFunc {
 
 		if f, err := static.Open(name); err == nil {
 			_ = f.Close()
-			if name == "index.html" {
-				// The shell must never be cached: hashed assets are.
+			switch name {
+			case "index.html", "sw.js", "manifest.webmanifest":
+				// The shell, the service worker and the manifest must never
+				// be cached: hashed assets are.
 				w.Header().Set("Cache-Control", "no-cache")
+			}
+			if name == "manifest.webmanifest" {
+				w.Header().Set("Content-Type", "application/manifest+json")
 			}
 			fileServer.ServeHTTP(w, r)
 			return

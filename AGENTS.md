@@ -56,6 +56,14 @@ and a production image build.
   (`testing_test.go`) and drive the real router with cookies.
 - `web/embed.go` embeds `web/dist` into the binary; in development `dist/`
   holds only a placeholder and Vite serves the app.
+- PWA: `web/public/manifest.webmanifest`, the icons (rendered by `go run
+  ./tools/icons web/public/icons`, never hand-drawn) and `web/public/sw.js`
+  (cache-first for `/assets` and `/icons`, network-first navigations with
+  the last shell as the offline fallback, nothing else touched) ship with
+  the bundle; `lib/install.ts` registers the worker in production builds
+  only and shows "Install app" in the top bar when the browser offers
+  `beforeinstallprompt`. The Go handler serves `sw.js` and the manifest
+  with `no-cache`.
 - Permissions are a single function (`internal/access`, phase 3); do not
   scatter role checks across handlers.
 - The ingest worker (`couchcast ingest`) talks to the web server only
