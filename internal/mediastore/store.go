@@ -121,6 +121,12 @@ func (s *Store) DeletePrefix(ctx context.Context, prefix string) error {
 	return nil
 }
 
+// IsThumbnail reports whether a media object name is the poster the
+// ingest worker stores as thumb.<ext>; posters are served without a token.
+func IsThumbnail(name string) bool {
+	return strings.HasPrefix(name, "thumb.")
+}
+
 // ContentType maps DASH file names to media types. mime.TypeByExtension
 // does not know .mpd and .m4s.
 func ContentType(name string) string {
@@ -137,6 +143,12 @@ func ContentType(name string) string {
 		return "audio/mp4"
 	case ".webm":
 		return "video/webm"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".png":
+		return "image/png"
+	case ".webp":
+		return "image/webp"
 	}
 	if t := mime.TypeByExtension(path.Ext(name)); t != "" {
 		return t

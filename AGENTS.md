@@ -80,6 +80,12 @@ and a production image build.
   `sub-<lang>.vtt` (same media prefix, same token) and records
   `media.subtitles`. The web player attaches them with
   `addTextTrackAsync`; a failure to fetch subtitles never fails the ingest.
+- The poster is copied at ingest (`fetchThumbnail`, ≤ 8 MB, jpeg/png/webp)
+  to `thumb.<ext>` in the media prefix and `media.thumbnail_url` becomes
+  `/media/<id>/thumb.<ext>` once uploaded; the media proxy serves
+  `thumb.*` without a token and publicly cacheable, and the Open Graph
+  injector makes the path absolute. Until then (or if the fetch fails) the
+  source URL stays.
 - Chapters come from the extractor at probe time (`media.chapters`, at
   least two well-formed entries or none) and ride along in `MediaInfo`;
   the player draws them as ticks on the seek bar, names the current one in

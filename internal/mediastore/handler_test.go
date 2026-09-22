@@ -34,5 +34,9 @@ func TestContentType(t *testing.T) {
 	assert.Equal(t, "video/iso.segment", ContentType("chunk-0-00001.m4s"))
 	assert.Equal(t, "video/webm", ContentType("init-0.webm"))
 	assert.Equal(t, "text/vtt; charset=utf-8", ContentType("sub-en.vtt"))
+	assert.Equal(t, "image/jpeg", ContentType("thumb.jpg"))
+	assert.Equal(t, "image/webp", ContentType("thumb.webp"))
+	assert.True(t, IsThumbnail("thumb.png"))
+	assert.False(t, IsThumbnail("manifest.mpd"))
 	assert.Equal(t, "application/octet-stream", ContentType("weird.bin"))
 }

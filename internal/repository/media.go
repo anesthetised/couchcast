@@ -133,6 +133,12 @@ func (r *Repo) SetMediaProbed(ctx context.Context, id uuid.UUID, title string, d
 	return r.exec(ctx, q, id, title, durationMs, thumbnailURL, b)
 }
 
+// SetMediaThumbnail points the poster at a copy we serve ourselves.
+func (r *Repo) SetMediaThumbnail(ctx context.Context, id uuid.UUID, thumbnailURL string) error {
+	const q = `UPDATE media SET thumbnail_url = $2, updated_at = now() WHERE id = $1`
+	return r.exec(ctx, q, id, thumbnailURL)
+}
+
 // SetMediaSubtitles records the text tracks packaged with the media.
 func (r *Repo) SetMediaSubtitles(ctx context.Context, id uuid.UUID, subtitles []entity.Subtitle) error {
 	if subtitles == nil {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -33,13 +34,14 @@ type Worker struct {
 	ladder    []int
 	logger    *slog.Logger
 	metrics   *metrics.Metrics
+	http      *http.Client // thumbnails
 }
 
 // NewWorker wires the pipeline. metrics may be nil.
 func NewWorker(repo MediaRepo, queue *jobs.Queue, extractor source.Extractor, pkg *packager.Packager,
 	store *mediastore.Store, workDir string, ladder []int, logger *slog.Logger, m *metrics.Metrics) *Worker {
 	return &Worker{repo: repo, queue: queue, extractor: extractor, packager: pkg, store: store,
-		workDir: workDir, ladder: ladder, logger: logger, metrics: m}
+		workDir: workDir, ladder: ladder, logger: logger, metrics: m, http: &http.Client{Timeout: thumbnailTimeout}}
 }
 
 // Handle implements jobs.Handler.
@@ -170,8 +172,12 @@ func (w *Worker) process(ctx context.Context, media *entity.Media, log *slog.Log
 	reporter.report(ctx, 1, true)
 	w.metrics.IngestStep("download", time.Since(start))
 
-	// Subtitles are a bonus: a failure here logs and moves on.
+	// Subtitles and the poster are a bonus: a failure here logs and moves on.
 	subtitles := w.fetchSubtitles(ctx, media.SourceURL, probe.Subtitles, filepath.Join(dir, "subs"), outDir, log)
+	thumb, err := fetchThumbnail(ctx, w.http, probe.ThumbnailURL, outDir)
+	if err != nil {
+		log.Warn("thumbnail", "error", err)
+	}
 
 	// --- package -------------------------------------------------------------
 	if err := w.setStatus(ctx, media.ID, entity.MediaPackaging); err != nil {
@@ -208,6 +214,11 @@ func (w *Worker) process(ctx context.Context, media *entity.Media, log *slog.Log
 
 	if err := w.repo.SetMediaSubtitles(ctx, media.ID, subtitles); err != nil {
 		return err
+	}
+	if thumb != "" {
+		if err := w.repo.SetMediaThumbnail(ctx, media.ID, "/media/"+media.ID.String()+"/"+thumb); err != nil {
+			return err
+		}
 	}
 	if err := w.repo.SetMediaReady(ctx, media.ID, renditions, size, prefix); err != nil {
 		return err

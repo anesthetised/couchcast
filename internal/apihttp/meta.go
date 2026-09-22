@@ -118,6 +118,10 @@ func (m *metaInjector) build(r *http.Request, slug string) string {
 		scheme = "https"
 	}
 	url := scheme + "://" + r.Host + "/r/" + slug
+	// A self-hosted poster is a path; crawlers need it absolute.
+	if strings.HasPrefix(image, "/") {
+		image = scheme + "://" + r.Host + image
+	}
 
 	var b strings.Builder
 	tag := func(prop, content string) {

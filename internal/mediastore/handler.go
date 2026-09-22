@@ -53,7 +53,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !h.signer.Verify(r.URL.Query().Get("t"), mediaID, h.now()) {
+	// Posters are public (cards, link previews); everything else needs
+	// the media token.
+	public := IsThumbnail(file)
+	if !public && !h.signer.Verify(r.URL.Query().Get("t"), mediaID, h.now()) {
 		http.Error(w, "invalid or expired media token", http.StatusUnauthorized)
 		return
 	}
@@ -86,7 +89,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", ContentType(file))
-	w.Header().Set("Cache-Control", "private, max-age=3600")
+	if public {
+		w.Header().Set("Cache-Control", "public, max-age=86400")
+	} else {
+		w.Header().Set("Cache-Control", "private, max-age=3600")
+	}
 	if info.ETag != "" {
 		w.Header().Set("ETag", `"`+info.ETag+`"`)
 	}
