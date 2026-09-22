@@ -176,6 +176,9 @@ and a production image build.
   `chat.pin {id}` / `chat.unpin` (moderators) keep one message above the
   chat (`rooms.pinned_message_id`, `RoomInfo.pinned`, broadcast as
   `chat.pinned`); deleting or clearing unpins.
+- Emoji live in `web/src/lib/emoji.ts` (a curated set with shortcodes):
+  the composer's ☺ opens `EmojiPicker`, `:smi` autocompletes like `@`
+  mentions, and remaining `:name:` codes are expanded on send.
 - Invite links (`room_invite_links`, token hash only): moderators mint them
   with `POST /rooms/{slug}/invite-links` (optional expiry and use limit;
   the URL `/join/<token>` is returned once), list and revoke them;

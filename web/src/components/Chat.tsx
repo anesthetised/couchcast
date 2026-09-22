@@ -1,7 +1,9 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type Component } from "solid-js";
 
+import EmojiPicker from "~/components/EmojiPicker";
 import LinkCard from "~/components/LinkCard";
 import { mentionQuery, mentions, parseMessage } from "~/lib/chatText";
+import { expandShortcodes, rememberEmoji, searchEmoji, shortcodeQuery, type Emoji } from "~/lib/emoji";
 import { formatTime } from "~/lib/format";
 import { rooms } from "~/lib/rooms";
 import { toast } from "~/lib/toast";
@@ -121,8 +123,41 @@ const Chat: Component<Props> = (props) => {
     return [...names].filter((n) => n.toLowerCase() !== mine && n.toLowerCase().startsWith(p)).slice(0, 6);
   });
 
+  // --- emoji ---------------------------------------------------------------
+  // ":smi" at the caret suggests emoji the same way "@" suggests names;
+  // the ☺ button opens the full picker. Codes left as text are expanded
+  // when the message is sent.
+  const [shortcode, setShortcode] = createSignal<{ start: number; prefix: string } | null>(null);
+  const emojiCandidates = createMemo<Emoji[]>(() => {
+    const q = shortcode();
+    return q ? searchEmoji(q.prefix, 8) : [];
+  });
+  const [showPicker, setShowPicker] = createSignal(false);
+
+  const insertAtCaret = (text: string, replaceFrom?: number) => {
+    const value = input.value;
+    const caret = input.selectionStart ?? value.length;
+    const from = replaceFrom ?? caret;
+    const next = `${value.slice(0, from)}${text}${value.slice(caret)}`;
+    setBody(next);
+    queueMicrotask(() => {
+      const pos = from + text.length;
+      input.setSelectionRange(pos, pos);
+      input.focus();
+    });
+  };
+  const pickEmoji = (char: string) => {
+    rememberEmoji(char);
+    const q = shortcode();
+    insertAtCaret(char + " ", q?.start);
+    setShortcode(null);
+    setShowPicker(false);
+  };
+
   const refreshMention = () => {
-    setMention(mentionQuery(input.value, input.selectionStart ?? input.value.length));
+    const caret = input.selectionStart ?? input.value.length;
+    setMention(mentionQuery(input.value, caret));
+    setShortcode(shortcodeQuery(input.value, caret));
     setActive(0);
   };
 
@@ -142,24 +177,28 @@ const Chat: Component<Props> = (props) => {
   };
 
   const onKey = (e: KeyboardEvent) => {
-    const list = candidates();
-    if (!list.length) return;
+    const names = candidates();
+    const emoji = emojiCandidates();
+    const n = names.length || emoji.length;
+    if (!n) return;
     switch (e.key) {
       case "ArrowDown":
         e.preventDefault();
-        setActive((active() + 1) % list.length);
+        setActive((active() + 1) % n);
         break;
       case "ArrowUp":
         e.preventDefault();
-        setActive((active() - 1 + list.length) % list.length);
+        setActive((active() - 1 + n) % n);
         break;
       case "Enter":
       case "Tab":
         e.preventDefault();
-        pick(list[active()]!);
+        if (names.length) pick(names[active()]!);
+        else pickEmoji(emoji[active()]!.char);
         break;
       case "Escape":
         setMention(null);
+        setShortcode(null);
         break;
     }
   };
@@ -212,10 +251,11 @@ const Chat: Component<Props> = (props) => {
     const text = body().trim();
     if (!text) return;
     lastTyping = 0;
-    props.room.commands.chat(text, replyTo()?.id);
+    props.room.commands.chat(expandShortcodes(text), replyTo()?.id);
     setBody("");
     setReplyTo(null);
     setMention(null);
+    setShortcode(null);
     setDivider(null);
     scrollToBottom();
   };
@@ -406,11 +446,30 @@ const Chat: Component<Props> = (props) => {
               hintTyping(e.currentTarget.value);
             }}
             onKeyDown={(e) => {
-              if (e.key === "Escape" && replyTo() && !candidates().length) setReplyTo(null);
+              if (e.key === "Escape" && replyTo() && !candidates().length && !emojiCandidates().length) setReplyTo(null);
               onKey(e);
             }}
-            onBlur={() => window.setTimeout(() => setMention(null), 120)}
+            onBlur={() => window.setTimeout(() => (setMention(null), setShortcode(null)), 120)}
           />
+          <Show when={emojiCandidates().length > 0 && !candidates().length}>
+            <ul class="picker-menu chat-mentions chat-emoji-menu" role="listbox">
+              <For each={emojiCandidates()}>
+                {(em, i) => (
+                  <li role="option" aria-selected={i() === active()} classList={{ active: i() === active() }} onMouseDown={(e) => (e.preventDefault(), pickEmoji(em.char))}>
+                    <span class="emoji">{em.char}</span> :{em.names[0]}:
+                  </li>
+                )}
+              </For>
+            </ul>
+          </Show>
+          <div class="emoji-anchor">
+            <button type="button" class={`icon ${showPicker() ? "" : "dim"}`} onClick={() => setShowPicker(!showPicker())} title="Emoji" aria-expanded={showPicker()} aria-label="Emoji">
+              ☺
+            </button>
+          </div>
+          <Show when={showPicker()}>
+            <EmojiPicker onPick={pickEmoji} onClose={() => setShowPicker(false)} />
+          </Show>
           <button type="submit">Send</button>
         </form>
       </Show>
