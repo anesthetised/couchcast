@@ -2928,3 +2928,25 @@ button.timecode {
     display: none;
   }
 }
+
+/* --- theater mode ------------------------------------------------------------ */
+
+.room.theater {
+  grid-template-columns: 1fr;
+}
+
+/* The video fills the viewport height (minus bar, header and controls)
+   or its 16:9 width, whichever is smaller; the chat overlays it. */
+.stage.theater .video-wrap {
+  aspect-ratio: auto;
+  height: min(calc(100vh - 15rem), calc((100vw - 3rem) * 9 / 16));
+  min-height: 360px;
+}
+
+.stage.theater .video-wrap video {
+  object-fit: contain;
+}
+
+.stage.theater .fs-panel {
+  bottom: 44px;
+}

@@ -9,6 +9,7 @@ const KEYS: { key: string; what: string; mod?: boolean }[] = [
   { key: "< >", what: "Slower / faster", mod: true },
   { key: "[ ]", what: "Previous / next chapter", mod: true },
   { key: "F", what: "Fullscreen" },
+  { key: "T", what: "Theater mode" },
   { key: "M", what: "Mute" },
   { key: "C", what: "Subtitles on / off" },
   { key: "Wheel", what: "Volume (over the video)" },

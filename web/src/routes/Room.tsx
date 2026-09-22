@@ -6,7 +6,7 @@ import Chat from "~/components/Chat";
 import Player from "~/components/Player";
 import Queue from "~/components/Queue";
 import { ApiError } from "~/lib/api";
-import { createFullscreen, readFullscreenPanel, storeFullscreenPanel, type FullscreenPanel } from "~/lib/fullscreen";
+import { createFullscreen, readFullscreenPanel, readTheater, storeFullscreenPanel, storeTheater, type FullscreenPanel } from "~/lib/fullscreen";
 import { notify } from "~/lib/notify";
 import { recordVisit } from "~/lib/recent";
 import { rooms } from "~/lib/rooms";
@@ -59,6 +59,11 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
   };
   const chatPanel = usePanel("chat");
   const queuePanel = usePanel("queue");
+  const [theaterPref, setTheaterPref] = createSignal(readTheater());
+  const toggleTheater = () => {
+    setTheaterPref(!theaterPref());
+    storeTheater(theaterPref());
+  };
 
   // Warnings handed over by the create page; shown once, dismissable.
   const location = useLocation<{ warnings?: string[] }>();
@@ -73,6 +78,11 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
     mq.addEventListener("change", onChange);
     onCleanup(() => mq.removeEventListener("change", onChange));
   });
+  // Theater is a desktop layout; fullscreen takes precedence over it.
+  const theater = () => theaterPref() && !mobile() && !fs.active();
+  // The chat is an overlay on the stage in fullscreen and theater; the
+  // queue only in fullscreen (in theater it sits right below the video).
+  const overlay = () => fs.active() || theater();
   const [params, setParams] = useSearchParams<{ tab?: string }>();
   const tab = () => (params.tab === "queue" ? "queue" : "chat");
   const setTab = (t: "chat" | "queue") => setParams({ tab: t === "chat" ? undefined : t }, { replace: true });
@@ -123,7 +133,7 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
   );
 
   return (
-    <div class="room">
+    <div class={`room ${theater() ? "theater" : ""}`}>
       <div class="room-main">
         <RoomHeader
           store={store}
@@ -149,7 +159,7 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
         <Show when={store.lastError()}>{(e) => <p class="notice">{e()}</p>}</Show>
 
         <div
-          class={`stage ${fs.active() ? "fullscreen" : ""} ${fs.idle() ? "idle" : ""}`}
+          class={`stage ${fs.active() ? "fullscreen" : ""} ${theater() ? "theater" : ""} ${fs.idle() ? "idle" : ""}`}
           ref={stage}
           onMouseMove={fs.touch}
           onClick={fs.touch}
@@ -176,6 +186,9 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
             room={store}
             onFullscreen={fs.toggle}
             isFullscreen={fs.active()}
+            overlay={overlay()}
+            isTheater={theater()}
+            onTheater={mobile() ? undefined : toggleTheater}
             chatVisible={chatPanel.on()}
             onToggleChat={chatPanel.toggle}
             queueVisible={queuePanel.on()}
@@ -186,7 +199,7 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
               <Queue room={store} />
             </div>
           </Show>
-          <Show when={fs.active() && chatPanel.on()}>
+          <Show when={overlay() && chatPanel.on()}>
             <div class="fs-panel fs-chat">
               <Chat room={store} />
             </div>
@@ -239,7 +252,7 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
         </Show>
       </div>
 
-      <Show when={!mobile()}>
+      <Show when={!mobile() && !theater()}>
         <aside class="room-chat">
           <Chat room={store} />
         </aside>

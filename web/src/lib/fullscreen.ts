@@ -67,3 +67,23 @@ export function storeFullscreenPanel(panel: FullscreenPanel, on: boolean) {
     // storage unavailable
   }
 }
+
+// Theater mode widens the stage to the page and turns the chat into an
+// overlay panel, like fullscreen without leaving the page. Desktop only.
+const theaterKey = "couchcast.theater";
+
+export function readTheater(): boolean {
+  try {
+    return localStorage.getItem(theaterKey) === "on";
+  } catch {
+    return false;
+  }
+}
+
+export function storeTheater(on: boolean) {
+  try {
+    localStorage.setItem(theaterKey, on ? "on" : "off");
+  } catch {
+    // storage unavailable
+  }
+}

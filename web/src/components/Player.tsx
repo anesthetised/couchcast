@@ -13,6 +13,11 @@ type Props = {
   // live inside it; the player only renders the buttons.
   onFullscreen?: () => void;
   isFullscreen?: boolean;
+  // Theater widens the stage; the chat becomes an overlay (as in
+  // fullscreen), so its toggle shows whenever `overlay` is set.
+  isTheater?: boolean;
+  onTheater?: () => void;
+  overlay?: boolean;
   chatVisible?: boolean;
   onToggleChat?: () => void;
   queueVisible?: boolean;
@@ -359,6 +364,10 @@ const Player: Component<Props> = (props) => {
       case "F":
         fullscreen();
         break;
+      case "t":
+      case "T":
+        props.onTheater?.();
+        break;
       case "m":
       case "M":
         toggleMute();
@@ -597,9 +606,14 @@ const Player: Component<Props> = (props) => {
             ☰
           </button>
         </Show>
-        <Show when={props.isFullscreen && props.onToggleChat}>
+        <Show when={props.overlay && props.onToggleChat}>
           <button type="button" class={`icon ${props.chatVisible ? "" : "dim"}`} onClick={props.onToggleChat} title={props.chatVisible ? "Hide chat" : "Show chat"}>
             💬
+          </button>
+        </Show>
+        <Show when={props.onTheater && !props.isFullscreen}>
+          <button type="button" class={`icon ${props.isTheater ? "" : "dim"}`} onClick={props.onTheater} title={props.isTheater ? "Leave theater mode (T)" : "Theater mode (T)"}>
+            ▭
           </button>
         </Show>
         <button type="button" class="icon" onClick={fullscreen} title={props.isFullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}>

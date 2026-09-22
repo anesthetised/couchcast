@@ -107,7 +107,7 @@ and a production image build.
   dropped socket shows a reconnecting strip; a `kicked` message, a close
   with reason `room deleted`, or a 404/403 on the REST check before the
   second retry ends the session (`store.ended()`) with a full-stage notice.
-  `Player.tsx` owns the hotkeys (Space, ←/→, F, M, N, `?` — ignored in inputs),
+  `Player.tsx` owns the hotkeys (Space, ←/→, F, T, M, N, `?` — ignored in inputs),
   persists volume/mute/quality in `localStorage` (`couchcast.*`) and shows
   the sync state as a dot (click for the debug overlay). `chat.typing`
   and `react {emoji}` are ephemeral fan-outs (never stored; reactions are
@@ -178,6 +178,8 @@ and a production image build.
   640 px the room page keeps the stage sticky and shows Chat / Queue as
   tabs (`?tab=queue`, swipe switches); the player preloads the next ready
   item in the last five seconds (`Player.preload`) for a gapless switch.
+  Theater mode (`T`, `couchcast.theater`, desktop only) widens the stage to
+  the page and shows the chat as the same overlay panel fullscreen uses.
 - Profile: `PATCH /api/v1/me` (avatar colour, a palette key from
   `entity.AvatarColors`) and `POST /api/v1/me/password` (verifies the
   current one, revokes every session, reissues the caller's). The SPA page
