@@ -14,7 +14,7 @@ import (
 	"github.com/anesthetised/couchcast/internal/entity"
 )
 
-const roomColumns = `id, slug, name, owner_id, visibility, description, settings, current_item_id, playing, position_ms, position_at, rate, created_at, updated_at`
+const roomColumns = `id, slug, name, owner_id, visibility, description, settings, current_item_id, playing, position_ms, position_at, rate, pinned_message_id, created_at, updated_at`
 
 func scanRoom(row pgx.Row) (*entity.Room, error) {
 	var (
@@ -22,7 +22,7 @@ func scanRoom(row pgx.Row) (*entity.Room, error) {
 		settings []byte
 	)
 	err := row.Scan(&r.ID, &r.Slug, &r.Name, &r.OwnerID, &r.Visibility, &r.Description, &settings,
-		&r.CurrentItemID, &r.Playing, &r.PositionMs, &r.PositionAt, &r.Rate, &r.CreatedAt, &r.UpdatedAt)
+		&r.CurrentItemID, &r.Playing, &r.PositionMs, &r.PositionAt, &r.Rate, &r.PinnedMessageID, &r.CreatedAt, &r.UpdatedAt)
 	if err != nil {
 		return nil, wrapErr(err)
 	}

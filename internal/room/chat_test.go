@@ -22,11 +22,11 @@ func TestChat(t *testing.T) {
 	f.room.Join(ctx, anon, access.Actor{})
 
 	// Anonymous viewers read but cannot write.
-	assert.Error(t, f.room.ChatSend(ctx, access.Actor{}, "hi"))
-	assert.Error(t, f.room.ChatSend(ctx, f.guest, "   "))
-	assert.Error(t, f.room.ChatSend(ctx, f.guest, strings.Repeat("x", 2001)))
+	assert.Error(t, f.room.ChatSend(ctx, access.Actor{}, "hi", nil))
+	assert.Error(t, f.room.ChatSend(ctx, f.guest, "   ", nil))
+	assert.Error(t, f.room.ChatSend(ctx, f.guest, strings.Repeat("x", 2001), nil))
 
-	require.NoError(t, f.room.ChatSend(ctx, f.guest, "hello everyone"))
+	require.NoError(t, f.room.ChatSend(ctx, f.guest, "hello everyone", nil))
 	msg, ok := anon.last().(protocol.ChatMessage)
 	require.True(t, ok, "anonymous viewers receive chat")
 	assert.Equal(t, "guest", msg.Username)
@@ -34,16 +34,16 @@ func TestChat(t *testing.T) {
 
 	// Flood control: burst of 5, then rate limited.
 	for range 4 {
-		require.NoError(t, f.room.ChatSend(ctx, f.guest, "spam"))
+		require.NoError(t, f.room.ChatSend(ctx, f.guest, "spam", nil))
 	}
-	err := f.room.ChatSend(ctx, f.guest, "spam")
+	err := f.room.ChatSend(ctx, f.guest, "spam", nil)
 	var re *Error
 	require.ErrorAs(t, err, &re)
 	assert.Equal(t, protocol.CodeRateLimit, re.Code)
 
-	// Only moderators delete; everyone learns about it.
-	assert.Error(t, f.room.ChatDelete(ctx, f.guest, msg.ID))
-	require.NoError(t, f.room.ChatDelete(ctx, f.owner, msg.ID))
+	// Authors and moderators delete; everyone learns about it.
+	assert.Error(t, f.room.ChatDelete(ctx, access.Actor{}, msg.ID))
+	require.NoError(t, f.room.ChatDelete(ctx, f.guest, msg.ID))
 	del, ok := guest.last().(protocol.ChatDeleted)
 	require.True(t, ok)
 	assert.Equal(t, msg.ID, del.ID)
@@ -175,7 +175,7 @@ func TestMuteSlowModeAndClear(t *testing.T) {
 	until := f.now.Add(30 * time.Minute)
 	muted := f.guest
 	muted.MutedUntil = &until
-	err := f.room.ChatSend(ctx, muted, "hi")
+	err := f.room.ChatSend(ctx, muted, "hi", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "muted until")
 	assert.Error(t, f.room.QueueAdd(ctx, muted, "https://x", false, false))
@@ -186,14 +186,14 @@ func TestMuteSlowModeAndClear(t *testing.T) {
 	require.NoError(t, f.room.SettingsSet(ctx, f.owner, protocol.SettingsSet{SlowModeSec: &slow}))
 	bad := 7
 	assert.Error(t, f.room.SettingsSet(ctx, f.owner, protocol.SettingsSet{SlowModeSec: &bad}))
-	require.NoError(t, f.room.ChatSend(ctx, f.guest, "one"))
-	err = f.room.ChatSend(ctx, f.guest, "two")
+	require.NoError(t, f.room.ChatSend(ctx, f.guest, "one", nil))
+	err = f.room.ChatSend(ctx, f.guest, "two", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "slow mode")
-	require.NoError(t, f.room.ChatSend(ctx, f.owner, "mods are exempt"))
-	require.NoError(t, f.room.ChatSend(ctx, f.owner, "still"))
+	require.NoError(t, f.room.ChatSend(ctx, f.owner, "mods are exempt", nil))
+	require.NoError(t, f.room.ChatSend(ctx, f.owner, "still", nil))
 	f.now = f.now.Add(31 * time.Second)
-	require.NoError(t, f.room.ChatSend(ctx, f.guest, "two"))
+	require.NoError(t, f.room.ChatSend(ctx, f.guest, "two", nil))
 
 	// Clear: everyone gets chat.cleared, the backlog is empty, a line logs it.
 	assert.Error(t, f.room.ChatClear(ctx, f.guest))
@@ -209,4 +209,65 @@ func TestMuteSlowModeAndClear(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, msgs, 1)
 	assert.Equal(t, "owner cleared the chat", msgs[0].Body)
+}
+
+func TestRepliesOwnDeleteAndPin(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	c1, c2 := &fakeConn{}, &fakeConn{}
+	f.room.Join(ctx, c1, f.owner)
+	f.room.Join(ctx, c2, f.guest)
+
+	require.NoError(t, f.room.ChatSend(ctx, f.guest, "which one?", nil))
+	first := c1.msgs[len(c1.msgs)-1].(protocol.ChatMessage)
+
+	// A reply quotes the original; replying to a missing message fails.
+	require.NoError(t, f.room.ChatSend(ctx, f.owner, "the second", &first.ID))
+	reply := c2.msgs[len(c2.msgs)-1].(protocol.ChatMessage)
+	require.NotNil(t, reply.ReplyTo)
+	assert.Equal(t, first.ID, reply.ReplyTo.ID)
+	assert.Equal(t, "guest", reply.ReplyTo.Username)
+	assert.Equal(t, "which one?", reply.ReplyTo.Body)
+	missing := int64(999_999)
+	assert.Error(t, f.room.ChatSend(ctx, f.owner, "to nobody", &missing))
+
+	// Pinning needs ModerateChat; the pin travels in the snapshot and is
+	// announced to everyone.
+	assert.Error(t, f.room.ChatPin(ctx, f.guest, first.ID))
+	require.NoError(t, f.room.ChatPin(ctx, f.owner, first.ID))
+	var pinned *protocol.ChatPinned
+	for _, m := range c2.msgs {
+		if p, ok := m.(protocol.ChatPinned); ok {
+			pinned = &p
+		}
+	}
+	require.NotNil(t, pinned)
+	require.NotNil(t, pinned.Message)
+	assert.Equal(t, first.ID, pinned.Message.ID)
+	c3 := &fakeConn{}
+	f.room.Join(ctx, c3, f.guest)
+	require.NotNil(t, c3.lastSnapshot().Room.Pinned)
+	assert.Equal(t, first.ID, c3.lastSnapshot().Room.Pinned.ID)
+
+	// Members delete their own lines only; moderators anything. Deleting
+	// the pinned message unpins it.
+	assert.Error(t, f.room.ChatDelete(ctx, f.guest, reply.ID), "not the guest's line")
+	require.NoError(t, f.room.ChatDelete(ctx, f.guest, first.ID))
+	last := c1.msgs[len(c1.msgs)-1]
+	assert.Equal(t, protocol.ChatPinned{Type: protocol.TypeChatPinned, Message: nil}, last)
+	require.NoError(t, f.room.ChatDelete(ctx, f.owner, reply.ID))
+
+	// The persisted pin survives a reload; a pin on a deleted line is
+	// dropped on load.
+	require.NoError(t, f.room.ChatSend(ctx, f.owner, "rules: be nice", nil))
+	rules := c1.msgs[len(c1.msgs)-1].(protocol.ChatMessage)
+	require.NoError(t, f.room.ChatPin(ctx, f.owner, rules.ID))
+	reloaded, err := load(ctx, f.room.deps, f.room.ID())
+	require.NoError(t, err)
+	require.NotNil(t, reloaded.pinned)
+	assert.Equal(t, rules.ID, reloaded.pinned.ID)
+	require.NoError(t, f.room.ChatUnpin(ctx, f.owner))
+	reloaded, err = load(ctx, f.room.deps, f.room.ID())
+	require.NoError(t, err)
+	assert.Nil(t, reloaded.pinned)
 }

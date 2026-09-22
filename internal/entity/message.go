@@ -19,4 +19,14 @@ type Message struct {
 	CreatedAt time.Time
 	DeletedAt *time.Time
 	DeletedBy *uuid.UUID
+
+	// ReplyTo is the quoted message, when it is still visible.
+	ReplyTo *Quote
+}
+
+// Quote is the part of a replied-to message shown with the reply.
+type Quote struct {
+	ID       int64
+	Username string
+	Body     string
 }

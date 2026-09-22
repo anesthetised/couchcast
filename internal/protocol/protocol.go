@@ -38,6 +38,8 @@ const (
 	TypeChatSend         = "chat.send"
 	TypeChatDelete       = "chat.delete"
 	TypeChatClear        = "chat.clear"
+	TypeChatPin          = "chat.pin"
+	TypeChatUnpin        = "chat.unpin"
 	TypeChatTyping       = "chat.typing"
 	TypeReact            = "react"
 	TypeReport           = "report"
@@ -99,13 +101,19 @@ type React struct {
 	Emoji string `json:"emoji"`
 }
 
-// ChatSend posts a message.
+// ChatSend posts a message, optionally answering another one.
 type ChatSend struct {
-	Body string `json:"body"`
+	Body    string `json:"body"`
+	ReplyTo *int64 `json:"replyTo,omitempty"`
 }
 
-// ChatDelete removes a message (moderators).
+// ChatDelete removes a message: one's own, or anyone's for moderators.
 type ChatDelete struct {
+	ID int64 `json:"id"`
+}
+
+// ChatPin pins a message above the chat (moderators).
+type ChatPin struct {
 	ID int64 `json:"id"`
 }
 
@@ -126,7 +134,7 @@ func Decode(data []byte) (string, any, error) {
 	switch env.Type {
 	case TypePing:
 		msg = &Ping{}
-	case TypePlay, TypePause, TypeNext, TypeSkipVote, TypeQueueClearPlayed, TypeQueueClear, TypeQueueShuffle, TypeSessionEnd, TypeChatTyping, TypeChatClear:
+	case TypePlay, TypePause, TypeNext, TypeSkipVote, TypeQueueClearPlayed, TypeQueueClear, TypeQueueShuffle, TypeSessionEnd, TypeChatTyping, TypeChatClear, TypeChatUnpin:
 		msg = nil
 	case TypeSeek:
 		msg = &Seek{}
@@ -144,6 +152,8 @@ func Decode(data []byte) (string, any, error) {
 		msg = &ChatSend{}
 	case TypeChatDelete:
 		msg = &ChatDelete{}
+	case TypeChatPin:
+		msg = &ChatPin{}
 	case TypeReact:
 		msg = &React{}
 	case TypeReport:
@@ -171,6 +181,7 @@ const (
 	TypeChatMessage = "chat.message"
 	TypeChatDeleted = "chat.deleted"
 	TypeChatCleared = "chat.cleared"
+	TypeChatPinned  = "chat.pinned"
 	TypeTyping      = "typing"
 	TypeReaction    = "reaction"
 	TypeKicked      = "kicked"
@@ -242,6 +253,8 @@ type RoomInfo struct {
 	Settings    entity.Settings   `json:"settings"`
 	Owner       string            `json:"owner"`
 	Description string            `json:"description,omitempty"`
+	// Pinned is the message a moderator pinned above the chat.
+	Pinned *ChatMessage `json:"pinned,omitempty"`
 }
 
 // Snapshot is the full room state.
@@ -276,6 +289,20 @@ type ChatMessage struct {
 	Body      string `json:"body"`
 	System    bool   `json:"system,omitempty"`
 	CreatedMs int64  `json:"createdMs"`
+	ReplyTo   *Quote `json:"replyTo,omitempty"`
+}
+
+// Quote is the replied-to message as shown with a reply.
+type Quote struct {
+	ID       int64  `json:"id"`
+	Username string `json:"username"`
+	Body     string `json:"body"`
+}
+
+// ChatPinned announces the pinned message; nil clears it.
+type ChatPinned struct {
+	Type    string       `json:"type"`
+	Message *ChatMessage `json:"message"`
 }
 
 // ChatDeleted announces a removed message.

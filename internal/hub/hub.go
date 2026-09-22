@@ -268,7 +268,8 @@ func (c *conn) dispatch(ctx context.Context, data []byte) {
 	case protocol.TypeSettingsSet:
 		err = c.room.SettingsSet(cmdCtx, actor, *msg.(*protocol.SettingsSet))
 	case protocol.TypeChatSend:
-		err = c.room.ChatSend(cmdCtx, actor, msg.(*protocol.ChatSend).Body)
+		m := msg.(*protocol.ChatSend)
+		err = c.room.ChatSend(cmdCtx, actor, m.Body, m.ReplyTo)
 	case protocol.TypeChatTyping:
 		err = c.room.ChatTyping(actor)
 	case protocol.TypeReact:
@@ -277,6 +278,10 @@ func (c *conn) dispatch(ctx context.Context, data []byte) {
 		err = c.room.ChatClear(cmdCtx, actor)
 	case protocol.TypeChatDelete:
 		err = c.room.ChatDelete(cmdCtx, actor, msg.(*protocol.ChatDelete).ID)
+	case protocol.TypeChatPin:
+		err = c.room.ChatPin(cmdCtx, actor, msg.(*protocol.ChatPin).ID)
+	case protocol.TypeChatUnpin:
+		err = c.room.ChatUnpin(cmdCtx, actor)
 	default:
 		c.sendError(protocol.CodeInvalid, "unsupported command: "+typ)
 		return

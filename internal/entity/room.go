@@ -60,6 +60,8 @@ type Room struct {
 	PositionAt    time.Time
 	Rate          float64
 
+	PinnedMessageID *int64
+
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

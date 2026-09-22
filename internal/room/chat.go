@@ -21,11 +21,13 @@ import (
 
 // ChatStore is the chat persistence used by rooms.
 type ChatStore interface {
-	CreateMessage(ctx context.Context, roomID, userID uuid.UUID, body string) (*entity.Message, error)
+	CreateMessage(ctx context.Context, roomID, userID uuid.UUID, body string, replyTo *int64) (*entity.Message, error)
 	CreateSystemMessage(ctx context.Context, roomID uuid.UUID, body string) (*entity.Message, error)
 	ListRecentMessages(ctx context.Context, roomID uuid.UUID, limit int) ([]entity.Message, error)
-	DeleteMessage(ctx context.Context, roomID uuid.UUID, id int64, deletedBy uuid.UUID) error
+	GetMessage(ctx context.Context, roomID uuid.UUID, id int64) (*entity.Message, error)
+	DeleteMessage(ctx context.Context, roomID uuid.UUID, id int64, deletedBy uuid.UUID, onlyOwn bool) error
 	ClearMessages(ctx context.Context, roomID uuid.UUID, deletedBy uuid.UUID) (int64, error)
+	SetPinnedMessage(ctx context.Context, roomID uuid.UUID, id *int64) error
 }
 
 const (
@@ -34,7 +36,11 @@ const (
 )
 
 func toChatMessage(m *entity.Message) protocol.ChatMessage {
-	return protocol.ChatMessage{Type: protocol.TypeChatMessage, ID: m.ID, Username: m.Username, Color: m.Color, Body: m.Body, System: m.System, CreatedMs: m.CreatedAt.UnixMilli()}
+	out := protocol.ChatMessage{Type: protocol.TypeChatMessage, ID: m.ID, Username: m.Username, Color: m.Color, Body: m.Body, System: m.System, CreatedMs: m.CreatedAt.UnixMilli()}
+	if m.ReplyTo != nil {
+		out.ReplyTo = &protocol.Quote{ID: m.ReplyTo.ID, Username: m.ReplyTo.Username, Body: m.ReplyTo.Body}
+	}
+	return out
 }
 
 // logLocked appends a system line to the room log and pushes it to every
@@ -97,7 +103,7 @@ func (r *Room) chatLimiter(userID uuid.UUID) *rate.Limiter {
 }
 
 // ChatSend posts a message from the actor to everyone in the room.
-func (r *Room) ChatSend(ctx context.Context, actor access.Actor, body string) error {
+func (r *Room) ChatSend(ctx context.Context, actor access.Actor, body string, replyTo *int64) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.deps.Chat == nil {
@@ -124,7 +130,10 @@ func (r *Room) ChatSend(ctx context.Context, actor access.Actor, body string) er
 		r.lastChatAt[actor.User.ID] = r.now()
 	}
 
-	msg, err := r.deps.Chat.CreateMessage(ctx, r.info.ID, actor.User.ID, body)
+	msg, err := r.deps.Chat.CreateMessage(ctx, r.info.ID, actor.User.ID, body, replyTo)
+	if errors.Is(err, repository.ErrNotFound) {
+		return notFound("the message you are replying to")
+	}
 	if err != nil {
 		return err
 	}
@@ -203,6 +212,9 @@ func (r *Room) ChatClear(ctx context.Context, actor access.Actor) error {
 	for _, v := range r.viewers {
 		v.conn.Send(out)
 	}
+	if r.pinned != nil {
+		r.setPinnedLocked(nil)
+	}
 	r.logLocked(ctx, actor.User.Username+" cleared the chat")
 	return nil
 }
@@ -221,11 +233,18 @@ func (r *Room) ChatDelete(ctx context.Context, actor access.Actor, id int64) err
 	if r.deps.Chat == nil {
 		return invalid("chat is disabled")
 	}
-	if err := r.requireLocked(actor, access.ModerateChat); err != nil {
-		return err
+	// Moderators delete anything; everyone else only their own lines.
+	onlyOwn := !access.Can(actor, access.ModerateChat, r.info)
+	if onlyOwn {
+		if err := r.requireLocked(actor, access.Chat); err != nil {
+			return err
+		}
 	}
-	err := r.deps.Chat.DeleteMessage(ctx, r.info.ID, id, actor.User.ID)
+	err := r.deps.Chat.DeleteMessage(ctx, r.info.ID, id, actor.User.ID, onlyOwn)
 	if errors.Is(err, repository.ErrNotFound) {
+		if onlyOwn {
+			return &Error{Code: protocol.CodeForbidden, Message: "you can only delete your own messages"}
+		}
 		return notFound("message")
 	}
 	if err != nil {
@@ -235,5 +254,85 @@ func (r *Room) ChatDelete(ctx context.Context, actor access.Actor, id int64) err
 	for _, v := range r.viewers {
 		v.conn.Send(out)
 	}
+	if r.pinned != nil && r.pinned.ID == id {
+		r.setPinnedLocked(nil)
+	}
 	return nil
+}
+
+// ChatPin pins a message above the chat; ChatUnpin clears it.
+func (r *Room) ChatPin(ctx context.Context, actor access.Actor, id int64) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.deps.Chat == nil {
+		return invalid("chat is disabled")
+	}
+	if err := r.requireLocked(actor, access.ModerateChat); err != nil {
+		return err
+	}
+	msg, err := r.deps.Chat.GetMessage(ctx, r.info.ID, id)
+	if errors.Is(err, repository.ErrNotFound) {
+		return notFound("message")
+	}
+	if err != nil {
+		return err
+	}
+	if msg.System {
+		return invalid("system lines cannot be pinned")
+	}
+	if err := r.deps.Chat.SetPinnedMessage(ctx, r.info.ID, &id); err != nil {
+		return err
+	}
+	pinned := toChatMessage(msg)
+	pinned.Type = ""
+	r.setPinnedLocked(&pinned)
+	r.logLocked(ctx, actor.User.Username+" pinned a message")
+	return nil
+}
+
+func (r *Room) ChatUnpin(ctx context.Context, actor access.Actor) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.deps.Chat == nil {
+		return invalid("chat is disabled")
+	}
+	if err := r.requireLocked(actor, access.ModerateChat); err != nil {
+		return err
+	}
+	if r.pinned == nil {
+		return nil
+	}
+	if err := r.deps.Chat.SetPinnedMessage(ctx, r.info.ID, nil); err != nil {
+		return err
+	}
+	r.setPinnedLocked(nil)
+	return nil
+}
+
+// setPinnedLocked updates the pin and tells every viewer.
+func (r *Room) setPinnedLocked(msg *protocol.ChatMessage) {
+	r.pinned = msg
+	out := protocol.ChatPinned{Type: protocol.TypeChatPinned, Message: msg}
+	for _, v := range r.viewers {
+		v.conn.Send(out)
+	}
+}
+
+// loadPinnedLocked resolves the persisted pin; a deleted or missing
+// message clears it.
+func (r *Room) loadPinnedLocked(ctx context.Context) {
+	r.pinned = nil
+	if r.deps.Chat == nil || r.info.PinnedMessageID == nil {
+		return
+	}
+	msg, err := r.deps.Chat.GetMessage(ctx, r.info.ID, *r.info.PinnedMessageID)
+	if err != nil {
+		if !errors.Is(err, repository.ErrNotFound) {
+			r.deps.Logger.Warn("load pinned message", "room", r.info.Slug, "error", err)
+		}
+		return
+	}
+	pinned := toChatMessage(msg)
+	pinned.Type = ""
+	r.pinned = &pinned
 }

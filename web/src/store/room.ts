@@ -143,6 +143,9 @@ export function createRoomStore(slug: string) {
       case "chat.cleared":
         setState("messages", []);
         break;
+      case "chat.pinned":
+        if (state.snapshot) setState("snapshot", "room", "pinned", msg.message ?? undefined);
+        break;
       case "typing":
         if (msg.username === state.me) break;
         setTyping((t) => (t.includes(msg.username) ? t : [...t, msg.username]));
@@ -217,7 +220,9 @@ export function createRoomStore(slug: string) {
       endSession: () => send({ type: "session.end" }),
       settings: (patch: { voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean; loop?: boolean; slowModeSec?: number }) =>
         send({ type: "settings.set", ...patch }),
-      chat: (body: string) => send({ type: "chat.send", body }),
+      chat: (body: string, replyTo?: number) => send({ type: "chat.send", body, replyTo }),
+      chatPin: (id: number) => send({ type: "chat.pin", id }),
+      chatUnpin: () => send({ type: "chat.unpin" }),
       typing: () => send({ type: "chat.typing" }),
       react: (emoji: string) => send({ type: "react", emoji }),
       chatDelete: (id: number) => send({ type: "chat.delete", id }),

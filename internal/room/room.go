@@ -143,6 +143,9 @@ type Room struct {
 	advance     *time.Timer
 	lastPersist time.Time
 	lastActive  time.Time
+
+	// pinned is the message shown above the chat, nil when none.
+	pinned *protocol.ChatMessage
 }
 
 // load builds a Room from the database.
@@ -182,6 +185,7 @@ func load(ctx context.Context, deps Deps, id uuid.UUID) (*Room, error) {
 	if err := r.reloadQueue(ctx); err != nil {
 		return nil, err
 	}
+	r.loadPinnedLocked(ctx)
 
 	// A room restored mid-playback resumes from where it was; the clock
 	// keeps running from the persisted timestamp.
@@ -499,7 +503,7 @@ func (r *Room) snapshotLocked() protocol.Snapshot {
 		Type: protocol.TypeRoomState,
 		Room: protocol.RoomInfo{
 			ID: r.info.ID, Slug: r.info.Slug, Name: r.info.Name, Visibility: r.info.Visibility,
-			Settings: r.info.Settings, Owner: r.owner, Description: r.info.Description,
+			Settings: r.info.Settings, Owner: r.owner, Description: r.info.Description, Pinned: r.pinned,
 		},
 		Playback: r.playbackLocked(),
 		Queue:    make([]protocol.QueueEntry, 0, len(r.queue)),

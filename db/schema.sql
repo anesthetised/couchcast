@@ -254,12 +254,18 @@ CREATE TABLE messages (
     -- System lines (joined, added a video, skipped) are part of the log but
     -- carry no author.
     system     boolean     NOT NULL DEFAULT false,
+    -- The message this one answers, quoted in the UI.
+    reply_to   bigint      REFERENCES messages (id) ON DELETE SET NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     deleted_at timestamptz,
     deleted_by uuid        REFERENCES users (id) ON DELETE SET NULL,
 
     CONSTRAINT messages_body_length CHECK (char_length(body) BETWEEN 1 AND 2000)
 );
+
+-- One message a moderator pinned above the chat; cleared when it is deleted.
+ALTER TABLE rooms
+    ADD COLUMN pinned_message_id bigint REFERENCES messages (id) ON DELETE SET NULL;
 
 CREATE INDEX messages_room_created_idx ON messages (room_id, created_at DESC);
 

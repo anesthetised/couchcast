@@ -16,7 +16,7 @@ const GROUP_WINDOW_MS = 60_000;
 const NEAR_BOTTOM_PX = 80;
 
 // Chat shows the backlog plus live messages. Anonymous viewers read only;
-// moderators can delete lines.
+// authors delete their own lines, moderators anyone's and pin one.
 const Chat: Component<Props> = (props) => {
   let list!: HTMLUListElement;
   let input!: HTMLInputElement;
@@ -186,13 +186,35 @@ const Chat: Component<Props> = (props) => {
     }
   };
 
+  // --- replies and the pin -----------------------------------------------------
+  const [replyTo, setReplyTo] = createSignal<ChatMessage | null>(null);
+  const startReply = (m: ChatMessage) => {
+    setReplyTo(m);
+    input.focus();
+  };
+  const scrollToMessage = (id: number) => {
+    const el = list.querySelector<HTMLElement>(`[data-id="${id}"]`);
+    if (!el) return toast("That message is no longer in view.");
+    el.scrollIntoView({ block: "center" });
+    el.classList.add("flash");
+    window.setTimeout(() => el.classList.remove("flash"), 1200);
+  };
+  const pinned = () => props.room.state.snapshot?.room.pinned ?? null;
+  // Hiding the pin is a local choice; a different pin shows again.
+  const [hiddenPin, setHiddenPin] = createSignal<number | null>(null);
+  const showPin = () => {
+    const p = pinned();
+    return p !== null && hiddenPin() !== p.id ? p : null;
+  };
+
   const submit = (e: SubmitEvent) => {
     e.preventDefault();
     const text = body().trim();
     if (!text) return;
     lastTyping = 0;
-    props.room.commands.chat(text);
+    props.room.commands.chat(text, replyTo()?.id);
     setBody("");
+    setReplyTo(null);
     setMention(null);
     setDivider(null);
     scrollToBottom();
@@ -219,6 +241,24 @@ const Chat: Component<Props> = (props) => {
           </Show>
         </div>
       </header>
+      <Show when={showPin()}>
+        {(p) => (
+          <div class="chat-pinned" role="note">
+            <button type="button" class="chat-pinned-body" onClick={() => scrollToMessage(p().id)} title="Show in chat">
+              <span class="chat-pinned-label">📌 Pinned · {p().username}</span>
+              <span class="chat-pinned-text">{p().body}</span>
+            </button>
+            <Show when={canModerate()}>
+              <button type="button" class="link small" onClick={() => props.room.commands.chatUnpin()} title="Unpin for everyone">
+                Unpin
+              </button>
+            </Show>
+            <button type="button" class="link small" onClick={() => setHiddenPin(p().id)} title="Hide for me" aria-label="Hide pinned message">
+              ✕
+            </button>
+          </div>
+        )}
+      </Show>
       <div class="chat-scroll">
         <ul class="chat-list" ref={list} onScroll={onScroll} aria-live="polite" aria-relevant="additions">
           <For each={messages()} fallback={<li class="muted small">No messages yet.</li>}>
@@ -231,13 +271,23 @@ const Chat: Component<Props> = (props) => {
                 </Show>
                 <li
                   class="chat-line"
+                  data-id={m.id}
                   classList={{
                     stale: isStale(m.createdMs),
                     system: m.system ?? false,
-                    cont: isCont(m, i()),
+                    cont: isCont(m, i()) && !m.replyTo,
                     me: !m.system && me() !== null && mentions(m.body, me()!),
+                    pinned: pinned()?.id === m.id,
                   }}
                 >
+                  <Show when={m.replyTo}>
+                    {(q) => (
+                      <button type="button" class="chat-quote" onClick={() => scrollToMessage(q().id)} title="Show the original">
+                        <span class="chat-quote-user">{q().username}</span>
+                        <span class="chat-quote-body">{q().body}</span>
+                      </button>
+                    )}
+                  </Show>
                   <span class="chat-time muted">{time(m.createdMs)}</span>
                   <Show when={!m.system}>
                     <span class={`chat-user ${avatarClass(m.username ?? "", m.color)}`}>{m.username}</span>
@@ -281,15 +331,27 @@ const Chat: Component<Props> = (props) => {
                       }
                     </For>
                   </span>
-                  <Show when={canModerate() && !m.system}>
-                    <button type="button" class="link danger-text chat-delete" title="Delete" onClick={() => props.room.commands.chatDelete(m.id)}>
-                      ✕
-                    </button>
-                    <Show when={m.username && m.username !== me()}>
-                      <button type="button" class="link chat-delete" title={`Mute ${m.username} for 5 minutes`} onClick={() => void muteAuthor(m.username!)}>
-                        mute
+                  <Show when={!m.system && me()}>
+                    <span class="chat-tools">
+                      <Show when={canModerate() || m.username === me()}>
+                        <button type="button" class="link danger-text" title="Delete" onClick={() => props.room.commands.chatDelete(m.id)}>
+                          ✕
+                        </button>
+                      </Show>
+                      <Show when={canModerate() && m.username && m.username !== me()}>
+                        <button type="button" class="link" title={`Mute ${m.username} for 5 minutes`} onClick={() => void muteAuthor(m.username!)}>
+                          mute
+                        </button>
+                      </Show>
+                      <Show when={canModerate()}>
+                        <button type="button" class="link" title={pinned()?.id === m.id ? "Unpin" : "Pin above the chat"} onClick={() => (pinned()?.id === m.id ? props.room.commands.chatUnpin() : props.room.commands.chatPin(m.id))}>
+                          {pinned()?.id === m.id ? "unpin" : "pin"}
+                        </button>
+                      </Show>
+                      <button type="button" class="link" title="Reply" onClick={() => startReply(m)}>
+                        reply
                       </button>
-                    </Show>
+                    </span>
                   </Show>
                 </li>
               </>
@@ -309,6 +371,17 @@ const Chat: Component<Props> = (props) => {
       </div>
       <Show when={canWrite()} fallback={<p class="muted small"><a href="/login">Log in</a> to chat.</p>}>
         <form class="chat-form" onSubmit={submit}>
+          <Show when={replyTo()}>
+            {(r) => (
+              <div class="chat-replying">
+                <span class="muted small">Replying to</span> <span class="chat-quote-user">{r().username}</span>
+                <span class="chat-quote-body">{r().body}</span>
+                <button type="button" class="link small" onClick={() => setReplyTo(null)} aria-label="Cancel reply">
+                  ✕
+                </button>
+              </div>
+            )}
+          </Show>
           <Show when={candidates().length > 0}>
             <ul class="picker-menu chat-mentions" role="listbox">
               <For each={candidates()}>
@@ -332,7 +405,10 @@ const Chat: Component<Props> = (props) => {
               refreshMention();
               hintTyping(e.currentTarget.value);
             }}
-            onKeyDown={onKey}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" && replyTo() && !candidates().length) setReplyTo(null);
+              onKey(e);
+            }}
             onBlur={() => window.setTimeout(() => setMention(null), 120)}
           />
           <button type="submit">Send</button>

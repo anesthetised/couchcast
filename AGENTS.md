@@ -169,7 +169,13 @@ and a production image build.
   /rooms/{slug}/mutes/{username}`, `CanTarget` like bans) is resolved into
   `access.Actor.MutedUntil` and blocks chat, votes and adds; the
   `slowModeSec` setting spaces non-moderators' messages; `chat.clear`
-  soft-deletes every message and broadcasts `chat.cleared`.
+  soft-deletes every message and broadcasts `chat.cleared`. `chat.delete`
+  works on one's own lines for everyone and on any line for moderators.
+- `chat.send {body, replyTo}` quotes a visible message of the room
+  (`messages.reply_to`, the quote rides in `ChatMessage.replyTo`);
+  `chat.pin {id}` / `chat.unpin` (moderators) keep one message above the
+  chat (`rooms.pinned_message_id`, `RoomInfo.pinned`, broadcast as
+  `chat.pinned`); deleting or clearing unpins.
 - Invite links (`room_invite_links`, token hash only): moderators mint them
   with `POST /rooms/{slug}/invite-links` (optional expiry and use limit;
   the URL `/join/<token>` is returned once), list and revoke them;

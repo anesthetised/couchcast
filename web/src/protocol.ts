@@ -65,6 +65,7 @@ export interface RoomInfo {
   settings: Settings;
   owner: string;
   description?: string;
+  pinned?: ChatMessage;
 }
 
 export interface Playback {
@@ -97,6 +98,19 @@ export interface ChatMessage {
   body: string;
   system?: boolean;
   createdMs: number;
+  replyTo?: Quote;
+}
+
+// Quote is the replied-to message as shown with a reply.
+export interface Quote {
+  id: number;
+  username: string;
+  body: string;
+}
+
+export interface ChatPinned {
+  type: "chat.pinned";
+  message: ChatMessage | null;
 }
 
 export interface Welcome {
@@ -156,6 +170,7 @@ export type ServerMessage =
   | ChatMessage
   | ChatDeleted
   | ChatCleared
+  | ChatPinned
   | Typing
   | Reaction
   | Kicked
@@ -181,7 +196,9 @@ export type ClientMessage =
   | { type: "skip.vote" }
   | { type: "session.end" }
   | { type: "settings.set"; voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean; loop?: boolean; slowModeSec?: number }
-  | { type: "chat.send"; body: string }
+  | { type: "chat.send"; body: string; replyTo?: number }
+  | { type: "chat.pin"; id: number }
+  | { type: "chat.unpin" }
   | { type: "chat.delete"; id: number }
   | { type: "chat.typing" }
   | { type: "chat.clear" }

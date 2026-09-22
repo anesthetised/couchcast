@@ -1398,14 +1398,22 @@ progress {
   display: inline;
 }
 
-.chat-delete {
+.chat-delete,
+.chat-tools {
   float: right;
   margin-left: 0.4rem;
   font-size: var(--fs-xs);
   opacity: 0;
 }
 
-.chat-line:hover .chat-delete {
+.chat-tools {
+  display: inline-flex;
+  gap: 0.45rem;
+}
+
+.chat-line:hover .chat-delete,
+.chat-line:hover .chat-tools,
+.chat-line:focus-within .chat-tools {
   opacity: 1;
 }
 
@@ -1643,7 +1651,8 @@ progress {
 
 .fs-queue .queue-actions,
 .fs-chat .chat-form,
-.fs-chat .chat-delete {
+.fs-chat .chat-delete,
+.fs-chat .chat-tools {
   transition: opacity 200ms;
 }
 
@@ -1681,6 +1690,7 @@ progress {
 
 .stage.fullscreen.idle .fs-chat:not(:hover) .chat-form,
 .stage.fullscreen.idle .fs-chat:not(:hover) .chat-delete,
+.stage.fullscreen.idle .fs-chat:not(:hover) .chat-tools,
 .stage.fullscreen.idle .fs-chat:not(:hover) .chat-line.stale,
 .stage.fullscreen.idle .fs-queue:not(:hover) .queue-actions {
   opacity: 0;
@@ -3015,4 +3025,121 @@ button.timecode {
   .room-card-wrap .star {
     opacity: 1;
   }
+}
+
+/* --- chat replies and the pin ------------------------------------------------ */
+
+.chat-quote {
+  display: flex;
+  gap: 0.4rem;
+  max-width: 100%;
+  margin: 0.35rem 0 0.1rem;
+  padding: 0.1rem 0 0.1rem 0.5rem;
+  border-left: 2px solid var(--border-strong);
+  background: none;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  text-align: left;
+  line-height: 1.3;
+}
+
+.chat-quote:hover {
+  color: var(--text-2);
+  border-left-color: var(--accent);
+}
+
+.chat-quote-user {
+  flex: none;
+  font-weight: 600;
+  color: var(--text-2);
+}
+
+.chat-quote-body {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.chat-line.flash {
+  animation: chat-flash 1.2s ease-out;
+}
+
+@keyframes chat-flash {
+  from {
+    background: var(--surface-3);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.chat-line.pinned .chat-body {
+  border-bottom: 1px dotted var(--border-strong);
+}
+
+.chat-pinned {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0 0 0.5rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border-left: 3px solid var(--accent);
+}
+
+.chat-pinned-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 0;
+  font-weight: 400;
+  background: none;
+  text-align: left;
+  color: var(--text);
+  line-height: 1.3;
+}
+
+.chat-pinned-label {
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+
+.chat-pinned-text {
+  max-width: 100%;
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-pinned > .link {
+  flex: none;
+}
+
+.chat-replying {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 4px);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.6rem;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-size: var(--fs-xs);
+}
+
+.chat-replying .chat-quote-body {
+  flex: 1;
+  color: var(--muted);
+}
+
+.fs-chat .chat-pinned,
+.fs-chat .chat-replying {
+  background: var(--overlay-strong);
 }
