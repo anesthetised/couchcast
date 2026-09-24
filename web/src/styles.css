@@ -215,6 +215,12 @@ code {
   color: var(--text);
 }
 
+/* Signed out, the header shows Log in and Register in full white. */
+.usermenu .signed-out,
+.usermenu .signed-out:hover {
+  color: var(--text);
+}
+
 .avatar {
   display: inline-flex;
   align-items: center;

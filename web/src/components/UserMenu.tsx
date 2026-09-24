@@ -34,8 +34,10 @@ const UserMenu: Component = () => {
         when={auth.user()}
         fallback={
           <>
-            <a href="/login">Log in</a>
-            <a href="/register" class="button">
+            <a href="/login" class="signed-out">
+              Log in
+            </a>
+            <a href="/register" class="button signed-out">
               Register
             </a>
           </>
