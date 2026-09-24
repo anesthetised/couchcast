@@ -1,5 +1,7 @@
 import shaka from "shaka-player";
 
+import { logEvent } from "~/lib/diagnostics";
+
 // prefixOf returns "/media/<id>/" for any URL under a media prefix.
 function prefixOf(u: string): string {
   const i = u.indexOf("/media/");
@@ -49,6 +51,7 @@ export class Player {
       const detail = (e as unknown as { detail: shaka.util.Error }).detail;
       // Recoverable errors (a failed segment fetch while the server is
       // away) are retried by Shaka; only critical ones need the user.
+      logEvent("player", `shaka ${detail.code} (category ${detail.category}, severity ${detail.severity})`, { data: safeData(detail.data) });
       if (detail.severity === shaka.util.Error.Severity.CRITICAL) this.onError(`Player error ${detail.code}`);
     });
     const emit = () => this.emitTracks();
@@ -144,6 +147,28 @@ export class Player {
     this.emitTracks();
   }
 
+  // stats is the player half of a bug report: Shaka's counters plus the
+  // variant in use.
+  stats() {
+    const s = this.shaka.getStats();
+    const active = this.shaka.getVariantTracks().find((t) => t.active);
+    return {
+      width: s.width,
+      height: s.height,
+      estimatedBandwidthKbps: Math.round(s.estimatedBandwidth / 1000),
+      streamBandwidthKbps: Math.round(s.streamBandwidth / 1000),
+      decodedFrames: s.decodedFrames,
+      droppedFrames: s.droppedFrames,
+      loadLatencyS: s.loadLatency,
+      bufferingTimeS: s.bufferingTime,
+      playTimeS: s.playTime,
+      active: active ? { height: active.height, codecs: active.codecs, bandwidthKbps: Math.round(active.bandwidth / 1000) } : null,
+      abr: this.shaka.getConfiguration().abr.enabled,
+      stateHistory: s.stateHistory.slice(-10),
+      switchHistory: s.switchHistory.slice(-10).map((h) => ({ t: h.timestamp, kbps: Math.round((h.bandwidth ?? 0) / 1000), fromAdaptation: h.fromAdaptation })),
+    };
+  }
+
   private emitTracks() {
     const tracks = this.shaka.getVariantTracks();
     const seen = new Map<number, QualityOption>();
@@ -160,4 +185,9 @@ export class Player {
   destroy() {
     void this.shaka.destroy();
   }
+}
+
+// safeData keeps Shaka error data loggable: strings and numbers only.
+function safeData(data: unknown[]): unknown[] {
+  return (data ?? []).slice(0, 4).map((d) => (typeof d === "string" ? d.slice(0, 200) : typeof d === "number" ? d : typeof d));
 }

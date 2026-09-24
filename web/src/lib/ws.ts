@@ -1,3 +1,4 @@
+import { logEvent } from "~/lib/diagnostics";
 import type { ClientMessage, ServerMessage } from "~/protocol";
 
 export type SocketStatus = "connecting" | "open" | "closed" | "kicked";
@@ -36,6 +37,7 @@ export class RoomSocket {
     this.setStatus("connecting");
 
     ws.onopen = () => {
+      if (this.opened) logEvent("socket", `reconnected after ${this.attempts} attempt(s)`);
       this.attempts = 0;
       this.opened = true;
       this.setStatus("open");
@@ -56,6 +58,7 @@ export class RoomSocket {
     ws.onclose = (ev) => {
       if (this.ws !== ws) return;
       this.ws = null;
+      logEvent("socket", `closed ${ev.code}${ev.reason ? `: ${ev.reason}` : ""}`, { wasClean: ev.wasClean });
       if (this.stopped) {
         if (this.status !== "kicked") this.setStatus("closed");
         return;

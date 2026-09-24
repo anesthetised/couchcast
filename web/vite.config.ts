@@ -8,6 +8,11 @@ const apiTarget = process.env.VITE_API_TARGET ?? "http://localhost:8080";
 
 export default defineConfig({
   plugins: [solid()],
+  // The bundle version shown in bug reports; the image build passes the
+  // same VERSION the Go binary gets.
+  define: {
+    __APP_VERSION__: JSON.stringify(process.env.APP_VERSION ?? "dev"),
+  },
   resolve: {
     alias: {
       "~": fileURLToPath(new URL("./src", import.meta.url)),

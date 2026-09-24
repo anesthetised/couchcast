@@ -1,6 +1,7 @@
 import { createEffect, createSignal, on, onCleanup, onMount, Show, For, type Component } from "solid-js";
 
 import HotkeysSheet from "~/components/HotkeysSheet";
+import { bufferedRanges, registerProbe, registerVideo } from "~/lib/diagnostics";
 import { formatTime, progressDetail } from "~/lib/format";
 import { Player as ShakaPlayer, type QualityOption } from "~/lib/player";
 import { Synchronizer, type SyncDebug } from "~/lib/sync";
@@ -170,6 +171,32 @@ const Player: Component<Props> = (props) => {
 
     document.addEventListener("keydown", onKey);
     onCleanup(() => document.removeEventListener("keydown", onKey));
+
+    // The media half of a bug report, and the frame to attach.
+    onCleanup(registerVideo(() => video));
+    onCleanup(
+      registerProbe("media", () => {
+        const cur = current();
+        const target = sync?.targetMs() ?? null;
+        return {
+          item: cur ? { id: cur.id, mediaId: cur.media.id, title: cur.media.title, source: cur.media.sourceUrl, status: cur.media.status, error: cur.media.error, durationMs: cur.media.durationMs } : null,
+          loadedMediaId: loadedMediaId(),
+          quality: { chosen: chosen(), active: activeHeight(), available: qualities().map((q) => q.height) },
+          subtitles: { selected: activeSubtitle() || null, available: subtitles().map((s) => s.lang) },
+          rate: rate(),
+          positionMs: Math.round(video.currentTime * 1000),
+          targetMs: target === null ? null : Math.round(target),
+          driftMs: target === null ? null : Math.round(video.currentTime * 1000 - target),
+          element: { paused: video.paused, readyState: video.readyState, networkState: video.networkState, playbackRate: video.playbackRate, muted: video.muted, volume: video.volume, buffered: bufferedRanges(video.buffered) },
+          buffering: buffering(),
+          autoplayBlocked: blocked(),
+          overlayError: error(),
+          pip: pip(),
+          fullscreen: props.isFullscreen ?? false,
+          shaka: player?.stats() ?? null,
+        };
+      }),
+    );
   });
 
   onCleanup(() => {

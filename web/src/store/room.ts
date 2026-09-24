@@ -1,8 +1,9 @@
 import { createSignal, onCleanup } from "solid-js";
-import { createStore, reconcile } from "solid-js/store";
+import { createStore, reconcile, unwrap } from "solid-js/store";
 
 import { ApiError } from "~/lib/api";
 import { ClockSync } from "~/lib/clock";
+import { logEvent, registerProbe } from "~/lib/diagnostics";
 import { rooms } from "~/lib/rooms";
 import { toast } from "~/lib/toast";
 import type { RoomRole } from "~/lib/types";
@@ -58,6 +59,7 @@ export function createRoomStore(slug: string) {
   let reactionSeq = 0;
   let pendingSeq = 0;
   let knownItems = new Set<string>();
+  let lastMediaKey = "";
   const dropPending = (id: number) => setPending((p) => p.filter((x) => x.id !== id));
   const [clockInfo, setClockInfo] = createSignal({ offset: 0, rtt: 0 });
 
@@ -130,6 +132,7 @@ export function createRoomStore(slug: string) {
         setState("messages", (m) => m.filter((x) => x.id !== msg.id));
         break;
       case "error": {
+        logEvent("server", `${msg.code}: ${msg.message}`);
         // Most errors here answer a command; a pending add is the likeliest.
         const last = pending().at(-1);
         setPending((p) => p.slice(0, -1));
@@ -162,10 +165,36 @@ export function createRoomStore(slug: string) {
         break;
       }
       case "kicked":
+        logEvent("socket", `session ended: ${msg.reason}`);
         setEnded(msg.reason === "room deleted" ? { kind: "gone" } : { kind: "kicked", reason: msg.reason });
         break;
     }
+    // Media status changes of the current item: the ingest story as the
+    // viewer saw it.
+    if (msg.type === "welcome" || msg.type === "room.state") {
+      const snap = msg.type === "welcome" ? msg.snapshot : msg;
+      const cur = snap.queue.find((q) => q.current);
+      const key = cur ? `${cur.id}:${cur.media.status}` : "";
+      if (key !== lastMediaKey) {
+        lastMediaKey = key;
+        if (cur) logEvent("media", `current ${cur.media.status}: ${cur.media.title || cur.media.sourceUrl}`, cur.media.error ? { error: cur.media.error } : undefined);
+      }
+    }
   });
+
+  // The session half of a bug report.
+  onCleanup(
+    registerProbe("session", () => ({
+      room: state.snapshot ? { id: state.snapshot.room.id, slug: state.snapshot.room.slug, visibility: state.snapshot.room.visibility, settings: { ...unwrap(state.snapshot.room.settings) } } : { slug },
+      me: state.me,
+      role: state.role ?? null,
+      socket: { status: status(), attempts: attempts() },
+      clock: { offsetMs: Math.round(clock.offset), rttMs: Math.round(clock.rtt) },
+      playback: state.playback ? { ...unwrap(state.playback) } : null,
+      viewers: state.snapshot ? state.snapshot.members.length + (state.snapshot.guests ?? 0) : null,
+      queueLength: state.snapshot?.queue.length ?? null,
+    })),
+  );
 
   socket.connect();
   onCleanup(() => {

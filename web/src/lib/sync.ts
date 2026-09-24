@@ -1,4 +1,5 @@
 import type { ClockSync } from "~/lib/clock";
+import { logSync } from "~/lib/diagnostics";
 import type { Playback } from "~/protocol";
 
 export interface SyncDebug {
@@ -21,6 +22,10 @@ export class Synchronizer {
   private playback: Playback | null = null;
   private seeking = false;
   onDebug: (d: SyncDebug) => void = () => {};
+  private debug(d: SyncDebug) {
+    logSync(d);
+    this.onDebug(d);
+  }
   // Called when the browser refuses to start playback without a gesture
   // (and again with false once it plays); the UI shows a tap-to-play gate.
   onBlocked: (blocked: boolean) => void = () => {};
@@ -77,16 +82,16 @@ export class Synchronizer {
       v.playbackRate = base;
       if (Math.abs(drift) > 200 && !this.seeking) {
         this.seekTo(target);
-        this.onDebug({ targetMs: target, driftMs: drift, rate: 1, action: "seek" });
+        this.debug({ targetMs: target, driftMs: drift, rate: 1, action: "seek" });
         return;
       }
-      this.onDebug({ targetMs: target, driftMs: drift, rate: 1, action: "pause" });
+      this.debug({ targetMs: target, driftMs: drift, rate: 1, action: "pause" });
       return;
     }
 
     if (v.paused) {
       if (!this.blocked) this.tryPlay();
-      this.onDebug({ targetMs: target, driftMs: drift, rate: v.playbackRate, action: "play" });
+      this.debug({ targetMs: target, driftMs: drift, rate: v.playbackRate, action: "play" });
     }
 
     if (this.seeking) return;
@@ -96,13 +101,13 @@ export class Synchronizer {
       // Land slightly ahead: the seek itself takes time.
       this.seekTo(target + 150);
       v.playbackRate = base;
-      this.onDebug({ targetMs: target, driftMs: drift, rate: base, action: "seek" });
+      this.debug({ targetMs: target, driftMs: drift, rate: base, action: "seek" });
     } else if (Math.abs(drift) > DEADBAND) {
       v.playbackRate = base * (drift > 0 ? 1 - NUDGE : 1 + NUDGE);
-      this.onDebug({ targetMs: target, driftMs: drift, rate: v.playbackRate, action: "nudge" });
+      this.debug({ targetMs: target, driftMs: drift, rate: v.playbackRate, action: "nudge" });
     } else {
       v.playbackRate = base;
-      this.onDebug({ targetMs: target, driftMs: drift, rate: base, action: "idle" });
+      this.debug({ targetMs: target, driftMs: drift, rate: base, action: "idle" });
     }
   }
 
