@@ -627,3 +627,39 @@ func TestQueueAddMany(t *testing.T) {
 	assert.Error(t, f.room.QueueAddMany(ctx, f.owner, make([]string, maxAddMany+1), false))
 	assert.Error(t, f.room.QueueAddMany(ctx, access.Actor{}, []string{"https://x"}, false))
 }
+
+func TestLoopPausesWhenNobodyWatches(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	conn := &fakeConn{}
+	f.room.Join(ctx, conn, f.owner)
+	f.ready("https://a", 10_000)
+	f.ready("https://b", 10_000)
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false, false))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://b", false, false))
+	on := true
+	require.NoError(t, f.room.SettingsSet(ctx, f.owner, protocol.SettingsSet{Loop: &on}))
+
+	// Everyone leaves; the queue runs out: it restarts at the top but
+	// waits instead of cycling on.
+	f.room.Leave(conn)
+	require.NoError(t, f.room.Next(ctx, f.owner))
+	f.now = f.now.Add(time.Second)
+	require.NoError(t, f.room.Next(ctx, f.owner))
+	pb := f.room.Playback()
+	assert.False(t, pb.Playing)
+	require.NotNil(t, pb.ItemID)
+	f.room.mu.Lock()
+	assert.Equal(t, "T https://a", f.room.media[f.room.queue[0].MediaID].Title)
+	assert.Equal(t, f.room.queue[0].ID, *f.room.current)
+	f.room.mu.Unlock()
+	msgs, err := f.repo.ListRecentMessages(ctx, f.room.ID(), 5)
+	require.NoError(t, err)
+	assert.Equal(t, "queue restarted from the top, paused until someone is back", msgs[len(msgs)-1].Body)
+
+	// Someone back: play resumes the loop as usual.
+	back := &fakeConn{}
+	f.room.Join(ctx, back, f.owner)
+	require.NoError(t, f.room.Play(ctx, f.owner))
+	assert.True(t, f.room.Playback().Playing)
+}

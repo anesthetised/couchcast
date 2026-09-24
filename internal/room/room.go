@@ -516,6 +516,16 @@ func (r *Room) nextLocked(ctx context.Context) error {
 		if len(r.queue) > 0 {
 			next = r.queue[0]
 		}
+		// Nobody watching: stop at the top instead of cycling on (and
+		// logging every lap) for an empty room; play resumes it.
+		if len(r.viewers) == 0 && next != nil {
+			r.skipVotes = map[uuid.UUID]struct{}{}
+			id := next.ID
+			r.current, r.rate = &id, 1
+			r.setPlaybackLocked(false, 0)
+			r.logLocked(ctx, "queue restarted from the top, paused until someone is back")
+			return r.persistLocked(ctx)
+		}
 		r.logLocked(ctx, "queue restarted from the top")
 	}
 	r.setCurrentLocked(next)
