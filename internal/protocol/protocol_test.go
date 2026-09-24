@@ -13,10 +13,17 @@ func TestDecode(t *testing.T) {
 	assert.Equal(t, TypeSeek, typ)
 	assert.Equal(t, int64(1500), msg.(*Seek).PositionMs)
 
-	typ, msg, err = Decode([]byte(`{"type":"play"}`))
+	typ, msg, err = Decode([]byte(`{"type":"pause"}`))
 	require.NoError(t, err)
-	assert.Equal(t, TypePlay, typ)
+	assert.Equal(t, TypePause, typ)
 	assert.Nil(t, msg)
+
+	_, msg, err = Decode([]byte(`{"type":"play"}`))
+	require.NoError(t, err)
+	assert.False(t, msg.(*Play).Countdown)
+	_, msg, err = Decode([]byte(`{"type":"play","countdown":true}`))
+	require.NoError(t, err)
+	assert.True(t, msg.(*Play).Countdown)
 
 	_, _, err = Decode([]byte(`{"type":"nope"}`))
 	assert.Error(t, err)

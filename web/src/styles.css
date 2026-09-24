@@ -3722,3 +3722,36 @@ label .hint {
 .presence .avatar.lagging {
   box-shadow: 0 0 0 2px var(--warn);
 }
+
+/* --- countdown ----------------------------------------------------------------- */
+
+.video-overlay.countdown {
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 4;
+  pointer-events: none;
+}
+
+.countdown-number {
+  font-size: clamp(3rem, 14cqw, 9rem);
+  font-weight: 700;
+  line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .countdown-number {
+    animation: countdown-pulse 1s ease-out infinite;
+  }
+}
+
+@keyframes countdown-pulse {
+  from {
+    transform: scale(1.15);
+    opacity: 0.6;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}

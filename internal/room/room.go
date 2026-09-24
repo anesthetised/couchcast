@@ -177,6 +177,10 @@ type Room struct {
 	bufferTimer *time.Timer
 	waiting     []string
 	waitTimer   *time.Timer
+
+	// countdown is when a counted-down start begins (nil: none pending).
+	countdown      *time.Time
+	countdownTimer *time.Timer
 }
 
 // load builds a Room from the database.
@@ -447,6 +451,7 @@ func (r *Room) setCurrentLocked(item *entity.QueueItem) {
 		return
 	}
 	r.endWaitLocked(false)
+	r.cancelCountdownLocked()
 	id := item.ID
 	r.current = &id
 	r.rate = 1 // a new video always starts at normal speed
@@ -632,8 +637,14 @@ func (r *Room) snapshotLocked() protocol.Snapshot {
 		},
 		Playback: r.playbackLocked(),
 		Waiting:  r.waiting,
-		Queue:    make([]protocol.QueueEntry, 0, len(r.queue)),
-		Members:  []protocol.Presence{},
+		CountdownMs: func() int64 {
+			if r.countdown == nil {
+				return 0
+			}
+			return r.countdown.UnixMilli()
+		}(),
+		Queue:   make([]protocol.QueueEntry, 0, len(r.queue)),
+		Members: []protocol.Presence{},
 	}
 	snap.Playback.Type = ""
 
@@ -1107,6 +1118,18 @@ func (r *Room) requireLocked(actor access.Actor, action access.Action) error {
 
 // Play resumes playback.
 func (r *Room) Play(ctx context.Context, actor access.Actor) error {
+	return r.play(ctx, actor, false)
+}
+
+// PlayCountdown starts playback after a 3-2-1 every viewer sees.
+func (r *Room) PlayCountdown(ctx context.Context, actor access.Actor) error {
+	return r.play(ctx, actor, true)
+}
+
+// countdownFor is how long the 3-2-1 before a counted start lasts.
+const countdownFor = 3 * time.Second
+
+func (r *Room) play(ctx context.Context, actor access.Actor, countdown bool) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if err := r.requireLocked(actor, access.ControlPlayback); err != nil {
@@ -1127,12 +1150,60 @@ func (r *Room) Play(ctx context.Context, actor access.Actor) error {
 	if m.DurationMs > 0 && pos >= m.DurationMs {
 		pos = 0
 	}
+	// The announced session starts with a countdown, as does any start a
+	// moderator asks to count down; a second play during it starts now.
+	if (countdown || r.info.ScheduledAt != nil) && r.countdown == nil {
+		at := r.now().Add(countdownFor)
+		r.countdown = &at
+		r.countdownTimer = time.AfterFunc(r.patience(countdownFor), r.endCountdown)
+		r.broadcastLocked()
+		return nil
+	}
+	r.cancelCountdownLocked()
 	r.setPlaybackLocked(true, pos)
 	if err := r.persistLocked(ctx); err != nil {
 		return err
 	}
 	r.broadcastPlaybackLocked()
 	return nil
+}
+
+// endCountdown starts playback when the countdown runs out.
+func (r *Room) endCountdown() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.countdown == nil {
+		return
+	}
+	r.countdown, r.countdownTimer = nil, nil
+	m := r.currentMedia()
+	if m == nil || !m.IsReady() || r.playing {
+		r.broadcastLocked()
+		return
+	}
+	pos := r.positionMs
+	if m.DurationMs > 0 && pos >= m.DurationMs {
+		pos = 0
+	}
+	r.setPlaybackLocked(true, pos)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := r.persistLocked(ctx); err != nil {
+		r.deps.Logger.Warn("persist countdown start", "room", r.info.Slug, "error", err)
+	}
+	r.broadcastLocked()
+}
+
+// cancelCountdownLocked drops a pending countdown (pause, seek to another
+// item, a direct play).
+func (r *Room) cancelCountdownLocked() {
+	if r.countdownTimer != nil {
+		r.countdownTimer.Stop()
+	}
+	if r.countdown != nil {
+		r.countdown, r.countdownTimer = nil, nil
+		r.broadcastLocked()
+	}
 }
 
 // Pause freezes playback.
@@ -1146,6 +1217,7 @@ func (r *Room) Pause(ctx context.Context, actor access.Actor) error {
 		return errNoCurrent
 	}
 	r.endWaitLocked(false)
+	r.cancelCountdownLocked()
 	if !r.playing {
 		return nil
 	}

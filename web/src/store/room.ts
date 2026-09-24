@@ -224,7 +224,7 @@ export function createRoomStore(slug: string) {
     current: () => state.snapshot?.queue.find((q) => q.current) ?? null,
     isModerator: () => state.role === "owner" || state.role === "moderator",
     commands: {
-      play: () => send({ type: "play" }),
+      play: (countdown = false) => send({ type: "play", countdown: countdown || undefined }),
       pause: () => send({ type: "pause" }),
       seek: (positionMs: number) => send({ type: "seek", positionMs: Math.round(positionMs) }),
       rate: (rate: number) => send({ type: "rate.set", rate }),

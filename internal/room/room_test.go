@@ -839,3 +839,38 @@ func TestFairQueue(t *testing.T) {
 	require.NoError(t, f.room.Next(ctx, f.owner))
 	assert.Equal(t, []string{"g1", "a2", "g2", "a3"}, titles())
 }
+
+func TestCountdown(t *testing.T) {
+	f := newFixture(t)
+	f.room.deps.WaitScale = 0.01 // 3 s → 30 ms
+	ctx := context.Background()
+	conn := &fakeConn{}
+	f.room.Join(ctx, conn, f.owner)
+	f.ready("https://a", 600_000)
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false, false))
+	require.NoError(t, f.room.Pause(ctx, f.owner))
+
+	// Everyone learns when the counted start begins; then it plays.
+	require.NoError(t, f.room.PlayCountdown(ctx, f.owner))
+	assert.False(t, f.room.Playback().Playing)
+	assert.Equal(t, f.now.Add(3*time.Second).UnixMilli(), conn.lastSnapshot().CountdownMs)
+	require.Eventually(t, func() bool { return f.room.Playback().Playing }, time.Second, 5*time.Millisecond)
+	assert.Zero(t, conn.lastSnapshot().CountdownMs)
+
+	// A pause during the countdown cancels it.
+	require.NoError(t, f.room.Pause(ctx, f.owner))
+	require.NoError(t, f.room.PlayCountdown(ctx, f.owner))
+	require.NoError(t, f.room.Pause(ctx, f.owner))
+	time.Sleep(60 * time.Millisecond)
+	assert.False(t, f.room.Playback().Playing)
+	assert.Zero(t, conn.lastSnapshot().CountdownMs)
+
+	// A room with an announced session always counts down.
+	at := f.now.Add(time.Hour)
+	f.room.mu.Lock()
+	f.room.info.ScheduledAt = &at
+	f.room.mu.Unlock()
+	require.NoError(t, f.room.Play(ctx, f.owner))
+	assert.NotZero(t, conn.lastSnapshot().CountdownMs)
+	require.Eventually(t, func() bool { return f.room.Playback().Playing }, time.Second, 5*time.Millisecond)
+}

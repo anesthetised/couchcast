@@ -81,6 +81,12 @@ type QueueAdd struct {
 	Force bool `json:"force,omitempty"`
 }
 
+// Play resumes playback; Countdown shows everyone 3-2-1 first (a room
+// with an announced session always counts down).
+type Play struct {
+	Countdown bool `json:"countdown,omitempty"`
+}
+
 // QueueAddMany enqueues several URLs in order (a playlist import); links
 // the room already has are skipped.
 type QueueAddMany struct {
@@ -145,7 +151,9 @@ func Decode(data []byte) (string, any, error) {
 	switch env.Type {
 	case TypePing:
 		msg = &Ping{}
-	case TypePlay, TypePause, TypeNext, TypeSkipVote, TypeQueueClearPlayed, TypeQueueClear, TypeQueueShuffle, TypeSessionEnd, TypeChatTyping, TypeChatClear, TypeChatUnpin:
+	case TypePlay:
+		msg = &Play{}
+	case TypePause, TypeNext, TypeSkipVote, TypeQueueClearPlayed, TypeQueueClear, TypeQueueShuffle, TypeSessionEnd, TypeChatTyping, TypeChatClear, TypeChatUnpin:
 		msg = nil
 	case TypeSeek:
 		msg = &Seek{}
@@ -292,6 +300,8 @@ type Snapshot struct {
 	SkipNeeded int          `json:"skipNeeded"`
 	// Waiting lists the viewers the room paused for (WaitForBuffering).
 	Waiting []string `json:"waiting,omitempty"`
+	// CountdownMs is the server time a counted-down start begins at.
+	CountdownMs int64 `json:"countdownMs,omitempty"`
 }
 
 // Welcome is the first message after connecting.

@@ -105,6 +105,7 @@ export interface Snapshot {
   skipVoted: boolean;
   skipNeeded: number;
   waiting?: string[]; // viewers the room paused for while they buffer
+  countdownMs?: number; // server time a counted-down start begins at
 }
 
 export interface ChatMessage {
@@ -195,7 +196,7 @@ export type ServerMessage =
 
 export type ClientMessage =
   | { type: "ping"; t0: number }
-  | { type: "play" }
+  | { type: "play"; countdown?: boolean }
   | { type: "pause" }
   | { type: "seek"; positionMs: number }
   | { type: "rate.set"; rate: number }

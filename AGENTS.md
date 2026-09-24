@@ -142,7 +142,11 @@ and a production image build.
   `fairQueue` (manual mode) interleaves waiting items by adder, taking
   turns after the current video's adder (`fair.go`, re-applied on every
   add, replay and when switched on); `orderedByRule()` refuses moves and
-  shuffles and ignores "play next" while votes or turns decide; `queue.add` with `next` lands
+  shuffles and ignores "play next" while votes or turns decide;
+  `play {countdown: true}` — and any play in a room with an announced
+  session — sets `Snapshot.countdownMs` 3 s ahead and starts then
+  (`countdown`/`countdownTimer`); pause, a new item or a second play
+  cancel it; the player shows 3-2-1 from the server clock; `queue.add` with `next` lands
   right after the current item; a video already queued or in the history
   is refused with `duplicate` until the client repeats it with `force`
   (the add form asks). `queue.clear` drops the waiting items (the current

@@ -431,6 +431,11 @@ const RoomHeader: Component<{
                     <option value="60">1 min</option>
                   </select>
                 </label>
+                <Show when={props.store.current() && !props.store.state.playback?.playing}>
+                  <button type="button" class="link" onClick={() => props.store.commands.play(true)} title="Everyone sees 3-2-1, then the video starts">
+                    Start with countdown
+                  </button>
+                </Show>
                 <div class="menu-sep" />
                 <button type="button" class="link danger-text" onClick={clearChat}>
                   Clear chat

@@ -47,3 +47,29 @@ test("moderators see who lags behind", async ({ page }) => {
   await expect(avatar).toHaveCount(1);
   await expect(avatar).toHaveAttribute("title", new RegExp(`${name} .*s behind`));
 });
+
+test("a start with countdown shows 3-2-1 to everyone", async ({ browser }) => {
+  const hostCtx = await browser.newContext();
+  const guestCtx = await browser.newContext();
+  const host = await hostCtx.newPage();
+  const guest = await guestCtx.newPage();
+  await signUp(host, "starter");
+  const slug = await createRoom(host, { firstUrl: await readyVideo("Premiere") });
+  await host.goto(`/r/${slug}`);
+  await expect(host.locator(".queue-item.current")).toContainText("Premiere");
+  await signUp(guest, "audience");
+  await guest.goto(`/r/${slug}`);
+
+  const playButton = (p: typeof host) => p.locator(".controls .transport button.icon").first();
+  await playButton(host).click(); // pause
+  await expect(playButton(host)).toHaveText("▶");
+
+  await host.locator("summary", { hasText: "Options" }).click();
+  await host.getByRole("button", { name: "Start with countdown" }).click();
+  for (const p of [host, guest]) await expect(p.locator(".countdown-number")).toBeVisible();
+  for (const p of [host, guest]) await expect(p.locator(".countdown-number")).toHaveCount(0, { timeout: 6_000 });
+  for (const p of [host, guest]) await expect(playButton(p)).toHaveText("❚❚");
+
+  await hostCtx.close();
+  await guestCtx.close();
+});

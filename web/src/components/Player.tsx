@@ -146,6 +146,15 @@ const Player: Component<Props> = (props) => {
   };
 
   const current = () => props.room.current();
+  // Whole seconds left of a counted-down start, by the server clock; the
+  // tick keeps it moving between snapshots.
+  const countdownLeft = () => {
+    const at = props.room.state.snapshot?.countdownMs;
+    nowMs();
+    if (!at) return null;
+    const left = Math.ceil((at - props.room.clock.serverNow()) / 1000);
+    return left > 0 ? left : null;
+  };
   const canControl = () => props.room.isModerator();
   const duration = () => current()?.media.durationMs ?? 0;
   const queue = () => props.room.state.snapshot?.queue ?? [];
@@ -504,6 +513,14 @@ const Player: Component<Props> = (props) => {
               </Show>
             </div>
           </div>
+        </Show>
+
+        <Show when={countdownLeft()}>
+          {(n) => (
+            <div class="video-overlay countdown" role="status" aria-live="assertive">
+              <span class="countdown-number">{n()}</span>
+            </div>
+          )}
         </Show>
 
         <Show when={(props.room.state.snapshot?.waiting ?? []).length > 0 && current()}>

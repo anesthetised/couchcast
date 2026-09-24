@@ -230,7 +230,11 @@ func (c *conn) dispatch(ctx context.Context, data []byte) {
 
 	switch typ {
 	case protocol.TypePlay:
-		err = c.room.Play(cmdCtx, actor)
+		if msg.(*protocol.Play).Countdown {
+			err = c.room.PlayCountdown(cmdCtx, actor)
+		} else {
+			err = c.room.Play(cmdCtx, actor)
+		}
 	case protocol.TypePause:
 		err = c.room.Pause(cmdCtx, actor)
 	case protocol.TypeSeek:
