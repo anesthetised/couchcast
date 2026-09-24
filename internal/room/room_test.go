@@ -707,3 +707,55 @@ func TestPauseWhenEveryoneLeaves(t *testing.T) {
 	time.Sleep(80 * time.Millisecond)
 	assert.True(t, f.room.Playback().Playing)
 }
+
+func TestWaitForBuffering(t *testing.T) {
+	f := newFixture(t)
+	f.room.deps.WaitScale = 0.01 // 4 s → 40 ms, 30 s → 300 ms
+	ctx := context.Background()
+	owner, guest := &fakeConn{}, &fakeConn{}
+	f.room.Join(ctx, owner, f.owner)
+	f.room.Join(ctx, guest, f.guest)
+	f.ready("https://a", 600_000)
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false, false))
+	require.True(t, f.room.Playback().Playing)
+
+	// A short stall does not pause the room.
+	f.room.Report(guest, "buffering", 1000)
+	f.room.Report(guest, "playing", 1000)
+	time.Sleep(80 * time.Millisecond)
+	assert.True(t, f.room.Playback().Playing)
+
+	// A long one does; everyone sees who the room waits for; it resumes
+	// by itself when they are ready.
+	f.room.Report(guest, "buffering", 2000)
+	require.Eventually(t, func() bool { return !f.room.Playback().Playing }, time.Second, 5*time.Millisecond)
+	assert.Equal(t, []string{"guest"}, owner.lastSnapshot().Waiting)
+	f.room.Report(guest, "playing", 2000)
+	assert.True(t, f.room.Playback().Playing)
+	assert.Empty(t, owner.lastSnapshot().Waiting)
+
+	// Stuck for good: after the cap the room goes on without them and
+	// does not wait for the same stall again.
+	f.room.Report(guest, "buffering", 3000)
+	require.Eventually(t, func() bool { return !f.room.Playback().Playing }, time.Second, 5*time.Millisecond)
+	require.Eventually(t, func() bool { return f.room.Playback().Playing }, 2*time.Second, 10*time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
+	assert.True(t, f.room.Playback().Playing, "an ignored viewer does not stall the room again")
+	msgs, err := f.repo.ListRecentMessages(ctx, f.room.ID(), 10)
+	require.NoError(t, err)
+	bodies := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		bodies = append(bodies, m.Body)
+	}
+	assert.Contains(t, bodies, "waiting for guest")
+	assert.Contains(t, bodies, "continuing without guest")
+
+	// A moderator's pause ends the wait without resuming.
+	f.room.Report(guest, "playing", 4000)
+	f.room.Report(guest, "buffering", 4000)
+	require.Eventually(t, func() bool { return !f.room.Playback().Playing }, time.Second, 5*time.Millisecond)
+	require.NoError(t, f.room.Pause(ctx, f.owner))
+	f.room.Report(guest, "playing", 4000)
+	assert.False(t, f.room.Playback().Playing)
+	assert.Empty(t, owner.lastSnapshot().Waiting)
+}

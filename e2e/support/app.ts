@@ -22,9 +22,14 @@ export async function signUp(page: Page, prefix = "user"): Promise<string> {
 
 // createRoom goes through the API with the page's session: most tests
 // are about what happens inside a room, not about the form.
-export async function createRoom(page: Page, body: { name?: string; visibility?: "public" | "private"; description?: string } = {}): Promise<string> {
+export async function createRoom(
+  page: Page,
+  body: { name?: string; visibility?: "public" | "private"; description?: string; firstUrl?: string } = {},
+): Promise<string> {
   const slug = uniq("room").replace(/_/g, "-").toLowerCase();
-  const res = await page.request.post("/api/v1/rooms", { data: { name: body.name ?? "E2E room", slug, visibility: body.visibility ?? "public", description: body.description } });
+  const res = await page.request.post("/api/v1/rooms", {
+    data: { name: body.name ?? "E2E room", slug, visibility: body.visibility ?? "public", description: body.description, firstUrl: body.firstUrl },
+  });
   expect(res.status(), await res.text()).toBe(201);
   return slug;
 }
@@ -39,6 +44,20 @@ export async function sql(text: string, values: unknown[] = []): Promise<pg.Quer
   } finally {
     await client.end();
   }
+}
+
+// readyVideo stores a YouTube video as already ingested, so a room can
+// queue and "play" it without the ingest worker (the files do not exist;
+// tests that need this are about room behaviour, not pixels).
+export async function readyVideo(title = "E2E video", durationMs = 600_000): Promise<string> {
+  const id = Array.from({ length: 11 }, () => "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"[Math.floor(Math.random() * 64)]).join("");
+  const url = `https://www.youtube.com/watch?v=${id}`;
+  await sql(
+    `INSERT INTO media (source_key, source_url, title, duration_ms, status, progress, s3_prefix)
+     VALUES ($1, $2, $3, $4, 'ready', 1, $5)`,
+    [`youtube:${id}`, url, title, durationMs, `media/e2e-${id}/`],
+  );
+  return url;
 }
 
 export async function makeAdmin(username: string) {

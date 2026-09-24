@@ -3705,3 +3705,14 @@ label .hint {
   background-color: #000;
   background-repeat: no-repeat;
 }
+
+/* --- waiting for buffering viewers ------------------------------------------- */
+
+.video-overlay.waiting {
+  flex-direction: column;
+  gap: 0.6rem;
+  background: rgba(0, 0, 0, 0.55);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  z-index: 3;
+}

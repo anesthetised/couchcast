@@ -103,6 +103,7 @@ export interface Snapshot {
   skipVotes: number;
   skipVoted: boolean;
   skipNeeded: number;
+  waiting?: string[]; // viewers the room paused for while they buffer
 }
 
 export interface ChatMessage {

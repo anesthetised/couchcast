@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
+	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -75,6 +77,8 @@ type Deps struct {
 	Signer *mediastore.Signer
 	Logger *slog.Logger
 	Now    func() time.Time
+	// WaitScale shortens the buffering timers in tests (0 = real time).
+	WaitScale float64
 	// Persist bounds how often playback position is written while playing.
 	PersistEvery time.Duration
 	// RejoinGrace is how long after leaving a return still counts as the
@@ -119,6 +123,9 @@ type viewer struct {
 	user      *entity.User
 	role      entity.RoomRole
 	buffering bool
+	// ignored: the room already waited for this viewer to the limit;
+	// cleared when they play again, so they cannot stall the room twice.
+	ignored bool
 }
 
 // Room is the in-memory state of one room.
@@ -161,6 +168,13 @@ type Room struct {
 	// emptyTimer pauses the room once nobody has been here for the rejoin
 	// grace period (Settings.PauseWhenEmpty).
 	emptyTimer *time.Timer
+
+	// Waiting for buffering viewers (Settings.WaitForBuffering):
+	// bufferTimer runs while someone buffers and the room still plays;
+	// waiting holds who the room paused for, waitTimer caps the pause.
+	bufferTimer *time.Timer
+	waiting     []string
+	waitTimer   *time.Timer
 }
 
 // load builds a Room from the database.
@@ -430,6 +444,7 @@ func (r *Room) setCurrentLocked(item *entity.QueueItem) {
 		r.setPlaybackLocked(false, 0)
 		return
 	}
+	r.endWaitLocked(false)
 	id := item.ID
 	r.current = &id
 	r.rate = 1 // a new video always starts at normal speed
@@ -614,6 +629,7 @@ func (r *Room) snapshotLocked() protocol.Snapshot {
 			ScheduledMs: unixMs(r.info.ScheduledAt),
 		},
 		Playback: r.playbackLocked(),
+		Waiting:  r.waiting,
 		Queue:    make([]protocol.QueueEntry, 0, len(r.queue)),
 		Members:  []protocol.Presence{},
 	}
@@ -805,6 +821,7 @@ func (r *Room) Leave(conn Conn) {
 	delete(r.viewers, conn)
 	r.lastActive = r.now()
 	r.armEmptyPauseLocked()
+	r.checkBufferingLocked()
 	if v.user != nil && !r.userOnlineLocked(v.user.ID) {
 		r.leftAt[v.user.ID] = r.now()
 		if t, ok := r.leftTimers[v.user.ID]; ok {
@@ -915,8 +932,127 @@ func (r *Room) Report(conn Conn, state string, positionMs int64) {
 	buffering := state == "buffering"
 	if v.buffering != buffering {
 		v.buffering = buffering
+		if !buffering {
+			v.ignored = false
+		}
+		r.checkBufferingLocked()
 		r.broadcastLocked()
 	}
+}
+
+const (
+	// bufferPatience is how long a viewer may buffer before the room waits.
+	bufferPatience = 4 * time.Second
+	// maxWait is how long the room waits before going on without them.
+	maxWait = 30 * time.Second
+)
+
+// stuckLocked lists the viewers the room would wait for.
+func (r *Room) stuckLocked() []string {
+	var out []string
+	for _, v := range r.viewers {
+		if v.buffering && !v.ignored && v.user != nil && !slices.Contains(out, v.user.Username) {
+			out = append(out, v.user.Username)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// checkBufferingLocked reacts to a change in who is buffering: resume
+// when the room waited and everyone is ready, start the patience timer
+// when someone starts buffering while the room plays.
+func (r *Room) checkBufferingLocked() {
+	stuck := r.stuckLocked()
+	if r.waiting != nil {
+		if len(stuck) == 0 {
+			r.endWaitLocked(true)
+		} else {
+			r.waiting = stuck
+		}
+		return
+	}
+	if !r.info.Settings.WaitForBuffering || !r.playing || len(stuck) == 0 {
+		if r.bufferTimer != nil {
+			r.bufferTimer.Stop()
+			r.bufferTimer = nil
+		}
+		return
+	}
+	if r.bufferTimer == nil {
+		r.bufferTimer = time.AfterFunc(r.patience(bufferPatience), r.startWaiting)
+	}
+}
+
+// patience lets tests shorten the timers through Deps.RejoinGrace's
+// sibling; production uses the constants.
+func (r *Room) patience(d time.Duration) time.Duration {
+	if r.deps.WaitScale > 0 {
+		return time.Duration(float64(d) * r.deps.WaitScale)
+	}
+	return d
+}
+
+// startWaiting pauses the room for whoever is still buffering.
+func (r *Room) startWaiting() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.bufferTimer = nil
+	stuck := r.stuckLocked()
+	if !r.info.Settings.WaitForBuffering || !r.playing || len(stuck) == 0 || r.waiting != nil {
+		return
+	}
+	r.waiting = stuck
+	r.setPlaybackLocked(false, r.positionLocked(r.now()))
+	r.waitTimer = time.AfterFunc(r.patience(maxWait), r.stopWaiting)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := r.persistLocked(ctx); err != nil {
+		r.deps.Logger.Warn("persist wait pause", "room", r.info.Slug, "error", err)
+	}
+	r.logLocked(ctx, "waiting for "+strings.Join(stuck, ", "))
+	r.broadcastLocked()
+}
+
+// stopWaiting goes on without the viewers still buffering after maxWait.
+func (r *Room) stopWaiting() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.waitTimer = nil
+	if r.waiting == nil {
+		return
+	}
+	for _, v := range r.viewers {
+		if v.buffering {
+			v.ignored = true
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	r.logLocked(ctx, "continuing without "+strings.Join(r.waiting, ", "))
+	r.endWaitLocked(true)
+}
+
+// endWaitLocked leaves the waiting state, resuming playback when asked
+// (a moderator's own play/pause leaves it without touching the clock).
+func (r *Room) endWaitLocked(resume bool) {
+	if r.waitTimer != nil {
+		r.waitTimer.Stop()
+		r.waitTimer = nil
+	}
+	if r.waiting == nil {
+		return
+	}
+	r.waiting = nil
+	if resume && !r.playing && r.current != nil {
+		r.setPlaybackLocked(true, r.positionMs)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := r.persistLocked(ctx); err != nil {
+			r.deps.Logger.Warn("persist wait resume", "room", r.info.Slug, "error", err)
+		}
+	}
+	r.broadcastLocked()
 }
 
 // --- commands ----------------------------------------------------------------
@@ -942,6 +1078,7 @@ func (r *Room) Play(ctx context.Context, actor access.Actor) error {
 	if !m.IsReady() {
 		return invalid("media is not ready yet")
 	}
+	r.endWaitLocked(false)
 	if r.playing {
 		return nil
 	}
@@ -967,6 +1104,7 @@ func (r *Room) Pause(ctx context.Context, actor access.Actor) error {
 	if r.current == nil {
 		return errNoCurrent
 	}
+	r.endWaitLocked(false)
 	if !r.playing {
 		return nil
 	}

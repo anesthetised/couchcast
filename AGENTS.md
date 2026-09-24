@@ -129,7 +129,12 @@ and a production image build.
   in play order when the queue runs out (with nobody connected it stops
   paused at the top instead of cycling on); `pauseWhenEmpty` (default on)
   pauses a playing room once nobody has been connected for the rejoin
-  grace (`emptyTimer`, armed on leave/kick/load/start, disarmed on join); `queue.add` with `next` lands
+  grace (`emptyTimer`, armed on leave/kick/load/start, disarmed on join);
+  `waitForBuffering` (default on): a viewer buffering for 4 s pauses the
+  room (`Snapshot.waiting`, "Waiting for …" overlay, log line); it
+  resumes when everyone plays again, or after 30 s without them — then
+  that stall is ignored until the viewer plays. A moderator's play or
+  pause ends the wait. `Deps.WaitScale` shortens the timers in tests; `queue.add` with `next` lands
   right after the current item; a video already queued or in the history
   is refused with `duplicate` until the client repeats it with `force`
   (the add form asks). `queue.clear` drops the waiting items (the current

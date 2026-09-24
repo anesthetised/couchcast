@@ -409,6 +409,10 @@ const RoomHeader: Component<{
                   <input type="checkbox" checked={s().loop} onChange={(e) => props.store.commands.settings({ loop: e.currentTarget.checked })} />
                   Loop queue
                 </label>
+                <label class="radio" title="Pause while someone buffers for more than a few seconds (up to 30 s)">
+                  <input type="checkbox" checked={s().waitForBuffering} onChange={(e) => props.store.commands.settings({ waitForBuffering: e.currentTarget.checked })} />
+                  Wait for viewers who are buffering
+                </label>
                 <label class="radio" title="Pause two minutes after the last viewer leaves">
                   <input type="checkbox" checked={s().pauseWhenEmpty} onChange={(e) => props.store.commands.settings({ pauseWhenEmpty: e.currentTarget.checked })} />
                   Pause when everyone leaves

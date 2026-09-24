@@ -287,6 +287,8 @@ type Snapshot struct {
 	SkipVotes  int          `json:"skipVotes"`
 	SkipVoted  bool         `json:"skipVoted"`
 	SkipNeeded int          `json:"skipNeeded"`
+	// Waiting lists the viewers the room paused for (WaitForBuffering).
+	Waiting []string `json:"waiting,omitempty"`
 }
 
 // Welcome is the first message after connecting.

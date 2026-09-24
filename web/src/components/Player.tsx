@@ -498,6 +498,18 @@ const Player: Component<Props> = (props) => {
           </div>
         </Show>
 
+        <Show when={(props.room.state.snapshot?.waiting ?? []).length > 0 && current()}>
+          <div class="video-overlay waiting" role="status">
+            <span class="ring" aria-hidden="true" />
+            <span>Waiting for {listNames(props.room.state.snapshot?.waiting ?? [])}…</span>
+            <Show when={canControl()}>
+              <button type="button" class="ghost small" onClick={() => props.room.commands.play()}>
+                Continue without them
+              </button>
+            </Show>
+          </div>
+        </Show>
+
         <Show when={buffering() && !blocked() && current()?.media.status === "ready"}>
           <div class="video-overlay spinner" aria-label="Buffering">
             <span class="ring" />
@@ -708,6 +720,11 @@ const Player: Component<Props> = (props) => {
     </div>
   );
 };
+
+function listNames(names: string[]): string {
+  if (names.length <= 2) return names.join(" and ");
+  return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
+}
 
 function statusLabel(status: string): string {
   switch (status) {
