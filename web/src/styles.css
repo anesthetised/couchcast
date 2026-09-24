@@ -3755,3 +3755,18 @@ label .hint {
     opacity: 1;
   }
 }
+
+/* --- folded system lines ------------------------------------------------------- */
+
+.chat-fold {
+  padding: 0.1rem 0;
+}
+
+.chat-fold .link {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.chat-fold .link:hover {
+  color: var(--text-2);
+}

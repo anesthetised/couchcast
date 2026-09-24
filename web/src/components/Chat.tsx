@@ -99,6 +99,42 @@ const Chat: Component<Props> = (props) => {
     onCleanup(() => document.removeEventListener("visibilitychange", onVisible));
   });
 
+  // --- folded system runs ----------------------------------------------------
+  // Three or more system lines in a row fold into "N earlier events"; the
+  // last line of the run stays visible so a fresh event is never hidden.
+  const runs = createMemo(() => {
+    const info = new Map<number, { start: number; hidden: number }>();
+    const list = messages();
+    let i = 0;
+    while (i < list.length) {
+      if (!list[i]!.system) {
+        i++;
+        continue;
+      }
+      let j = i;
+      while (j < list.length && list[j]!.system) j++;
+      if (j - i >= 3) for (let k = i; k < j - 1; k++) info.set(list[k]!.id, { start: list[i]!.id, hidden: j - i - 1 });
+      i = j;
+    }
+    return info;
+  });
+  const [expanded, setExpanded] = createSignal<Set<number>>(new Set());
+  const toggleRun = (start: number) => {
+    const next = new Set(expanded());
+    if (next.has(start)) next.delete(start);
+    else next.add(start);
+    setExpanded(next);
+  };
+  const folded = (m: ChatMessage) => {
+    const run = runs().get(m.id);
+    return run !== undefined && !expanded().has(run.start);
+  };
+  // foldStart is the run's toggle, rendered before its first line.
+  const foldStart = (m: ChatMessage) => {
+    const run = runs().get(m.id);
+    return run && run.start === m.id ? run : undefined;
+  };
+
   // --- grouping --------------------------------------------------------------
   // Computed per line from its predecessor so <For> keeps DOM nodes stable.
   const prevOf = (i: number): ChatMessage | undefined => messages()[i - 1];
@@ -314,91 +350,102 @@ const Chat: Component<Props> = (props) => {
                     <span>new messages</span>
                   </li>
                 </Show>
-                <li
-                  class="chat-line"
-                  data-id={m.id}
-                  classList={{
-                    stale: isStale(m.createdMs),
-                    system: m.system ?? false,
-                    cont: isCont(m, i()) && !m.replyTo,
-                    me: !m.system && me() !== null && mentions(m.body, me()!),
-                    pinned: pinned()?.id === m.id,
-                  }}
-                >
-                  <Show when={m.replyTo}>
-                    {(q) => (
-                      <button type="button" class="chat-quote" onClick={() => scrollToMessage(q().id)} title="Show the original">
-                        <span class="chat-quote-user">{q().username}</span>
-                        <span class="chat-quote-body">{q().body}</span>
+                <Show when={foldStart(m)}>
+                  {(run) => (
+                    <li class="chat-fold">
+                      <button type="button" class="link small" onClick={() => toggleRun(run().start)} aria-expanded={expanded().has(run().start)}>
+                        {expanded().has(run().start) ? "▾ hide events" : `▸ ${run().hidden} earlier events`}
                       </button>
-                    )}
-                  </Show>
-                  <span class="chat-time muted">{time(m.createdMs)}</span>
-                  <Show when={!m.system}>
-                    <span class={`chat-user ${avatarClass(m.username ?? "", m.color)}`}>{m.username}</span>
-                  </Show>
-                  <span class="chat-body">
-                    <For each={parseMessage(m.body)}>
-                      {(p) =>
-                        p.kind === "text" ? (
-                          p.text
-                        ) : p.kind === "mention" ? (
-                          <span class="mention">@{p.name}</span>
-                        ) : p.kind === "time" ? (
-                          <Show when={duration() > 0 && p.ms <= duration()} fallback={p.text}>
-                            <Show
-                              when={canModerate()}
-                              fallback={
-                                <span class="timecode" title="Timecode">
+                    </li>
+                  )}
+                </Show>
+                <Show when={!folded(m)}>
+                  <li
+                    class="chat-line"
+                    data-id={m.id}
+                    classList={{
+                      stale: isStale(m.createdMs),
+                      system: m.system ?? false,
+                      cont: isCont(m, i()) && !m.replyTo,
+                      me: !m.system && me() !== null && mentions(m.body, me()!),
+                      pinned: pinned()?.id === m.id,
+                    }}
+                  >
+                    <Show when={m.replyTo}>
+                      {(q) => (
+                        <button type="button" class="chat-quote" onClick={() => scrollToMessage(q().id)} title="Show the original">
+                          <span class="chat-quote-user">{q().username}</span>
+                          <span class="chat-quote-body">{q().body}</span>
+                        </button>
+                      )}
+                    </Show>
+                    <span class="chat-time muted">{time(m.createdMs)}</span>
+                    <Show when={!m.system}>
+                      <span class={`chat-user ${avatarClass(m.username ?? "", m.color)}`}>{m.username}</span>
+                    </Show>
+                    <span class="chat-body">
+                      <For each={parseMessage(m.body)}>
+                        {(p) =>
+                          p.kind === "text" ? (
+                            p.text
+                          ) : p.kind === "mention" ? (
+                            <span class="mention">@{p.name}</span>
+                          ) : p.kind === "time" ? (
+                            <Show when={duration() > 0 && p.ms <= duration()} fallback={p.text}>
+                              <Show
+                                when={canModerate()}
+                                fallback={
+                                  <span class="timecode" title="Timecode">
+                                    {p.text}
+                                  </span>
+                                }
+                              >
+                                <button type="button" class="link timecode" title={`Seek to ${formatTime(p.ms)}`} onClick={() => props.room.commands.seek(p.ms)}>
                                   {p.text}
-                                </span>
-                              }
-                            >
-                              <button type="button" class="link timecode" title={`Seek to ${formatTime(p.ms)}`} onClick={() => props.room.commands.seek(p.ms)}>
-                                {p.text}
-                              </button>
+                                </button>
+                              </Show>
                             </Show>
-                          </Show>
-                        ) : p.video && cardable(m.createdMs) ? (
-                          <LinkCard url={p.url} canAdd={canAdd()} onAdd={(u) => props.room.commands.add(u)} />
-                        ) : (
-                          <>
-                            <a href={p.url} target="_blank" rel="noopener noreferrer">
-                              {p.url}
-                            </a>
-                            <Show when={p.video && canAdd()}>
-                              <button type="button" class="link chat-queue" title="Add to queue" onClick={() => props.room.commands.add(p.url)}>
-                                + queue
-                              </button>
-                            </Show>
-                          </>
-                        )
-                      }
-                    </For>
-                  </span>
-                  <Show when={!m.system && me()}>
-                    <span class="chat-tools">
-                      <Show when={canModerate() || m.username === me()}>
-                        <button type="button" class="link danger-text" title="Delete" onClick={() => props.room.commands.chatDelete(m.id)}>
-                          ✕
-                        </button>
-                      </Show>
-                      <Show when={canModerate() && m.username && m.username !== me()}>
-                        <button type="button" class="link" title={`Mute ${m.username} for 5 minutes`} onClick={() => void muteAuthor(m.username!)}>
-                          mute
-                        </button>
-                      </Show>
-                      <Show when={canModerate()}>
-                        <button type="button" class="link" title={pinned()?.id === m.id ? "Unpin" : "Pin above the chat"} onClick={() => (pinned()?.id === m.id ? props.room.commands.chatUnpin() : props.room.commands.chatPin(m.id))}>
-                          {pinned()?.id === m.id ? "unpin" : "pin"}
-                        </button>
-                      </Show>
-                      <button type="button" class="link" title="Reply" onClick={() => startReply(m)}>
-                        reply
-                      </button>
+                          ) : p.video && cardable(m.createdMs) ? (
+                            <LinkCard url={p.url} canAdd={canAdd()} onAdd={(u) => props.room.commands.add(u)} />
+                          ) : (
+                            <>
+                              <a href={p.url} target="_blank" rel="noopener noreferrer">
+                                {p.url}
+                              </a>
+                              <Show when={p.video && canAdd()}>
+                                <button type="button" class="link chat-queue" title="Add to queue" onClick={() => props.room.commands.add(p.url)}>
+                                  + queue
+                                </button>
+                              </Show>
+                            </>
+                          )
+                        }
+                      </For>
                     </span>
-                  </Show>
-                </li>
+                    <Show when={!m.system && me()}>
+                      <span class="chat-tools">
+                        <Show when={canModerate() || m.username === me()}>
+                          <button type="button" class="link danger-text" title="Delete" onClick={() => props.room.commands.chatDelete(m.id)}>
+                            ✕
+                          </button>
+                        </Show>
+                        <Show when={canModerate() && m.username && m.username !== me()}>
+                          <button type="button" class="link" title={`Mute ${m.username} for 5 minutes`} onClick={() => void muteAuthor(m.username!)}>
+                            mute
+                          </button>
+                        </Show>
+                        <Show when={canModerate()}>
+                          <button type="button" class="link" title={pinned()?.id === m.id ? "Unpin" : "Pin above the chat"} onClick={() => (pinned()?.id === m.id ? props.room.commands.chatUnpin() : props.room.commands.chatPin(m.id))}>
+                            {pinned()?.id === m.id ? "unpin" : "pin"}
+                          </button>
+                        </Show>
+                        <button type="button" class="link" title="Reply" onClick={() => startReply(m)}>
+                          reply
+                        </button>
+                      </span>
+                    </Show>
+                  </li>
+                </Show>
               </>
             )}
           </For>
