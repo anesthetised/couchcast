@@ -132,7 +132,7 @@ func TestBugReports(t *testing.T) {
 
 	// Without room or media the report still goes through; the limiter
 	// (burst 4) stops a flood.
-	codes := []int{}
+	codes := make([]int, 0, 5)
 	for range 5 {
 		codes = append(codes, alice.do(http.MethodPost, "/api/v1/bug-reports", map[string]any{"category": "other", "description": "hm"}).Code)
 	}

@@ -306,8 +306,9 @@ func (s *Server) handleAdminBugReportFrame(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	w.Header().Set("Content-Type", "image/jpeg")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, max-age=3600")
-	_, _ = w.Write(frame)
+	_, _ = w.Write(frame) //nolint:gosec // JPEG checked at intake, served as image/jpeg with nosniff
 }
 
 type resolveBugRequest struct {
