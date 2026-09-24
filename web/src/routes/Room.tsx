@@ -409,6 +409,10 @@ const RoomHeader: Component<{
                   <input type="checkbox" checked={s().loop} onChange={(e) => props.store.commands.settings({ loop: e.currentTarget.checked })} />
                   Loop queue
                 </label>
+                <label class="radio" title="Pause two minutes after the last viewer leaves">
+                  <input type="checkbox" checked={s().pauseWhenEmpty} onChange={(e) => props.store.commands.settings({ pauseWhenEmpty: e.currentTarget.checked })} />
+                  Pause when everyone leaves
+                </label>
                 <label class="radio">
                   Slow mode
                   <select value={String(s().slowModeSec)} onChange={(e) => props.store.commands.settings({ slowModeSec: Number(e.currentTarget.value) })}>

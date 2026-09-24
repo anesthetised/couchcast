@@ -127,7 +127,9 @@ and a production image build.
   in the snapshot as `played`; `queue.replay` re-queues one,
   `queue.clearPlayed` empties it); the `loop` setting re-queues the history
   in play order when the queue runs out (with nobody connected it stops
-  paused at the top instead of cycling on); `queue.add` with `next` lands
+  paused at the top instead of cycling on); `pauseWhenEmpty` (default on)
+  pauses a playing room once nobody has been connected for the rejoin
+  grace (`emptyTimer`, armed on leave/kick/load/start, disarmed on join); `queue.add` with `next` lands
   right after the current item; a video already queued or in the history
   is refused with `duplicate` until the client repeats it with `force`
   (the add form asks). `queue.clear` drops the waiting items (the current

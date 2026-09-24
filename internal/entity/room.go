@@ -36,11 +36,19 @@ type Settings struct {
 	// SlowModeSec is the minimum gap between a non-moderator's messages
 	// (0 = off).
 	SlowModeSec int `json:"slowModeSec"`
+	// PauseWhenEmpty pauses playback once the last viewer has been gone
+	// for the rejoin grace period.
+	PauseWhenEmpty bool `json:"pauseWhenEmpty"`
+	// WaitForBuffering pauses the room while a viewer is stuck buffering.
+	WaitForBuffering bool `json:"waitForBuffering"`
+	// FairQueue interleaves waiting videos by who added them (manual mode).
+	FairQueue bool `json:"fairQueue"`
 }
 
-// DefaultSettings is applied to new rooms.
+// DefaultSettings is applied to new rooms, and fills keys that older rooms'
+// stored settings lack.
 func DefaultSettings() Settings {
-	return Settings{VoteMode: false, SkipThreshold: 0.5, ViewersCanAdd: true}
+	return Settings{VoteMode: false, SkipThreshold: 0.5, ViewersCanAdd: true, PauseWhenEmpty: true, WaitForBuffering: true}
 }
 
 // Room is a watch-together room. Playback state columns are read and

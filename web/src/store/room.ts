@@ -6,7 +6,7 @@ import { ClockSync } from "~/lib/clock";
 import { logEvent, registerProbe } from "~/lib/diagnostics";
 import { rooms } from "~/lib/rooms";
 import { toast } from "~/lib/toast";
-import type { RoomRole } from "~/lib/types";
+import type { RoomRole, Settings } from "~/lib/types";
 import { RoomSocket, type SocketStatus } from "~/lib/ws";
 import type { ChatMessage, ClientMessage, Playback, Snapshot } from "~/protocol";
 
@@ -248,7 +248,7 @@ export function createRoomStore(slug: string) {
       vote: (itemId: string) => send({ type: "queue.vote", itemId }),
       skipVote: () => send({ type: "skip.vote" }),
       endSession: () => send({ type: "session.end" }),
-      settings: (patch: { voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean; loop?: boolean; slowModeSec?: number }) =>
+      settings: (patch: Partial<Settings>) =>
         send({ type: "settings.set", ...patch }),
       chat: (body: string, replyTo?: number) => send({ type: "chat.send", body, replyTo }),
       chatPin: (id: number) => send({ type: "chat.pin", id }),

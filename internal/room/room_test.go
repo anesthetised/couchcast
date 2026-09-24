@@ -663,3 +663,47 @@ func TestLoopPausesWhenNobodyWatches(t *testing.T) {
 	require.NoError(t, f.room.Play(ctx, f.owner))
 	assert.True(t, f.room.Playback().Playing)
 }
+
+func TestPauseWhenEveryoneLeaves(t *testing.T) {
+	f := newFixture(t)
+	f.room.deps.RejoinGrace = 30 * time.Millisecond
+	ctx := context.Background()
+	conn := &fakeConn{}
+	f.room.Join(ctx, conn, f.owner)
+	f.ready("https://a", 600_000)
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false, false))
+	require.True(t, f.room.Playback().Playing)
+
+	// Leaving and coming back inside the grace period changes nothing.
+	f.room.Leave(conn)
+	back := &fakeConn{}
+	f.room.Join(ctx, back, f.owner)
+	time.Sleep(80 * time.Millisecond)
+	assert.True(t, f.room.Playback().Playing)
+
+	// Gone for good: paused where the clock was, logged once.
+	f.room.Leave(back)
+	f.now = f.now.Add(5 * time.Second)
+	require.Eventually(t, func() bool { return !f.room.Playback().Playing }, time.Second, 10*time.Millisecond)
+	assert.EqualValues(t, 5000, f.room.Playback().PositionMs)
+	msgs, err := f.repo.ListRecentMessages(ctx, f.room.ID(), 5)
+	require.NoError(t, err)
+	bodies := make([]string, 0, len(msgs))
+	for _, m := range msgs {
+		bodies = append(bodies, m.Body)
+	}
+	assert.Contains(t, bodies, "paused: everyone left") // next to "owner left", same grace
+	saved, err := f.repo.GetRoomByID(ctx, f.room.ID())
+	require.NoError(t, err)
+	assert.False(t, saved.Playing)
+
+	// With the setting off the room plays on.
+	off := false
+	again := &fakeConn{}
+	f.room.Join(ctx, again, f.owner)
+	require.NoError(t, f.room.SettingsSet(ctx, f.owner, protocol.SettingsSet{PauseWhenEmpty: &off}))
+	require.NoError(t, f.room.Play(ctx, f.owner))
+	f.room.Leave(again)
+	time.Sleep(80 * time.Millisecond)
+	assert.True(t, f.room.Playback().Playing)
+}

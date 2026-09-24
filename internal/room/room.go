@@ -158,6 +158,9 @@ type Room struct {
 
 	// pinned is the message shown above the chat, nil when none.
 	pinned *protocol.ChatMessage
+	// emptyTimer pauses the room once nobody has been here for the rejoin
+	// grace period (Settings.PauseWhenEmpty).
+	emptyTimer *time.Timer
 }
 
 // load builds a Room from the database.
@@ -208,6 +211,8 @@ func load(ctx context.Context, deps Deps, id uuid.UUID) (*Room, error) {
 	if r.playing {
 		r.scheduleAdvanceLocked()
 	}
+	// Restored playing with nobody connected yet (after a restart).
+	r.armEmptyPauseLocked()
 
 	return r, nil
 }
@@ -344,6 +349,41 @@ func (r *Room) setPlaybackLocked(playing bool, positionMs int64) {
 	r.positionAt = r.now()
 	r.seq++
 	r.scheduleAdvanceLocked()
+	r.armEmptyPauseLocked()
+}
+
+// armEmptyPauseLocked starts the empty-room countdown when the room is
+// playing with nobody in it; it is a no-op otherwise or when armed.
+func (r *Room) armEmptyPauseLocked() {
+	if !r.info.Settings.PauseWhenEmpty || !r.playing || len(r.viewers) > 0 || r.emptyTimer != nil {
+		return
+	}
+	r.emptyTimer = time.AfterFunc(r.rejoinGrace(), r.pauseIfEmpty)
+}
+
+func (r *Room) disarmEmptyPauseLocked() {
+	if r.emptyTimer != nil {
+		r.emptyTimer.Stop()
+		r.emptyTimer = nil
+	}
+}
+
+// pauseIfEmpty fires after the grace period: still nobody here, still
+// playing — pause where the clock is, once, and say so in the log.
+func (r *Room) pauseIfEmpty() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.emptyTimer = nil
+	if !r.info.Settings.PauseWhenEmpty || !r.playing || len(r.viewers) > 0 {
+		return
+	}
+	r.setPlaybackLocked(false, r.positionLocked(r.now()))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := r.persistLocked(ctx); err != nil {
+		r.deps.Logger.Warn("persist empty pause", "room", r.info.Slug, "error", err)
+	}
+	r.logLocked(ctx, "paused: everyone left")
 }
 
 // scheduleAdvanceLocked arms the timer that moves to the next item when
@@ -679,6 +719,7 @@ func (r *Room) Join(ctx context.Context, conn Conn, actor access.Actor) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
+	r.disarmEmptyPauseLocked()
 	first := actor.User != nil && !r.userOnlineLocked(actor.User.ID) &&
 		r.now().Sub(r.leftAt[actor.User.ID]) > r.rejoinGrace()
 	if actor.User != nil {
@@ -763,6 +804,7 @@ func (r *Room) Leave(conn Conn) {
 	}
 	delete(r.viewers, conn)
 	r.lastActive = r.now()
+	r.armEmptyPauseLocked()
 	if v.user != nil && !r.userOnlineLocked(v.user.ID) {
 		r.leftAt[v.user.ID] = r.now()
 		if t, ok := r.leftTimers[v.user.ID]; ok {
@@ -795,6 +837,7 @@ func (r *Room) Kick(userID uuid.UUID, reason string) {
 			c.Close(reason)
 		}
 	}
+	r.armEmptyPauseLocked()
 	r.broadcastLocked()
 }
 

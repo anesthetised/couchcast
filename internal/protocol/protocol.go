@@ -97,11 +97,14 @@ type QueueMove struct {
 
 // SettingsSet changes room settings; nil fields are left untouched.
 type SettingsSet struct {
-	VoteMode      *bool    `json:"voteMode"`
-	SkipThreshold *float64 `json:"skipThreshold"`
-	ViewersCanAdd *bool    `json:"viewersCanAdd"`
-	Loop          *bool    `json:"loop"`
-	SlowModeSec   *int     `json:"slowModeSec"`
+	VoteMode         *bool    `json:"voteMode"`
+	SkipThreshold    *float64 `json:"skipThreshold"`
+	ViewersCanAdd    *bool    `json:"viewersCanAdd"`
+	Loop             *bool    `json:"loop"`
+	SlowModeSec      *int     `json:"slowModeSec"`
+	PauseWhenEmpty   *bool    `json:"pauseWhenEmpty"`
+	WaitForBuffering *bool    `json:"waitForBuffering"`
+	FairQueue        *bool    `json:"fairQueue"`
 }
 
 // React sends an ephemeral emoji reaction.

@@ -34,6 +34,9 @@ export interface Settings {
   viewersCanAdd: boolean;
   loop: boolean;
   slowModeSec: number;
+  pauseWhenEmpty: boolean;
+  waitForBuffering: boolean;
+  fairQueue: boolean;
 }
 
 export interface Room {

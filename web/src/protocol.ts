@@ -211,7 +211,7 @@ export type ClientMessage =
   | { type: "queue.vote"; itemId: string }
   | { type: "skip.vote" }
   | { type: "session.end" }
-  | { type: "settings.set"; voteMode?: boolean; skipThreshold?: number; viewersCanAdd?: boolean; loop?: boolean; slowModeSec?: number }
+  | ({ type: "settings.set" } & Partial<Settings>)
   | { type: "chat.send"; body: string; replyTo?: number }
   | { type: "chat.pin"; id: number }
   | { type: "chat.unpin" }

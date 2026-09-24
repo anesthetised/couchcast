@@ -61,6 +61,18 @@ func (r *Room) SettingsSet(ctx context.Context, actor access.Actor, in protocol.
 	if in.Loop != nil {
 		s.Loop = *in.Loop
 	}
+	if in.PauseWhenEmpty != nil {
+		s.PauseWhenEmpty = *in.PauseWhenEmpty
+		if !s.PauseWhenEmpty {
+			r.disarmEmptyPauseLocked()
+		}
+	}
+	if in.WaitForBuffering != nil {
+		s.WaitForBuffering = *in.WaitForBuffering
+	}
+	if in.FairQueue != nil {
+		s.FairQueue = *in.FairQueue
+	}
 	if in.SlowModeSec != nil {
 		switch *in.SlowModeSec {
 		case 0, 5, 15, 30, 60:

@@ -98,5 +98,5 @@ func TestVoteMode(t *testing.T) {
 	assert.Error(t, f.room.QueueAdd(ctx, f.guest, "https://z", false, false))
 	saved, err := f.repo.GetRoomByID(ctx, f.room.ID())
 	require.NoError(t, err)
-	assert.Equal(t, entity.Settings{VoteMode: false, SkipThreshold: 0.5, ViewersCanAdd: false}, saved.Settings)
+	assert.Equal(t, entity.Settings{VoteMode: false, SkipThreshold: 0.5, ViewersCanAdd: false, PauseWhenEmpty: true, WaitForBuffering: true}, saved.Settings)
 }

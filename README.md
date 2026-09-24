@@ -117,10 +117,11 @@ deploy/          files mounted into infrastructure containers
 - **YouTube** may require cookies or a PO-token provider on some networks;
   pass extra flags through `COUCHCAST_YTDLP_EXTRA_ARGS`.
 
-Playback does not need anyone in the room: a room that is playing stays
-loaded, keeps advancing through its queue and is resumed after a server
-restart. The directory marks such rooms as **live**; the viewer count is
-shown separately.
+A room that is playing stays loaded, keeps advancing through its queue and
+is resumed after a server restart. By default it pauses two minutes after
+the last viewer leaves ("Pause when everyone leaves" in the room options);
+turned off, it plays on for nobody. The directory marks playing rooms as
+**live**; the viewer count is shown separately.
 
 ## Known limitations
 
