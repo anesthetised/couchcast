@@ -56,6 +56,11 @@ type WebConfig struct {
 	TrustProxy bool
 	// AuthRatePerMinute caps register/login attempts per client IP.
 	AuthRatePerMinute int
+	// VAPID keys enable Web Push; empty disables it. Generate a pair
+	// with `couchcast vapid`.
+	VAPIDPublicKey  string
+	VAPIDPrivateKey string
+	VAPIDSubject    string
 }
 
 // IngestConfig holds settings used only by the ingest worker.
@@ -96,6 +101,9 @@ func fromEnv(c *Config) {
 	c.Web.MaxCacheBytes = env.Get(prefix+"MAX_CACHE_BYTES", int64(50<<30))
 	c.Web.TrustProxy = env.Get(prefix+"TRUST_PROXY", false)
 	c.Web.AuthRatePerMinute = env.Get(prefix+"AUTH_RATE_PER_MINUTE", 10)
+	c.Web.VAPIDPublicKey = env.Get(prefix+"VAPID_PUBLIC_KEY", "")
+	c.Web.VAPIDPrivateKey = env.Get(prefix+"VAPID_PRIVATE_KEY", "")
+	c.Web.VAPIDSubject = env.Get(prefix+"VAPID_SUBJECT", "")
 
 	c.Ingest.Workers = env.Get(prefix+"INGEST_WORKERS", 2)
 	c.Ingest.MetricsAddr = env.Get(prefix+"INGEST_METRICS_ADDR", ":9090")

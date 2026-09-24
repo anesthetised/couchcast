@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/anesthetised/couchcast/internal/access"
 	"github.com/anesthetised/couchcast/internal/entity"
+	"github.com/anesthetised/couchcast/internal/notify"
 	"github.com/anesthetised/couchcast/internal/protocol"
 	"github.com/anesthetised/couchcast/internal/repository"
 )
@@ -141,7 +143,64 @@ func (r *Room) ChatSend(ctx context.Context, actor access.Actor, body string, re
 	for _, v := range r.viewers {
 		v.conn.Send(out)
 	}
+	r.notifyMentionsLocked(ctx, actor, msg)
 	return nil
+}
+
+var mentionRe = regexp.MustCompile(`(?:^|[^\w@])@([A-Za-z0-9_]{3,32})`)
+
+const (
+	maxMentionPushes = 5
+	// mentionPushEvery throttles pushes to one person from one room, so a
+	// conversation does not buzz their phone on every line.
+	mentionPushEvery = time.Minute
+)
+
+// notifyMentionsLocked pushes to mentioned users who are not in the room
+// and may open it. Failures only log: chat must never fail on this.
+func (r *Room) notifyMentionsLocked(ctx context.Context, actor access.Actor, msg *entity.Message) {
+	if r.deps.Notifier == nil {
+		return
+	}
+	var names []string
+	seen := map[string]bool{strings.ToLower(actor.User.Username): true}
+	for _, m := range mentionRe.FindAllStringSubmatch(msg.Body, -1) {
+		n := strings.ToLower(m[1])
+		if !seen[n] && len(names) < maxMentionPushes {
+			seen[n] = true
+			names = append(names, n)
+		}
+	}
+	if len(names) == 0 {
+		return
+	}
+	ids, err := r.deps.Store.UserIDsByUsername(ctx, names)
+	if err != nil {
+		r.deps.Logger.Warn("mention push: resolve users", "error", err)
+		return
+	}
+	now := r.now()
+	for _, id := range ids {
+		if r.connectedLocked(id) || now.Sub(r.lastMention[id]) < mentionPushEvery {
+			continue
+		}
+		if !r.info.IsPublic() {
+			if _, err := r.deps.Store.GetMember(ctx, r.info.ID, id); err != nil {
+				continue // cannot open the room: no push
+			}
+		}
+		r.lastMention[id] = now
+		body := msg.Body
+		if utf8.RuneCountInString(body) > 140 {
+			body = string([]rune(body)[:140]) + "…"
+		}
+		r.deps.Notifier.Notify(id, notify.Message{
+			Title: actor.User.Username + " mentioned you in " + r.info.Name,
+			Body:  body,
+			URL:   "/r/" + r.info.Slug,
+			Tag:   fmt.Sprintf("mention-%d", msg.ID),
+		})
+	}
 }
 
 // ChatTyping relays a typing hint to everyone else; nothing is stored.

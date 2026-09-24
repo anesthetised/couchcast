@@ -81,6 +81,11 @@ type Deps struct {
 	Stars StarStore
 	// BugReports stores problem reports; nil disables them.
 	BugReports BugReportStore
+	// Push stores Web Push subscriptions; with PushPublicKey empty the
+	// feature is off. Notifier delivers (nil drops).
+	Push          PushStore
+	PushPublicKey string
+	Notifier      Notifier
 	// RoomDebug snapshots a loaded room for a bug report (room.Manager.Debug).
 	RoomDebug func(roomID uuid.UUID) (any, bool)
 
@@ -221,6 +226,11 @@ func New(deps Deps) *Server {
 			r.Get("/users", s.handleSearchUsers)
 			r.Get("/invites", s.handleMyInvites)
 			r.Get("/me/upcoming", s.handleMyUpcoming)
+			if deps.Push != nil && deps.PushPublicKey != "" {
+				r.Get("/push/key", s.handlePushKey)
+				r.Post("/push/subscriptions", s.handlePushSubscribe)
+				r.Delete("/push/subscriptions", s.handlePushUnsubscribe)
+			}
 			if deps.BugReports != nil {
 				r.Post("/bug-reports", s.handleCreateBugReport)
 			}

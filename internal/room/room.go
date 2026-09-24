@@ -22,6 +22,7 @@ import (
 	"github.com/anesthetised/couchcast/internal/access"
 	"github.com/anesthetised/couchcast/internal/entity"
 	"github.com/anesthetised/couchcast/internal/mediastore"
+	"github.com/anesthetised/couchcast/internal/notify"
 	"github.com/anesthetised/couchcast/internal/protocol"
 	"github.com/anesthetised/couchcast/internal/ratelimit"
 	"github.com/anesthetised/couchcast/internal/repository"
@@ -33,6 +34,7 @@ type Store interface {
 	GetRoomByID(ctx context.Context, id uuid.UUID) (*entity.Room, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 	GetMember(ctx context.Context, roomID, userID uuid.UUID) (*entity.RoomMember, error)
+	UserIDsByUsername(ctx context.Context, names []string) (map[string]uuid.UUID, error)
 	ListQueue(ctx context.Context, roomID uuid.UUID) ([]entity.QueueItem, error)
 	GetMediaBatch(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*entity.Media, error)
 	GetMedia(ctx context.Context, id uuid.UUID) (*entity.Media, error)
@@ -80,6 +82,14 @@ type Deps struct {
 	RejoinGrace time.Duration
 	// QueueAddLimiter budgets queue.add per user across rooms. Nil disables.
 	QueueAddLimiter *ratelimit.Limiter
+	// Notifier reaches users who are not in the room (Web Push). Nil
+	// disables it.
+	Notifier Notifier
+}
+
+// Notifier sends a push notification to a user's browsers (notify.Notifier).
+type Notifier interface {
+	Notify(user uuid.UUID, msg notify.Message)
 }
 
 // playedKept is how much history a room keeps in memory and sends out.
@@ -135,6 +145,7 @@ type Room struct {
 	chatLimits  map[uuid.UUID]*rate.Limiter
 	reactLimits map[uuid.UUID]*rate.Limiter
 	lastChatAt  map[uuid.UUID]time.Time // for slow mode
+	lastMention map[uuid.UUID]time.Time // last mention push per user
 	// leftAt remembers when a user's last connection closed, so a quick
 	// reconnect (reload, network blip) is not logged as a new join; the
 	// matching timer logs "left" once the grace period passes.
@@ -170,6 +181,7 @@ func load(ctx context.Context, deps Deps, id uuid.UUID) (*Room, error) {
 		chatLimits:  map[uuid.UUID]*rate.Limiter{},
 		reactLimits: map[uuid.UUID]*rate.Limiter{},
 		lastChatAt:  map[uuid.UUID]time.Time{},
+		lastMention: map[uuid.UUID]time.Time{},
 		leftAt:      map[uuid.UUID]time.Time{},
 		leftTimers:  map[uuid.UUID]*time.Timer{},
 		current:     info.CurrentItemID,
@@ -383,6 +395,36 @@ func (r *Room) setCurrentLocked(item *entity.QueueItem) {
 	r.rate = 1 // a new video always starts at normal speed
 	m := r.media[item.MediaID]
 	r.setPlaybackLocked(m.IsReady(), 0)
+
+	// Whoever queued it hears about it if they are not watching.
+	if r.deps.Notifier != nil && item.AddedBy != nil && !r.connectedLocked(*item.AddedBy) {
+		r.deps.Notifier.Notify(*item.AddedBy, notify.Message{
+			Title: "Your video is starting",
+			Body:  mediaTitle(m) + " — " + r.info.Name,
+			URL:   "/r/" + r.info.Slug,
+			Tag:   "start-" + item.ID.String(),
+		})
+	}
+}
+
+// connectedLocked reports whether the user has a live connection here.
+func (r *Room) connectedLocked(user uuid.UUID) bool {
+	for _, v := range r.viewers {
+		if v.user != nil && v.user.ID == user {
+			return true
+		}
+	}
+	return false
+}
+
+func mediaTitle(m *entity.Media) string {
+	if m == nil {
+		return "A video"
+	}
+	if m.Title != "" {
+		return m.Title
+	}
+	return m.SourceURL
 }
 
 // allowedRates are the speeds a moderator may pick.

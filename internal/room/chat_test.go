@@ -6,10 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"uuid"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/anesthetised/couchcast/internal/access"
+	"github.com/anesthetised/couchcast/internal/notify"
 	"github.com/anesthetised/couchcast/internal/protocol"
 )
 
@@ -270,4 +273,58 @@ func TestRepliesOwnDeleteAndPin(t *testing.T) {
 	reloaded, err = load(ctx, f.room.deps, f.room.ID())
 	require.NoError(t, err)
 	assert.Nil(t, reloaded.pinned)
+}
+
+type pushed struct {
+	user uuid.UUID
+	msg  notify.Message
+}
+
+type fakeNotifier struct{ out []pushed }
+
+func (f *fakeNotifier) Notify(user uuid.UUID, msg notify.Message) {
+	f.out = append(f.out, pushed{user, msg})
+}
+
+func TestPushMentionsAndStart(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	n := &fakeNotifier{}
+	f.room.deps.Notifier = n
+	owner := &fakeConn{}
+	f.room.Join(ctx, owner, f.owner)
+	away, err := f.repo.CreateUser(ctx, "away", "h")
+	require.NoError(t, err)
+
+	// The guest is connected: no push; "away" is not: one push, and the
+	// sender's own name is ignored.
+	guestConn := &fakeConn{}
+	f.room.Join(ctx, guestConn, f.guest)
+	require.NoError(t, f.room.ChatSend(ctx, f.owner, "@guest @away @owner look at 1:23", nil))
+	require.Len(t, n.out, 1)
+	assert.Equal(t, away.ID, n.out[0].user)
+	assert.Equal(t, "owner mentioned you in "+f.room.info.Name, n.out[0].msg.Title)
+	assert.Equal(t, "/r/"+f.room.info.Slug, n.out[0].msg.URL)
+
+	// Throttled per user.
+	require.NoError(t, f.room.ChatSend(ctx, f.owner, "@away again", nil))
+	assert.Len(t, n.out, 1)
+	f.now = f.now.Add(2 * time.Minute)
+	require.NoError(t, f.room.ChatSend(ctx, f.owner, "@away again", nil))
+	assert.Len(t, n.out, 2)
+
+	// The guest queues a video and leaves; when it comes up they hear
+	// about it, tagged like the page's own notification.
+	f.ready("https://a", 10_000)
+	f.ready("https://b", 10_000)
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false, false))
+	require.NoError(t, f.room.QueueAdd(ctx, f.guest, "https://b", false, false))
+	f.room.Leave(guestConn)
+	n.out = nil
+	require.NoError(t, f.room.Next(ctx, f.owner))
+	require.Len(t, n.out, 1)
+	assert.Equal(t, f.guest.User.ID, n.out[0].user)
+	assert.Equal(t, "Your video is starting", n.out[0].msg.Title)
+	cur := owner.lastSnapshot().Queue[0]
+	assert.Equal(t, "start-"+cur.ID.String(), n.out[0].msg.Tag)
 }

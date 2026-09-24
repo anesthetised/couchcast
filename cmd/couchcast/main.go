@@ -14,6 +14,7 @@ import (
 	"syscall"
 
 	"github.com/anesthetised/couchcast/internal/config"
+	"github.com/anesthetised/couchcast/internal/webpush"
 )
 
 // version is set at build time via -ldflags "-X main.version=...".
@@ -30,6 +31,7 @@ commands:
   media retry <id>       re-queue a failed media item
   media show <id>        print a media row
   media token <id>       print a signed manifest path for a media id
+  vapid                  print a new Web Push (VAPID) key pair as env lines
   version                print the build version
 `
 
@@ -64,6 +66,13 @@ func run(ctx context.Context, args []string) error {
 		return admin(ctx, cfg, logger, args)
 	case "media":
 		return mediaCmd(ctx, cfg, logger, args)
+	case "vapid":
+		pub, priv, err := webpush.GenerateVAPID()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("COUCHCAST_VAPID_PUBLIC_KEY=%s\nCOUCHCAST_VAPID_PRIVATE_KEY=%s\nCOUCHCAST_VAPID_SUBJECT=mailto:you@example.com\n", pub, priv)
+		return nil
 	case "version", "-v", "--version":
 		fmt.Println("couchcast", version)
 		return nil

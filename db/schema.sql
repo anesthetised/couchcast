@@ -145,6 +145,9 @@ CREATE TABLE rooms (
     -- When the next session is announced to start; cleared when playback
     -- starts.
     scheduled_at    timestamptz,
+    -- The scheduled_at members were last reminded of (so each start is
+    -- announced once, and a new time is announced again).
+    reminded_for    timestamptz,
     created_at      timestamptz NOT NULL DEFAULT now(),
     updated_at      timestamptz NOT NULL DEFAULT now(),
 
@@ -194,6 +197,21 @@ CREATE TABLE room_bans (
 
     PRIMARY KEY (room_id, user_id)
 );
+
+-- Web Push subscriptions, one per browser; the endpoint identifies it.
+CREATE TABLE push_subscriptions (
+    id           uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id      uuid        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    endpoint     text        NOT NULL,
+    p256dh       text        NOT NULL,
+    auth         text        NOT NULL,
+    user_agent   text        NOT NULL DEFAULT '',
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    last_used_at timestamptz
+);
+
+CREATE UNIQUE INDEX push_subscriptions_endpoint_idx ON push_subscriptions (endpoint);
+CREATE INDEX push_subscriptions_user_id_idx ON push_subscriptions (user_id);
 
 -- Starred rooms: a per-user shortlist, filterable in the directory.
 CREATE TABLE room_stars (

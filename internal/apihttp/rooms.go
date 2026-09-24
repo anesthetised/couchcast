@@ -473,9 +473,13 @@ func (s *Server) handleCreateRoom(w http.ResponseWriter, r *http.Request) {
 			s.internalError(w, r, "lookup invitee", err)
 			return
 		}
-		if _, err := s.deps.Rooms.CreateInvite(r.Context(), room.ID, target.ID, user.ID); err != nil && !errors.Is(err, repository.ErrConflict) {
+		inv, err := s.deps.Rooms.CreateInvite(r.Context(), room.ID, target.ID, user.ID)
+		if err != nil && !errors.Is(err, repository.ErrConflict) {
 			s.internalError(w, r, "create invite", err)
 			return
+		}
+		if inv != nil {
+			s.notifyInvite(inv.ID, target.ID, user.Username, room)
 		}
 		s.audit(r, "invite.create", "user", target.ID.String(), room, map[string]any{"username": target.Username})
 	}
@@ -943,6 +947,7 @@ func (s *Server) handleCreateInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.audit(r, "invite.create", "user", target.ID.String(), rc.room, map[string]any{"username": target.Username})
+	s.notifyInvite(inv.ID, target.ID, rc.actor.User.Username, rc.room)
 	writeJSON(w, http.StatusCreated, toInviteResponse(inv))
 }
 

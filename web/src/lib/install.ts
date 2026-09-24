@@ -30,10 +30,11 @@ export async function promptInstall(): Promise<boolean> {
   return outcome === "accepted";
 }
 
-// registerServiceWorker enables the offline shell and installability in
-// production builds; Vite's dev server has no bundle to cache.
+// registerServiceWorker enables push, the offline shell and
+// installability. It runs in development too (push needs it); the worker
+// only caches /assets and /icons, which Vite's dev server does not use.
 export function registerServiceWorker() {
-  if (!import.meta.env.PROD || !("serviceWorker" in navigator)) return;
+  if (!("serviceWorker" in navigator)) return;
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   });

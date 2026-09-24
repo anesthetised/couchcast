@@ -24,10 +24,12 @@ import (
 	"github.com/anesthetised/couchcast/internal/jobs"
 	"github.com/anesthetised/couchcast/internal/mediastore"
 	"github.com/anesthetised/couchcast/internal/metrics"
+	"github.com/anesthetised/couchcast/internal/notify"
 	"github.com/anesthetised/couchcast/internal/ratelimit"
 	"github.com/anesthetised/couchcast/internal/repository"
 	"github.com/anesthetised/couchcast/internal/room"
 	"github.com/anesthetised/couchcast/internal/source/ytdlp"
+	"github.com/anesthetised/couchcast/internal/webpush"
 	"github.com/anesthetised/couchcast/web"
 )
 
@@ -60,10 +62,29 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	reportLimiter := ratelimit.PerHour(10, 10)
 	queueAddLimiter := ratelimit.New(10, 5)
 	probeLimiter := ratelimit.New(20, 10)
+	bugReportLimiter := ratelimit.PerHour(5, 5)
+
+	// Web Push is optional: without VAPID keys the notifier stays nil and
+	// every Notify call is a no-op.
+	var notifier *notify.Notifier
+	pushKey := ""
+	if cfg.Web.VAPIDPrivateKey != "" {
+		vapid, err := webpush.ParseVAPID(cfg.Web.VAPIDPublicKey, cfg.Web.VAPIDPrivateKey, cfg.Web.VAPIDSubject)
+		if err != nil {
+			return fmt.Errorf("config: %w", err)
+		}
+		notifier = notify.New(repo, &webpush.Client{VAPID: vapid, HTTP: &http.Client{Timeout: 15 * time.Second}}, logger)
+		pushKey = vapid.PublicKey()
+		logger.Info("web push enabled")
+	}
 
 	queue := jobs.New(pool)
 	admit := ingest.NewService(repo, queue, ytdlp.New(cfg.Ingest.YTDLPPath, cfg.Ingest.YTDLPExtraArgs, logger))
-	rooms := room.NewManager(room.Deps{Store: repo, Chat: repo, Admit: admit, Signer: signer, Logger: logger, QueueAddLimiter: queueAddLimiter})
+	roomDeps := room.Deps{Store: repo, Chat: repo, Admit: admit, Signer: signer, Logger: logger, QueueAddLimiter: queueAddLimiter}
+	if notifier != nil {
+		roomDeps.Notifier = notifier
+	}
+	rooms := room.NewManager(roomDeps)
 	m.RegisterRoomsLoaded(func() float64 { return float64(rooms.Loaded()) })
 
 	apihttp.SetVersion(version)
@@ -73,25 +94,28 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}, logger, m)
 
 	api = apihttp.New(apihttp.Deps{
-		Logger:      logger,
-		DB:          pool,
-		Metrics:     m,
-		Static:      web.Dist(),
-		Users:       repo,
-		Rooms:       repo,
-		Admin:       repo,
-		Sessions:    sessions,
-		Directory:   repo,
-		Live:        rooms,
-		Signer:      signer,
-		Admit:       admit,
-		LiveQueue:   liveQueue{rooms},
-		Prober:      admit,
-		InviteLinks: repo,
-		Meta:        repo,
-		Mutes:       repo,
-		Stars:       repo,
-		BugReports:  repo,
+		Logger:        logger,
+		DB:            pool,
+		Metrics:       m,
+		Static:        web.Dist(),
+		Users:         repo,
+		Rooms:         repo,
+		Admin:         repo,
+		Sessions:      sessions,
+		Directory:     repo,
+		Live:          rooms,
+		Signer:        signer,
+		Admit:         admit,
+		LiveQueue:     liveQueue{rooms},
+		Prober:        admit,
+		InviteLinks:   repo,
+		Meta:          repo,
+		Mutes:         repo,
+		Stars:         repo,
+		BugReports:    repo,
+		Push:          repo,
+		PushPublicKey: pushKey,
+		Notifier:      notifier, // nil-safe: Notify on a nil *Notifier is a no-op
 		RoomDebug: func(roomID uuid.UUID) (any, bool) {
 			return rooms.Debug(roomID)
 		},
@@ -121,7 +145,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		RoomCreateLimiter: roomCreateLimiter,
 		InviteLimiter:     inviteLimiter,
 		ReportLimiter:     reportLimiter,
-		BugReportLimiter:  ratelimit.PerHour(5, 5),
+		BugReportLimiter:  bugReportLimiter,
 		ProbeLimiter:      probeLimiter,
 	})
 
@@ -150,6 +174,24 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		})
 	})
 
+	if notifier != nil {
+		g.Go(func() error { return notifier.Run(ctx) })
+		// Members hear about an announced session ten minutes ahead; the
+		// page reminds with the same tag, so nobody gets it twice.
+		g.Go(func() error {
+			return runPeriodic(ctx, time.Minute, func(ctx context.Context) {
+				due, err := repo.ClaimScheduleReminders(ctx, time.Now(), scheduleReminderLead)
+				if err != nil {
+					logger.Warn("schedule reminders", "error", err)
+					return
+				}
+				for _, d := range due {
+					sendScheduleReminder(notifier, d, time.Now())
+				}
+			})
+		})
+	}
+
 	if err := rooms.Warm(ctx); err != nil {
 		logger.Warn("warm playing rooms", "error", err)
 	}
@@ -164,7 +206,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		loginLimiter.Run(ctx.Done())
 		return nil
 	})
-	for _, l := range []*ratelimit.Limiter{roomCreateLimiter, inviteLimiter, reportLimiter, queueAddLimiter} {
+	for _, l := range []*ratelimit.Limiter{roomCreateLimiter, inviteLimiter, reportLimiter, queueAddLimiter, probeLimiter, bugReportLimiter} {
 		g.Go(func() error {
 			l.Run(ctx.Done())
 			return nil
@@ -211,6 +253,22 @@ const (
 	playedKeptPerRoom      = 50
 	bugReportRetentionDays = 90
 )
+
+// scheduleReminderLead is how long before an announced start members are
+// reminded (the page uses the same lead for its in-tab reminder).
+const scheduleReminderLead = 10 * time.Minute
+
+func sendScheduleReminder(n *notify.Notifier, d repository.ScheduleReminder, now time.Time) {
+	minutes := max(1, int(d.ScheduledAt.Sub(now).Round(time.Minute).Minutes()))
+	for _, user := range d.Members {
+		n.Notify(user, notify.Message{
+			Title: fmt.Sprintf("%s starts in %d min", d.Name, minutes),
+			Body:  "Your watch party is about to begin.",
+			URL:   "/r/" + d.Slug,
+			Tag:   fmt.Sprintf("start-%s-%d", d.Slug, d.ScheduledAt.UnixMilli()),
+		})
+	}
+}
 
 // runPeriodic calls fn every interval until the context is cancelled.
 func runPeriodic(ctx context.Context, interval time.Duration, fn func(context.Context)) error {

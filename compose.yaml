@@ -81,6 +81,10 @@ services:
       COUCHCAST_SECURE_COOKIES: ${COUCHCAST_SECURE_COOKIES:-true}
       # Required in production; the server refuses to start with a short secret.
       COUCHCAST_MEDIA_TOKEN_SECRET: ${COUCHCAST_MEDIA_TOKEN_SECRET:-}
+      # Web Push; empty disables it (`couchcast vapid` prints a pair).
+      COUCHCAST_VAPID_PUBLIC_KEY: ${COUCHCAST_VAPID_PUBLIC_KEY:-}
+      COUCHCAST_VAPID_PRIVATE_KEY: ${COUCHCAST_VAPID_PRIVATE_KEY:-}
+      COUCHCAST_VAPID_SUBJECT: ${COUCHCAST_VAPID_SUBJECT:-}
     ports:
       - "${WEB_PORT:-8080}:8080"
     depends_on:

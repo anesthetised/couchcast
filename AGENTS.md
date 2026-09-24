@@ -243,6 +243,18 @@ and a production image build.
   Resolve with a note.
 - `GET /api/v1/users?q=` (signed in) is username autocomplete; the
   `UsernamePicker` component wraps it wherever usernames are typed.
+- Web Push (optional, `COUCHCAST_VAPID_*`, `couchcast vapid` prints a
+  pair): `internal/webpush` is RFC 8291/8292 on the standard library
+  (tested against the RFC's worked example) and only posts to known push
+  services (`AllowedEndpoint`); `internal/notify` queues deliveries in the
+  background and drops subscriptions the service reports gone. Pushes go
+  out for invites, mentions (users not in the room, once a minute per
+  person, private rooms only to members), "your video is starting" (the
+  adder is not in the room) and scheduled sessions ten minutes ahead
+  (`rooms.reminded_for`, claimed once per start). Tags match the page's
+  in-tab notifications. The bell subscribes the browser
+  (`lib/push.ts`, `/api/v1/push/*`); the service worker registers in
+  development too.
 - Browser notifications (`lib/notify.ts`) are opt-in from the bell in the
   top bar and fire only while the tab is hidden: new invites (the auth
   store polls `/invites` every minute) and the caller's own video starting.

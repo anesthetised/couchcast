@@ -1,7 +1,7 @@
 import { createEffect, createResource, createRoot, onCleanup } from "solid-js";
 
 import { api, ApiError } from "~/lib/api";
-import { notify } from "~/lib/notify";
+import { notify, syncPush } from "~/lib/notify";
 import { rooms } from "~/lib/rooms";
 import type { Invite, UpcomingRoom, User } from "~/lib/types";
 
@@ -105,6 +105,7 @@ function createAuthStore() {
       known = null;
       return;
     }
+    syncPush();
     void remindUpcoming();
     const timer = window.setInterval(() => {
       void refetchInvites();
