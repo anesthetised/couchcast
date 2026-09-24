@@ -595,8 +595,9 @@ func TestQueueAddMany(t *testing.T) {
 	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false, false))
 	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://b", false, false))
 	titles := func() []string {
-		out := []string{}
-		for _, q := range conn.lastSnapshot().Queue {
+		queue := conn.lastSnapshot().Queue
+		out := make([]string, 0, len(queue))
+		for _, q := range queue {
 			out = append(out, q.Media.Title)
 		}
 		return out
