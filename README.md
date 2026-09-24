@@ -30,12 +30,13 @@ Requirements: Docker and [`just`](https://github.com/casey/just).
 
 ```sh
 cp .env.example .env   # set COUCHCAST_MEDIA_TOKEN_SECRET for production
-just up                # Postgres + MinIO
+just up                # Postgres + RustFS (S3)
 just migrate           # apply schema migrations
 just dev               # web server, ingest worker, Vite dev server
 ```
 
-Open http://localhost:5173. The MinIO console is at http://localhost:9001.
+Open http://localhost:5173. The RustFS console is at http://localhost:9001
+(`S3_ACCESS_KEY` / `S3_SECRET_KEY` from `.env`).
 
 Tests: `just test` (Go, against a test database), `just lint`, `just check`
 (TypeScript) and `just e2e` (Playwright in the browser against a separate
@@ -62,7 +63,7 @@ certificate automatically.
    COUCHCAST_MEDIA_TOKEN_SECRET=...        # openssl rand -hex 32
    COUCHCAST_TRUST_PROXY=true              # Caddy sets X-Forwarded-For
    WEB_PORT=127.0.0.1:8080                 # the web server only via Caddy
-   POSTGRES_PASSWORD=... MINIO_ROOT_PASSWORD=...
+   POSTGRES_PASSWORD=... S3_SECRET_KEY=...
    # optional: COUCHCAST_VAPID_* from `docker run --rm <image> vapid`
    ```
 
@@ -75,7 +76,7 @@ certificate automatically.
 
 To update: `git pull`, then the same three commands; migrations are never
 applied on boot. `just prod-down` stops everything; data lives in the
-`pgdata`, `miniodata` and `caddydata` volumes.
+`pgdata`, `s3data` and `caddydata` volumes.
 
 ## Administration
 

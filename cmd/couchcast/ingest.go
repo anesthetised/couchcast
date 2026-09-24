@@ -77,7 +77,7 @@ func ingestCmd(ctx context.Context, cfg config.Config, logger *slog.Logger) erro
 	return g.Wait()
 }
 
-// connectStore opens the S3 client and verifies the bucket exists.
+// connectStore opens the S3 client and makes sure the bucket exists.
 func connectStore(ctx context.Context, cfg config.S3Config, logger *slog.Logger) (*mediastore.Store, error) {
 	store, err := mediastore.New(cfg)
 	if err != nil {
@@ -85,7 +85,7 @@ func connectStore(ctx context.Context, cfg config.S3Config, logger *slog.Logger)
 	}
 	pingCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	if err := store.Ping(pingCtx); err != nil {
+	if err := store.EnsureBucket(pingCtx); err != nil {
 		return nil, err
 	}
 	logger.Info("object storage connected", "endpoint", cfg.Endpoint, "bucket", cfg.Bucket)

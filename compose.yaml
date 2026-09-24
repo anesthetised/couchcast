@@ -7,10 +7,10 @@ name: couchcast
 x-app-env: &app-env
   COUCHCAST_LOG_LEVEL: ${COUCHCAST_LOG_LEVEL:-info}
   COUCHCAST_DATABASE_URL: postgres://${POSTGRES_USER:-couchcast}:${POSTGRES_PASSWORD:-couchcast}@postgres:5432/${POSTGRES_DB:-couchcast}?sslmode=disable
-  COUCHCAST_S3_ENDPOINT: minio:9000
+  COUCHCAST_S3_ENDPOINT: rustfs:9000
   COUCHCAST_S3_BUCKET: ${S3_BUCKET:-couchcast}
-  COUCHCAST_S3_ACCESS_KEY: ${MINIO_ROOT_USER:-couchcast}
-  COUCHCAST_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-couchcast-dev-secret}
+  COUCHCAST_S3_ACCESS_KEY: ${S3_ACCESS_KEY:-couchcast}
+  COUCHCAST_S3_SECRET_KEY: ${S3_SECRET_KEY:-couchcast-dev-secret}
   COUCHCAST_S3_USE_SSL: "false"
 
 services:
@@ -30,30 +30,25 @@ services:
       retries: 10
     restart: unless-stopped
 
-  minio:
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
-    command: server /data --console-address :9001
+  # S3-compatible object storage for packaged media. The web server and
+  # the ingest worker create the bucket on start.
+  rustfs:
+    image: rustfs/rustfs:1.0.0
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-couchcast}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-couchcast-dev-secret}
+      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-couchcast}
+      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-couchcast-dev-secret}
+      RUSTFS_VOLUMES: /data
+      RUSTFS_ADDRESS: 0.0.0.0:9000
+      RUSTFS_CONSOLE_ENABLE: "true"
+      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
     volumes:
-      - miniodata:/data
+      - s3data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
     restart: unless-stopped
-
-  # One-shot: creates the bucket, then exits.
-  minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      sh -c "mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-couchcast} ${MINIO_ROOT_PASSWORD:-couchcast-dev-secret}
-      && mc mb --ignore-existing local/${S3_BUCKET:-couchcast}"
 
   # Schema migrations. Started explicitly via `just migrate*`, never on boot.
   atlas:
@@ -93,7 +88,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
     restart: unless-stopped
 
@@ -114,7 +109,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
     restart: unless-stopped
 
@@ -139,7 +134,7 @@ services:
 
 volumes:
   pgdata:
-  miniodata:
+  s3data:
   ingestwork:
   caddydata:
   caddyconfig:

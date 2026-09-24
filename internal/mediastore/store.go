@@ -22,8 +22,8 @@ type Store struct {
 	bucket string
 }
 
-// New connects to the S3-compatible endpoint. It does not create the
-// bucket: that is an infrastructure concern (see compose minio-init).
+// New connects to the S3-compatible endpoint; EnsureBucket then checks
+// or creates the bucket.
 func New(cfg config.S3Config) (*Store, error) {
 	client, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, ""),
@@ -38,14 +38,22 @@ func New(cfg config.S3Config) (*Store, error) {
 // Prefix returns the object key prefix for a media id.
 func Prefix(mediaID string) string { return "media/" + mediaID + "/" }
 
-// Ping verifies the bucket is reachable.
-func (s *Store) Ping(ctx context.Context) error {
+// EnsureBucket verifies the bucket is reachable and creates it when it
+// is missing (a fresh development or self-hosted store). The web server
+// and the ingest worker may race here: losing the race is fine.
+func (s *Store) EnsureBucket(ctx context.Context) error {
 	ok, err := s.client.BucketExists(ctx, s.bucket)
 	if err != nil {
 		return fmt.Errorf("mediastore: %w", err)
 	}
-	if !ok {
-		return fmt.Errorf("mediastore: bucket %q does not exist", s.bucket)
+	if ok {
+		return nil
+	}
+	if err := s.client.MakeBucket(ctx, s.bucket, minio.MakeBucketOptions{}); err != nil {
+		if exists, _ := s.client.BucketExists(ctx, s.bucket); exists {
+			return nil
+		}
+		return fmt.Errorf("mediastore: create bucket %q: %w", s.bucket, err)
 	}
 	return nil
 }

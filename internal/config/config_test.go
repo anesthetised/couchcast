@@ -17,7 +17,7 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestValidate(t *testing.T) {
 	t.Setenv("COUCHCAST_DATABASE_URL", "postgres://x")
-	t.Setenv("COUCHCAST_S3_ENDPOINT", "minio:9000")
+	t.Setenv("COUCHCAST_S3_ENDPOINT", "rustfs:9000")
 	t.Setenv("COUCHCAST_S3_ACCESS_KEY", "a")
 	t.Setenv("COUCHCAST_S3_SECRET_KEY", "b")
 	t.Setenv("COUCHCAST_MEDIA_TOKEN_SECRET", "0123456789abcdef0123456789abcdef")

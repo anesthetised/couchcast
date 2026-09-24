@@ -8,7 +8,8 @@ couchcast is a watch-together service: users create rooms, queue videos
 from YouTube and other sources, and watch them in sync. The backend is Go
 (`cmd/couchcast`, `internal/`), the frontend is SolidJS + TypeScript
 (`web/`), state lives in PostgreSQL and media files in S3-compatible storage
-(MinIO in development). One binary provides three commands: `serve` (web
+(RustFS in compose; the web server and the ingest worker create the
+bucket on start). One binary provides three commands: `serve` (web
 server), `ingest` (download/package worker) and `admin` (CLI).
 
 Video is delivered as DASH (packaged by ffmpeg without transcoding) and
@@ -20,7 +21,7 @@ the server as the authoritative clock. There is no WebRTC.
 Everything runs in Docker; only Docker and `just` are needed locally. All
 commands run from the repo root via `just` (see `justfile`):
 
-- `just up` — start Postgres and MinIO (creates the bucket)
+- `just up` — start Postgres and RustFS
 - `just migrate` — apply migrations with Atlas (never done on boot)
 - `just migrate-diff <name>` — generate a migration from `db/schema.sql`
 - `just dev` — run web server (hot reload), ingest worker and Vite dev server

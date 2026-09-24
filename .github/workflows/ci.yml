@@ -119,7 +119,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: extractions/setup-just@v4
-      # Same stack as locally: Postgres, MinIO, the Go server and Vite in
+      # Same stack as locally: Postgres, RustFS, the Go server and Vite in
       # the compose e2e profile, Playwright in its own container.
       - name: Playwright
         run: just e2e

@@ -11,10 +11,10 @@ services:
     environment:
       COUCHCAST_LOG_LEVEL: warn
       COUCHCAST_DATABASE_URL: postgres://${POSTGRES_USER:-couchcast}:${POSTGRES_PASSWORD:-couchcast}@postgres:5432/couchcast_e2e?sslmode=disable
-      COUCHCAST_S3_ENDPOINT: minio:9000
+      COUCHCAST_S3_ENDPOINT: rustfs:9000
       COUCHCAST_S3_BUCKET: ${S3_BUCKET:-couchcast}
-      COUCHCAST_S3_ACCESS_KEY: ${MINIO_ROOT_USER:-couchcast}
-      COUCHCAST_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-couchcast-dev-secret}
+      COUCHCAST_S3_ACCESS_KEY: ${S3_ACCESS_KEY:-couchcast}
+      COUCHCAST_S3_SECRET_KEY: ${S3_SECRET_KEY:-couchcast-dev-secret}
       COUCHCAST_S3_USE_SSL: "false"
       COUCHCAST_SECURE_COOKIES: "false"
       COUCHCAST_MEDIA_TOKEN_SECRET: e2e-only-media-token-secret-not-for-prod
@@ -32,7 +32,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      minio:
+      rustfs:
         condition: service_healthy
 
   e2e-frontend:

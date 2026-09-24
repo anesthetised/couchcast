@@ -6,10 +6,10 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
 
-  minio:
+  rustfs:
     ports:
-      - "${MINIO_PORT:-9000}:9000"
-      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+      - "${S3_PORT:-9000}:9000"
+      - "${S3_CONSOLE_PORT:-9001}:9001"
 
   web:
     build:
