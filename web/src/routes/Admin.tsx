@@ -1,15 +1,17 @@
 import { createResource, createSignal, For, Show, type Component } from "solid-js";
 
+import BugsTab from "~/components/BugsTab";
 import { admin, type AuditEntry, type BlocklistEntry, type ReportedMedia, type Stats, type Storage, type AdminUser } from "~/lib/admin";
 import { formatAgo } from "~/lib/format";
 import { toast } from "~/lib/toast";
 import type { Room } from "~/lib/types";
 import { auth } from "~/store/auth";
 
-type Tab = "stats" | "reports" | "users" | "rooms" | "blocklist" | "storage" | "audit";
+type Tab = "stats" | "bugs" | "reports" | "users" | "rooms" | "blocklist" | "storage" | "audit";
 
 const tabs: { id: Tab; label: string }[] = [
   { id: "stats", label: "Stats" },
+  { id: "bugs", label: "Bugs" },
   { id: "reports", label: "Reports" },
   { id: "users", label: "Users" },
   { id: "rooms", label: "Rooms" },
@@ -49,6 +51,9 @@ const Admin: Component = () => {
         <Show when={error()}>{(e) => <p class="card error">{e()}</p>}</Show>
         <Show when={tab() === "stats"}>
           <StatsTab />
+        </Show>
+        <Show when={tab() === "bugs"}>
+          <BugsTab />
         </Show>
         <Show when={tab() === "reports"}>
           <ReportsTab run={run} />

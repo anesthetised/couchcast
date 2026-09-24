@@ -3422,3 +3422,151 @@ label .hint {
 .reconnecting .link {
   margin-left: 0.5rem;
 }
+
+.bugs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+}
+
+.bug-list {
+  gap: 0;
+}
+
+.bug-item {
+  border-bottom: 1px solid var(--border);
+}
+
+.bug-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  padding: 0.6rem 0.25rem;
+  background: none;
+  color: var(--text);
+  text-align: left;
+  font-weight: 400;
+}
+
+.bug-row:hover {
+  background: var(--surface-2);
+}
+
+.bug-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.bug-row-main strong {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bug-row-main .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge.bug-playback,
+.badge.bug-sync {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.bug-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  padding: 0.25rem 0.25rem 1rem;
+}
+
+.bug-description {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.bug-detail .bug-frame {
+  max-height: 320px;
+  width: auto;
+  max-width: 100%;
+}
+
+.bug-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem 1.5rem;
+}
+
+.bug-sub {
+  margin: 0 0 0.35rem;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.bug-facts dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.2rem 0.75rem;
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.bug-facts dt {
+  color: var(--muted);
+}
+
+.bug-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.bug-timeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.bug-timeline li {
+  display: grid;
+  grid-template-columns: 5.5rem 4.5rem 1fr;
+  gap: 0.5rem;
+  padding: 0.15rem 0;
+}
+
+.bug-kind {
+  color: var(--text-2);
+}
+
+.bug-timeline .kind-player .bug-kind,
+.bug-timeline .kind-server .bug-kind,
+.bug-timeline .kind-window .bug-kind,
+.bug-timeline .kind-toast .bug-kind {
+  color: var(--danger);
+}
+
+.bug-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.bug-actions input {
+  flex: 1;
+  min-width: 12rem;
+}

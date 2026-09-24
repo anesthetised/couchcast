@@ -103,8 +103,8 @@ func TestBugReports(t *testing.T) {
 		Media struct {
 			Status string `json:"status"`
 			Job    struct {
-				Attempts  int    `json:"Attempts"`
-				LastError string `json:"LastError"`
+				Attempts  int    `json:"attempts"`
+				LastError string `json:"lastError"`
 			} `json:"job"`
 		} `json:"media"`
 	}

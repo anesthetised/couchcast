@@ -118,10 +118,10 @@ func (r *Repo) PurgeBugReports(ctx context.Context, before time.Time) (int64, er
 
 // IngestJobState is the latest ingest job of a media item.
 type IngestJobState struct {
-	Status    string
-	Attempts  int
-	LastError string
-	UpdatedAt time.Time
+	Status    string    `json:"status"`
+	Attempts  int       `json:"attempts"`
+	LastError string    `json:"lastError,omitempty"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // LatestIngestJob returns the newest ingest job for the media or

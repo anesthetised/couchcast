@@ -236,6 +236,11 @@ and a production image build.
   snapshots diagnostics and the frame when it opens, shows what will be
   sent, and asks anonymous viewers to log in. `lib/focusTrap.ts` is the
   shared modal focus trap.
+  The Bugs tab of `/admin` (`components/BugsTab.tsx`) lists open or
+  resolved reports with a device summary and expands one into device /
+  session / media / server facts, a timeline of events and sync
+  corrections relative to the report, the frame, raw JSON, Copy JSON and
+  Resolve with a note.
 - `GET /api/v1/users?q=` (signed in) is username autocomplete; the
   `UsernamePicker` component wraps it wherever usernames are typed.
 - Browser notifications (`lib/notify.ts`) are opt-in from the bell in the
