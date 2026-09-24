@@ -1,9 +1,11 @@
-import { createSignal, For, onCleanup, Show, type Component } from "solid-js";
+import { createSignal, For, lazy, onCleanup, Show, type Component } from "solid-js";
 
-import ReportDialog from "~/components/ReportDialog";
 import { formatDuration, formatTime, progressDetail } from "~/lib/format";
 import type { RoomStore } from "~/store/room";
 import type { QueueEntry } from "~/protocol";
+
+// Opened on demand; loaded the first time.
+const ReportDialog = lazy(() => import("~/components/ReportDialog"));
 
 type Props = { room: RoomStore };
 

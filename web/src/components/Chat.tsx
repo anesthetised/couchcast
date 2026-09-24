@@ -1,6 +1,5 @@
-import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type Component } from "solid-js";
+import { createEffect, createMemo, createSignal, For, lazy, on, onCleanup, onMount, Show, type Component } from "solid-js";
 
-import EmojiPicker from "~/components/EmojiPicker";
 import LinkCard from "~/components/LinkCard";
 import { mentionQuery, mentions, parseMessage } from "~/lib/chatText";
 import { expandShortcodes, rememberEmoji, searchEmoji, shortcodeQuery, type Emoji } from "~/lib/emoji";
@@ -10,6 +9,9 @@ import { toast } from "~/lib/toast";
 import type { ChatMessage } from "~/protocol";
 import { avatarClass } from "~/lib/types";
 import type { RoomStore } from "~/store/room";
+
+// Opened on demand; loaded the first time.
+const EmojiPicker = lazy(() => import("~/components/EmojiPicker"));
 
 type Props = { room: RoomStore };
 

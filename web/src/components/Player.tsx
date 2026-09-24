@@ -1,6 +1,5 @@
-import { createEffect, createSignal, on, onCleanup, onMount, Show, For, type Component } from "solid-js";
+import { createEffect, createSignal, For, lazy, on, onCleanup, onMount, Show, type Component } from "solid-js";
 
-import HotkeysSheet from "~/components/HotkeysSheet";
 import { openBugReport } from "~/lib/bugs";
 import { bufferedRanges, registerProbe, registerVideo } from "~/lib/diagnostics";
 import { formatTime, progressDetail } from "~/lib/format";
@@ -8,6 +7,9 @@ import { Player as ShakaPlayer, type QualityOption } from "~/lib/player";
 import { Synchronizer, type SyncDebug } from "~/lib/sync";
 import type { Chapter } from "~/protocol";
 import type { RoomStore } from "~/store/room";
+
+// Opened on demand; loaded the first time.
+const HotkeysSheet = lazy(() => import("~/components/HotkeysSheet"));
 
 type Props = {
   room: RoomStore;

@@ -1,10 +1,12 @@
-import { createSignal, Match, onCleanup, Show, Switch, type Component } from "solid-js";
+import { createSignal, lazy, Match, onCleanup, Show, Switch, type Component } from "solid-js";
 
-import PlaylistPicker from "~/components/PlaylistPicker";
 import { api, ApiError } from "~/lib/api";
 import { toast } from "~/lib/toast";
 import { formatTime } from "~/lib/format";
 import type { RoomStore } from "~/store/room";
+
+// Opened on demand; loaded the first time.
+const PlaylistPicker = lazy(() => import("~/components/PlaylistPicker"));
 
 type Props = { room: RoomStore };
 

@@ -1,8 +1,7 @@
 import { useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/router";
-import { createEffect, createResource, createSignal, For, on, onCleanup, onMount, Show, type Component } from "solid-js";
+import { createEffect, createResource, createSignal, For, lazy, on, onCleanup, onMount, Show, type Component } from "solid-js";
 
 import AddToQueue from "~/components/AddToQueue";
-import BugReportDialog from "~/components/BugReportDialog";
 import Chat from "~/components/Chat";
 import Player from "~/components/Player";
 import Queue from "~/components/Queue";
@@ -17,6 +16,9 @@ import { useTitle } from "~/lib/title";
 import { toast } from "~/lib/toast";
 import { isModerator } from "~/lib/types";
 import { createRoomStore, type RoomEnd, type RoomStore } from "~/store/room";
+
+// Opened on demand; loaded the first time.
+const BugReportDialog = lazy(() => import("~/components/BugReportDialog"));
 
 const SWIPE_PX = 60;
 

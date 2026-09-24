@@ -1,17 +1,20 @@
 import { Route, Router, type RouteSectionProps } from "@solidjs/router";
-import type { Component } from "solid-js";
+import { lazy, type Component } from "solid-js";
 
 import Toasts from "~/components/Toasts";
 import UserMenu from "~/components/UserMenu";
 import Home from "~/routes/Home";
-import Join from "~/routes/Join";
 import Login from "~/routes/Login";
-import Profile from "~/routes/Profile";
-import NewRoom from "~/routes/NewRoom";
-import Admin from "~/routes/Admin";
 import Register from "~/routes/Register";
-import Room from "~/routes/Room";
-import RoomSettings from "~/routes/RoomSettings";
+
+// The directory and the auth pages ship with the app; everything else
+// loads on first visit — the room brings the player (Shaka) with it.
+const Room = lazy(() => import("~/routes/Room"));
+const RoomSettings = lazy(() => import("~/routes/RoomSettings"));
+const NewRoom = lazy(() => import("~/routes/NewRoom"));
+const Join = lazy(() => import("~/routes/Join"));
+const Profile = lazy(() => import("~/routes/Profile"));
+const Admin = lazy(() => import("~/routes/Admin"));
 
 // Layout shared by every page.
 const Layout: Component<RouteSectionProps> = (props) => (

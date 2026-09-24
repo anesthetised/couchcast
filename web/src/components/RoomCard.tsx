@@ -1,7 +1,7 @@
 import { createSignal, onCleanup, Show, type Component } from "solid-js";
 
 import { formatAgo, formatStart, formatTime } from "~/lib/format";
-import { Player } from "~/lib/player";
+import type { Player } from "~/lib/player";
 import { rooms } from "~/lib/rooms";
 import { toast } from "~/lib/toast";
 import type { DirectoryRoom } from "~/lib/types";
@@ -58,7 +58,10 @@ const RoomCard: Component<Props> = (props) => {
     activePreview?.();
     activePreview = stopPreview;
 
-    player = new Player(video, { maxHeight: PREVIEW_MAX_HEIGHT });
+    // The player library loads on the first hover, not with the directory.
+    const { Player: ShakaPlayer } = await import("~/lib/player");
+    if (activePreview !== stopPreview) return; // left before it loaded
+    player = new ShakaPlayer(video, { maxHeight: PREVIEW_MAX_HEIGHT });
     video.muted = true;
     try {
       await player.attach();

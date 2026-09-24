@@ -183,6 +183,12 @@ and a production image build.
 - Go: standard library first, few dependencies; raw SQL with `pgx`
   (`const q = ...`), consumer-side interfaces, `log/slog`, `testify` in tests.
   Reuse helpers from `github.com/anesthetised/toolkit` before adding deps.
+- Frontend bundle: only the directory and the auth pages ship in the entry
+  chunk (~65 kB); the other routes are `lazy()` in `App.tsx`, the room
+  brings Shaka (~820 kB) with it, cards import `lib/player` on the first
+  hover, and on-demand dialogs (emoji, playlist, bug report, hotkeys,
+  media report) are lazy components. Keep new heavy code behind a route
+  or a `lazy()` import.
 - Frontend: plain CSS, no UI framework. `web/src/styles.css` is a small
   design system: tokens in `:root` (surfaces, text, amber accent, statuses,
   radii, shadows, focus ring) and shared components (`button` variants
