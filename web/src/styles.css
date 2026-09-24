@@ -3624,6 +3624,7 @@ label .hint {
 
 .playlist-row {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 0.6rem;
   padding: 0.4rem 0.25rem;
@@ -3638,6 +3639,10 @@ label .hint {
 .playlist-row input {
   flex: none;
   width: auto;
+}
+
+.playlist-row > .muted {
+  margin-left: 0;
 }
 
 .playlist-index {
