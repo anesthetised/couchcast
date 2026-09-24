@@ -47,6 +47,36 @@ Production uses the same compose file without the development override:
 just build && just prod-migrate && just prod-up
 ```
 
+### Deploying with HTTPS
+
+Phones need HTTPS for notifications and for installing the app, and
+cookies are `Secure` by default. The `https` compose profile puts
+[Caddy](https://caddyserver.com) in front of the web server and gets the
+certificate automatically.
+
+1. Point a DNS name at the server and open ports 80 and 443.
+2. In `.env` (start from `.env.example`) set at least:
+
+   ```sh
+   COUCHCAST_DOMAIN=watch.example.com
+   COUCHCAST_MEDIA_TOKEN_SECRET=...        # openssl rand -hex 32
+   COUCHCAST_TRUST_PROXY=true              # Caddy sets X-Forwarded-For
+   WEB_PORT=127.0.0.1:8080                 # the web server only via Caddy
+   POSTGRES_PASSWORD=... MINIO_ROOT_PASSWORD=...
+   # optional: COUCHCAST_VAPID_* from `docker run --rm <image> vapid`
+   ```
+
+3. Build, migrate, start:
+
+   ```sh
+   just build && just prod-migrate && just prod-https
+   just admin-grant <your-username>   # after registering
+   ```
+
+To update: `git pull`, then the same three commands; migrations are never
+applied on boot. `just prod-down` stops everything; data lives in the
+`pgdata`, `miniodata` and `caddydata` volumes.
+
 ## Administration
 
 Grant the first administrator from the shell:

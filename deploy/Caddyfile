@@ -1,0 +1,34 @@
+# couchcast behind Caddy (compose profile "https", `just prod-https`).
+# Caddy obtains and renews the certificate for COUCHCAST_DOMAIN by
+# itself; "localhost" gets a certificate from Caddy's local CA.
+#
+# Caddy replaces X-Forwarded-For with the real client address (it trusts
+# no upstream proxy by default), so couchcast can run with
+# COUCHCAST_TRUST_PROXY=true behind it.
+
+{$COUCHCAST_DOMAIN} {
+	# Text is compressed; video segments and images already are.
+	encode {
+		zstd
+		gzip
+		match {
+			header Content-Type text/*
+			header Content-Type application/json*
+			header Content-Type application/javascript*
+			header Content-Type application/dash+xml*
+			header Content-Type application/manifest+json*
+			header Content-Type image/svg+xml*
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+
+	# WebSockets (/api/v1/rooms/*/ws) and Range requests for media pass
+	# through reverse_proxy unchanged.
+	reverse_proxy web:8080
+}

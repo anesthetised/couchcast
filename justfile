@@ -123,9 +123,15 @@ build tag=env("TAG", "dev"):
 prod-up:
     {{prod}} up -d
 
+# Production behind Caddy with automatic HTTPS (needs COUCHCAST_DOMAIN).
+[group('build')]
+prod-https:
+    @test -n "${COUCHCAST_DOMAIN:-}" || { echo "set COUCHCAST_DOMAIN in .env (the public host name)"; exit 1; }
+    {{prod}} --profile https up -d
+
 [group('build')]
 prod-down:
-    {{prod}} down
+    {{prod}} --profile https down
 
 [group('build')]
 prod-migrate:

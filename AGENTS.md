@@ -36,7 +36,10 @@ commands run from the repo root via `just` (see `justfile`):
   the API and use `sql()` for what no UI does (the admin role). Failures
   leave traces and screenshots in `e2e/results/`, the HTML report in
   `e2e/report/`. Use it to verify signed-in flows.
-- `just build` — production image; `just prod-up` — run the base compose file
+- `just build` — production image; `just prod-up` — run the base compose file;
+  `just prod-https` — the same behind Caddy with automatic TLS
+  (profile `https`, `deploy/Caddyfile`, needs `COUCHCAST_DOMAIN`; set
+  `COUCHCAST_TRUST_PROXY=true` and `WEB_PORT=127.0.0.1:8080` with it)
 
 Run `just test` and `just lint` before opening a PR. CI
 (`.github/workflows/ci.yml`) runs gofmt, go vet, golangci-lint, the Go tests

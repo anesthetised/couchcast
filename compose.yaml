@@ -85,7 +85,10 @@ services:
       COUCHCAST_VAPID_PUBLIC_KEY: ${COUCHCAST_VAPID_PUBLIC_KEY:-}
       COUCHCAST_VAPID_PRIVATE_KEY: ${COUCHCAST_VAPID_PRIVATE_KEY:-}
       COUCHCAST_VAPID_SUBJECT: ${COUCHCAST_VAPID_SUBJECT:-}
+      # Behind the https profile's Caddy set this to true.
+      COUCHCAST_TRUST_PROXY: ${COUCHCAST_TRUST_PROXY:-false}
     ports:
+      # Behind Caddy publish it on loopback only: WEB_PORT=127.0.0.1:8080
       - "${WEB_PORT:-8080}:8080"
     depends_on:
       postgres:
@@ -115,7 +118,28 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # TLS termination for production (`just prod-https`): certificates for
+  # COUCHCAST_DOMAIN are obtained and renewed automatically.
+  caddy:
+    image: caddy:2.10-alpine
+    profiles: [https]
+    environment:
+      COUCHCAST_DOMAIN: ${COUCHCAST_DOMAIN:-}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddydata:/data
+      - caddyconfig:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
 volumes:
   pgdata:
   miniodata:
   ingestwork:
+  caddydata:
+  caddyconfig:
