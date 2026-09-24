@@ -111,7 +111,7 @@ e2e *args:
     {{compose}} exec -T postgres psql -q -U ${POSTGRES_USER:-couchcast} -d postgres -c 'DROP DATABASE IF EXISTS couchcast_e2e WITH (FORCE)' -c 'CREATE DATABASE couchcast_e2e'
     {{compose}} run --rm -e COUCHCAST_DATABASE_URL={{e2e_db}} atlas migrate apply --env local
     {{e2e}} up -d --wait e2e-web e2e-frontend
-    {{e2e}} run --rm e2e sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm exec playwright test {{args}}"; status=$?; {{e2e}} stop e2e-web e2e-frontend; exit $status
+    {{e2e}} run --rm e2e sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm exec playwright test {{args}}"; status=$?; {{e2e}} rm -sf e2e-web e2e-frontend; exit $status
 
 # --- build & production ----------------------------------------------------
 
