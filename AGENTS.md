@@ -29,6 +29,13 @@ commands run from the repo root via `just` (see `justfile`):
 - `just test` — `go test -p 1 ./...` in the dev container (integration
   tests share `COUCHCAST_TEST_DATABASE_URL`, hence serial; skipped when unset)
 - `just lint` — golangci-lint; `just check` — TypeScript type check
+- `just e2e [args]` — Playwright browser tests (`e2e/`) against a fresh
+  `couchcast_e2e` database with their own server and Vite instance
+  (compose profile `e2e`, `compose.e2e.yaml`); never touches dev data.
+  Tests sign up their own users (`support/app.ts`), create rooms through
+  the API and use `sql()` for what no UI does (the admin role). Failures
+  leave traces and screenshots in `e2e/results/`, the HTML report in
+  `e2e/report/`. Use it to verify signed-in flows.
 - `just build` — production image; `just prod-up` — run the base compose file
 
 Run `just test` and `just lint` before opening a PR. CI

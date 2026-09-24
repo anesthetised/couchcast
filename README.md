@@ -37,6 +37,10 @@ just dev               # web server, ingest worker, Vite dev server
 
 Open http://localhost:5173. The MinIO console is at http://localhost:9001.
 
+Tests: `just test` (Go, against a test database), `just lint`, `just check`
+(TypeScript) and `just e2e` (Playwright in the browser against a separate
+`couchcast_e2e` database).
+
 Production uses the same compose file without the development override:
 
 ```sh

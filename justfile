@@ -5,6 +5,8 @@ set shell := ["sh", "-c"]
 set dotenv-load := true
 
 compose := "docker compose -f compose.yaml -f compose.dev.yaml"
+e2e := "docker compose -f compose.yaml -f compose.dev.yaml -f compose.e2e.yaml --profile e2e"
+e2e_db := "postgres://${POSTGRES_USER:-couchcast}:${POSTGRES_PASSWORD:-couchcast}@postgres:5432/couchcast_e2e?sslmode=disable"
 prod := "docker compose -f compose.yaml"
 image := "ghcr.io/anesthetised/couchcast"
 
@@ -97,6 +99,19 @@ pnpm *args:
 check:
     just pnpm install
     just pnpm check
+
+# End-to-end browser tests (Playwright) against a fresh couchcast_e2e
+# database and their own server and Vite instance; args go to
+# `playwright test` (e.g. `just e2e tests/chat.spec.ts --headed` is not
+# available in a container, use `--debug` locally instead).
+[group('code')]
+e2e *args:
+    {{compose}} up -d postgres minio minio-init
+    {{e2e}} stop e2e-web e2e-frontend
+    {{compose}} exec -T postgres psql -q -U ${POSTGRES_USER:-couchcast} -d postgres -c 'DROP DATABASE IF EXISTS couchcast_e2e WITH (FORCE)' -c 'CREATE DATABASE couchcast_e2e'
+    {{compose}} run --rm -e COUCHCAST_DATABASE_URL={{e2e_db}} atlas migrate apply --env local
+    {{e2e}} up -d --wait e2e-web e2e-frontend
+    {{e2e}} run --rm e2e sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm exec playwright test {{args}}"; status=$?; {{e2e}} stop e2e-web e2e-frontend; exit $status
 
 # --- build & production ----------------------------------------------------
 

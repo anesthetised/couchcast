@@ -1,0 +1,77 @@
+# End-to-end test stack (`just e2e`): its own database, web server and
+# Vite instance, so a run never touches the development data, plus the
+# Playwright runner. Applied on top of compose.yaml and compose.dev.yaml.
+
+services:
+  e2e-web:
+    image: couchcast-dev
+    profiles: [e2e]
+    working_dir: /src
+    command: ["go", "run", "./cmd/couchcast", "serve"]
+    environment:
+      COUCHCAST_LOG_LEVEL: warn
+      COUCHCAST_DATABASE_URL: postgres://${POSTGRES_USER:-couchcast}:${POSTGRES_PASSWORD:-couchcast}@postgres:5432/couchcast_e2e?sslmode=disable
+      COUCHCAST_S3_ENDPOINT: minio:9000
+      COUCHCAST_S3_BUCKET: ${S3_BUCKET:-couchcast}
+      COUCHCAST_S3_ACCESS_KEY: ${MINIO_ROOT_USER:-couchcast}
+      COUCHCAST_S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-couchcast-dev-secret}
+      COUCHCAST_S3_USE_SSL: "false"
+      COUCHCAST_SECURE_COOKIES: "false"
+      COUCHCAST_MEDIA_TOKEN_SECRET: e2e-only-media-token-secret-not-for-prod
+      # Every test signs up fresh users.
+      COUCHCAST_AUTH_RATE_PER_MINUTE: "1000"
+    volumes:
+      - ./:/src
+      - gomod:/go/pkg/mod
+      - gobuild:/root/.cache/go-build
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
+      interval: 2s
+      timeout: 2s
+      retries: 90
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  e2e-frontend:
+    image: node:22-alpine
+    profiles: [e2e]
+    working_dir: /src/web
+    command: ["sh", "-c", "corepack enable && pnpm install --frozen-lockfile && pnpm dev --host 0.0.0.0 --port 5173"]
+    environment:
+      VITE_API_TARGET: http://e2e-web:8080
+      VITE_ALLOWED_HOSTS: e2e-frontend
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    volumes:
+      - ./web:/src/web
+      - webmodules:/src/web/node_modules
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/ >/dev/null"]
+      interval: 2s
+      timeout: 2s
+      retries: 90
+    depends_on:
+      e2e-web:
+        condition: service_healthy
+
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.63.0-noble
+    profiles: [e2e]
+    working_dir: /src/e2e
+    ipc: host
+    environment:
+      BASE_URL: http://e2e-frontend:5173
+      E2E_DATABASE_URL: postgres://${POSTGRES_USER:-couchcast}:${POSTGRES_PASSWORD:-couchcast}@postgres:5432/couchcast_e2e?sslmode=disable
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      CI: ${CI:-}
+    volumes:
+      - ./e2e:/src/e2e
+      - e2emodules:/src/e2e/node_modules
+    depends_on:
+      e2e-frontend:
+        condition: service_healthy
+
+volumes:
+  e2emodules:

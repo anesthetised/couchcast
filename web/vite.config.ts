@@ -19,6 +19,8 @@ export default defineConfig({
     },
   },
   server: {
+    // The end-to-end runner reaches this server by its compose service name.
+    allowedHosts: process.env.VITE_ALLOWED_HOSTS ? process.env.VITE_ALLOWED_HOSTS.split(",") : undefined,
     proxy: {
       "/api": { target: apiTarget, changeOrigin: false, ws: true },
       "/media": { target: apiTarget, changeOrigin: false },
