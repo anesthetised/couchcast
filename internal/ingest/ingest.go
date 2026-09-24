@@ -51,6 +51,7 @@ type MediaRepo interface {
 	SetMediaThumbnail(ctx context.Context, id uuid.UUID, thumbnailURL string) error
 	SetMediaReady(ctx context.Context, id uuid.UUID, renditions []entity.Rendition, sizeBytes int64, s3Prefix string) error
 	SetMediaSubtitles(ctx context.Context, id uuid.UUID, subtitles []entity.Subtitle) error
+	SetMediaStoryboard(ctx context.Context, id uuid.UUID, sb *entity.Storyboard) error
 	SetMediaFailed(ctx context.Context, id uuid.UUID, reason string) error
 }
 

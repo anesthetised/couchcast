@@ -21,6 +21,7 @@ import (
 	"github.com/anesthetised/couchcast/internal/metrics"
 	"github.com/anesthetised/couchcast/internal/packager"
 	"github.com/anesthetised/couchcast/internal/source"
+	"github.com/anesthetised/couchcast/internal/storyboard"
 	"github.com/anesthetised/couchcast/internal/webvtt"
 )
 
@@ -117,6 +118,32 @@ func (w *Worker) fetchSubtitles(ctx context.Context, rawURL string, subs []sourc
 	}
 	log.Info("subtitles", "tracks", len(out))
 	return out
+}
+
+// makeStoryboard builds the timeline preview sheets into outDir; nil when
+// that fails (logged) — playback does not need them.
+func (w *Worker) makeStoryboard(ctx context.Context, src string, durationMs int64, tmpDir, outDir string, log *slog.Logger) *entity.Storyboard {
+	if durationMs <= 0 || src == "" {
+		return nil
+	}
+	start := time.Now()
+	interval := storyboard.Interval(time.Duration(durationMs) * time.Millisecond)
+	frames, err := storyboard.Frames(ctx, w.packager.FFmpeg, src, interval, tmpDir)
+	if err == nil && len(frames) == 0 {
+		err = errors.New("no frames")
+	}
+	var sb *entity.Storyboard
+	if err == nil {
+		sb, err = storyboard.Tile(frames, interval, outDir)
+	}
+	_ = os.RemoveAll(tmpDir)
+	if err != nil {
+		log.Warn("storyboard", "error", err)
+		return nil
+	}
+	w.metrics.IngestStep("storyboard", time.Since(start))
+	log.Info("storyboard", "frames", sb.Count, "sheets", sb.Sheets, "interval", interval.String())
+	return sb
 }
 
 // SubtitleFile is the object name of a track inside the media prefix.
@@ -217,6 +244,8 @@ func (w *Worker) process(ctx context.Context, media *entity.Media, log *slog.Log
 		return jobs.Permanent(fmt.Errorf("package: %w", err))
 	}
 	pkgReporter.report(ctx, 1, true)
+	// Previews are a bonus too; the smallest rendition is plenty.
+	storyboard := w.makeStoryboard(ctx, files[sel.Video[len(sel.Video)-1].ID], probe.DurationMs, filepath.Join(dir, "frames"), outDir, log)
 	_ = os.RemoveAll(srcDir)
 	w.metrics.IngestStep("package", time.Since(start))
 
@@ -233,6 +262,9 @@ func (w *Worker) process(ctx context.Context, media *entity.Media, log *slog.Log
 	w.metrics.IngestStep("upload", time.Since(start))
 
 	if err := w.repo.SetMediaSubtitles(ctx, media.ID, subtitles); err != nil {
+		return err
+	}
+	if err := w.repo.SetMediaStoryboard(ctx, media.ID, storyboard); err != nil {
 		return err
 	}
 	if thumb != "" {

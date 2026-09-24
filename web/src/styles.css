@@ -3676,3 +3676,20 @@ label .hint {
 .playlist-actions > .muted {
   margin-right: auto;
 }
+
+/* --- timeline preview ---------------------------------------------------------- */
+
+.seek-tip.has-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem;
+}
+
+.seek-preview {
+  display: block;
+  border-radius: calc(var(--radius-sm) - 2px);
+  background-color: #000;
+  background-repeat: no-repeat;
+}

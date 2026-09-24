@@ -95,6 +95,12 @@ and a production image build.
   `thumb.*` without a token and publicly cacheable, and the Open Graph
   injector makes the path absolute. Until then (or if the fetch fails) the
   source URL stays.
+- Timeline previews (`internal/storyboard`): after packaging, ffmpeg
+  takes one frame per interval (5–60 s, ~300 frames at most) from the
+  smallest rendition decoding keyframes only, Go tiles them 10×10 into
+  `sb-<n>.jpg` next to the DASH output (same token), and
+  `media.storyboard` describes the grid (`MediaInfo.storyboard`). The seek
+  tooltip crops the cell for the hovered time. A failure only logs.
 - Chapters come from the extractor at probe time (`media.chapters`, at
   least two well-formed entries or none) and ride along in `MediaInfo`;
   the player draws them as ticks on the seek bar, names the current one in

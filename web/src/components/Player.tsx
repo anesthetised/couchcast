@@ -73,7 +73,7 @@ const Player: Component<Props> = (props) => {
   const [volume, setVolume] = createSignal(readStored("couchcast.volume", 1));
   const [loadedMediaId, setLoadedMediaId] = createSignal<string | null>(null);
   const [blocked, setBlocked] = createSignal(false);
-  const [seekTip, setSeekTip] = createSignal<{ ms: number; x: number } | null>(null);
+  const [seekTip, setSeekTip] = createSignal<{ ms: number; x: number; w: number } | null>(null);
   const [pip, setPip] = createSignal(false);
   const [showKeys, setShowKeys] = createSignal(false);
   const [showReactions, setShowReactions] = createSignal(false);
@@ -88,6 +88,32 @@ const Player: Component<Props> = (props) => {
     return found;
   };
   const currentChapter = () => chapterAt(nowMs());
+
+  // The tip is centred on the pointer but kept inside the bar, so a wide
+  // preview near either end is not cut off by the player's edge.
+  const tipLeft = (t: { ms: number; x: number; w: number }) => {
+    const sb = current()?.media.storyboard;
+    const half = sb ? sb.width / 2 + 4 : 24;
+    return t.w > 2 * half ? Math.min(Math.max(t.x, half), t.w - half) : t.x;
+  };
+
+  // Timeline preview: the storyboard cell for a position, as CSS for a
+  // box of the frame's size cropping the sheet.
+  const previewStyle = (ms: number) => {
+    const m = current()?.media;
+    const sb = m?.storyboard;
+    if (!sb || !m.manifest || !m.token) return null;
+    const i = Math.min(sb.count - 1, Math.max(0, Math.floor(ms / sb.intervalMs)));
+    const perSheet = sb.cols * sb.rows;
+    const cell = i % perSheet;
+    const base = m.manifest.slice(0, m.manifest.lastIndexOf("/") + 1);
+    return {
+      width: `${sb.width}px`,
+      height: `${sb.height}px`,
+      "background-image": `url("${base}sb-${Math.floor(i / perSheet)}.jpg?t=${m.token}")`,
+      "background-position": `-${(cell % sb.cols) * sb.width}px -${Math.floor(cell / sb.cols) * sb.height}px`,
+    };
+  };
   const seekChapter = (dir: 1 | -1) => {
     if (!canControl() || !current()) return;
     const list = chapters();
@@ -331,7 +357,7 @@ const Player: Component<Props> = (props) => {
     if (!d) return setSeekTip(null);
     const r = seekBar.getBoundingClientRect();
     const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    setSeekTip({ ms: frac * d, x: e.clientX - r.left });
+    setSeekTip({ ms: frac * d, x: e.clientX - r.left, w: r.width });
   };
 
   const togglePip = async () => {
@@ -546,7 +572,8 @@ const Player: Component<Props> = (props) => {
             </Show>
             <Show when={seekTip()}>
               {(t) => (
-                <span class="seek-tip" style={{ left: `${t().x}px` }}>
+                <span class="seek-tip" classList={{ "has-preview": previewStyle(t().ms) !== null }} style={{ left: `${tipLeft(t())}px` }}>
+                  <Show when={previewStyle(t().ms)}>{(style) => <span class="seek-preview" style={style()} />}</Show>
                   <Show when={chapterAt(t().ms)}>{(c) => <span class="seek-tip-chapter">{c().title}</span>}</Show>
                   {formatTime(t().ms)}
                 </span>

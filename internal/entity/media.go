@@ -60,6 +60,7 @@ type Media struct {
 	Renditions     []Rendition
 	Subtitles      []Subtitle
 	Chapters       []Chapter
+	Storyboard     *Storyboard
 	S3Prefix       string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
@@ -77,4 +78,17 @@ func (m *Media) InProgress() bool {
 	default:
 		return false
 	}
+}
+
+// Storyboard describes the timeline preview sheets stored next to the
+// DASH output (sb-0.jpg, sb-1.jpg, …): frame i shows the video at
+// i×IntervalMs and sits in sheet i/(Cols×Rows), cell i%(Cols×Rows).
+type Storyboard struct {
+	IntervalMs int64 `json:"intervalMs"`
+	Width      int   `json:"width"`
+	Height     int   `json:"height"`
+	Cols       int   `json:"cols"`
+	Rows       int   `json:"rows"`
+	Count      int   `json:"count"`
+	Sheets     int   `json:"sheets"`
 }

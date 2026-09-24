@@ -24,6 +24,17 @@ export interface Chapter {
   title: string;
 }
 
+// Storyboard: frame i shows i×intervalMs, in sheet sb-<i/(cols×rows)>.jpg.
+export interface Storyboard {
+  intervalMs: number;
+  width: number;
+  height: number;
+  cols: number;
+  rows: number;
+  count: number;
+  sheets: number;
+}
+
 export interface MediaInfo {
   id: string;
   title: string;
@@ -37,6 +48,7 @@ export interface MediaInfo {
   renditions: Rendition[];
   subtitles?: Subtitle[];
   chapters?: Chapter[];
+  storyboard?: Storyboard;
   manifest?: string;
   token?: string;
   sourceUrl: string;

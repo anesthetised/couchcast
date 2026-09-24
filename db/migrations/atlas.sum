@@ -1,4 +1,4 @@
-h1:o/WWjFilWUO8ekQ7t7CoBGGRb5SZM3AUHUbi6lEQBLE=
+h1:V1gYpGXqhkvUuTSLWZcK3AkOfVPU8CEAatqD0nUOAhc=
 20260918235239_init.sql h1:TTCx5JLn+krsG2APMqlbCme5/4TuRR84snkav6kn9w0=
 20260919103911_usernames-keep-case.sql h1:9GQO1l8o8C4K4+1T+xWemc8iAD1mfygbF9RTyqePgpA=
 20260919104614_report-context.sql h1:oDguffL6IWAXcxgh+9oxlGemT5Qb3X4D2MBkBQUqW2w=
@@ -18,3 +18,4 @@ h1:o/WWjFilWUO8ekQ7t7CoBGGRb5SZM3AUHUbi6lEQBLE=
 20260922020320_room_scheduled_at.sql h1:6FcUOAmYKD3pehjEsTyY2RSr37Wq1avUiFU/JSZpDOo=
 20260924171350_bug_reports.sql h1:Vz5erNGTu/9YUJeNGEAdpUAgpU+kvwvNPA0JDOU+V2w=
 20260924203942_push_subscriptions.sql h1:5Af2+sRq4l58K56kXK7OYtH9yBanpTnYDimOmkA2y5Y=
+20260924204754_media_storyboard.sql h1:2din0hlf5VVVtFPwdhxNZltVZsiG4Wxc8SBdIgv67A0=

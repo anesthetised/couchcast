@@ -13,20 +13,20 @@ import (
 )
 
 const mediaColumns = `id, source_key, source_url, coalesce(title, ''), coalesce(duration_ms, 0), coalesce(thumbnail_url, ''),
-	status, progress, coalesce(speed_bps, 0), coalesce(eta_ms, 0), coalesce(error, ''), coalesce(size_bytes, 0), renditions, subtitles, chapters, coalesce(s3_prefix, ''),
+	status, progress, coalesce(speed_bps, 0), coalesce(eta_ms, 0), coalesce(error, ''), coalesce(size_bytes, 0), renditions, subtitles, chapters, storyboard, coalesce(s3_prefix, ''),
 	created_at, updated_at, last_accessed_at`
 
 // mediaRow receives one mediaColumns row; the JSON columns are decoded by
 // media(). Queries that select extra columns append their own targets.
 type mediaRow struct {
-	m                               entity.Media
-	renditions, subtitles, chapters []byte
+	m                                           entity.Media
+	renditions, subtitles, chapters, storyboard []byte
 }
 
 func (mr *mediaRow) targets() []any {
 	m := &mr.m
 	return []any{&m.ID, &m.SourceKey, &m.SourceURL, &m.Title, &m.DurationMs, &m.ThumbnailURL,
-		&m.Status, &m.Progress, &m.SpeedBps, &m.EtaMs, &m.Error, &m.SizeBytes, &mr.renditions, &mr.subtitles, &mr.chapters, &m.S3Prefix,
+		&m.Status, &m.Progress, &m.SpeedBps, &m.EtaMs, &m.Error, &m.SizeBytes, &mr.renditions, &mr.subtitles, &mr.chapters, &mr.storyboard, &m.S3Prefix,
 		&m.CreatedAt, &m.UpdatedAt, &m.LastAccessedAt}
 }
 
@@ -35,7 +35,7 @@ func (mr *mediaRow) media() (*entity.Media, error) {
 	for _, f := range []struct {
 		raw []byte
 		dst any
-	}{{mr.renditions, &m.Renditions}, {mr.subtitles, &m.Subtitles}, {mr.chapters, &m.Chapters}} {
+	}{{mr.renditions, &m.Renditions}, {mr.subtitles, &m.Subtitles}, {mr.chapters, &m.Chapters}, {mr.storyboard, &m.Storyboard}} {
 		if len(f.raw) == 0 {
 			continue
 		}
@@ -138,6 +138,19 @@ func (r *Repo) SetMediaProbed(ctx context.Context, id uuid.UUID, title string, d
 func (r *Repo) SetMediaThumbnail(ctx context.Context, id uuid.UUID, thumbnailURL string) error {
 	const q = `UPDATE media SET thumbnail_url = $2, updated_at = now() WHERE id = $1`
 	return r.exec(ctx, q, id, thumbnailURL)
+}
+
+// SetMediaStoryboard records the timeline preview sheets (nil clears).
+func (r *Repo) SetMediaStoryboard(ctx context.Context, id uuid.UUID, sb *entity.Storyboard) error {
+	var b []byte
+	if sb != nil {
+		var err error
+		if b, err = json.Marshal(sb); err != nil {
+			return err
+		}
+	}
+	const q = `UPDATE media SET storyboard = $2, updated_at = now() WHERE id = $1`
+	return r.exec(ctx, q, id, b)
 }
 
 // SetMediaSubtitles records the text tracks packaged with the media.

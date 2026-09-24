@@ -231,6 +231,7 @@ type MediaInfo struct {
 	Renditions   []entity.Rendition `json:"renditions"`
 	Subtitles    []entity.Subtitle  `json:"subtitles,omitempty"`
 	Chapters     []entity.Chapter   `json:"chapters,omitempty"`
+	Storyboard   *entity.Storyboard `json:"storyboard,omitempty"`
 	Manifest     string             `json:"manifest,omitempty"` // path, ready media only
 	Token        string             `json:"token,omitempty"`    // append as ?t=
 	SourceURL    string             `json:"sourceUrl"`

@@ -58,6 +58,8 @@ CREATE TABLE media (
     subtitles        jsonb       NOT NULL DEFAULT '[]'::jsonb,
     -- Chapters as the source reports them: [{startMs, endMs, title}].
     chapters         jsonb       NOT NULL DEFAULT '[]'::jsonb,
+    -- Timeline preview sheets stored as sb-<n>.jpg (entity.Storyboard).
+    storyboard       jsonb,
     s3_prefix        text,
     created_at       timestamptz NOT NULL DEFAULT now(),
     updated_at       timestamptz NOT NULL DEFAULT now(),
