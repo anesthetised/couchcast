@@ -794,3 +794,48 @@ func TestViewerLag(t *testing.T) {
 	f.room.Report(guest, "playing", 7_450) // same bucket: no broadcast
 	assert.Len(t, owner.msgs, n)
 }
+
+func TestFairQueue(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	conn := &fakeConn{}
+	f.room.Join(ctx, conn, f.owner)
+	for _, u := range []string{"https://a1", "https://a2", "https://a3", "https://g1", "https://g2"} {
+		f.ready(u, 60_000)
+	}
+	for _, u := range []string{"https://a1", "https://a2", "https://a3"} {
+		require.NoError(t, f.room.QueueAdd(ctx, f.owner, u, false, false))
+	}
+	require.NoError(t, f.room.QueueAdd(ctx, f.guest, "https://g1", false, false))
+	titles := func() []string {
+		queue := conn.lastSnapshot().Queue
+		out := make([]string, 0, len(queue))
+		for _, q := range queue {
+			out = append(out, strings.TrimPrefix(q.Media.Title, "T https://"))
+		}
+		return out
+	}
+	assert.Equal(t, []string{"a1", "a2", "a3", "g1"}, titles(), "arrival order while off")
+
+	// On: the guest gets the next turn, since the owner's video is playing.
+	on := true
+	require.NoError(t, f.room.SettingsSet(ctx, f.owner, protocol.SettingsSet{FairQueue: &on}))
+	assert.Equal(t, []string{"a1", "g1", "a2", "a3"}, titles())
+	saved, err := f.repo.ListQueue(ctx, f.room.ID())
+	require.NoError(t, err)
+	assert.Equal(t, conn.lastSnapshot().Queue[1].ID, saved[1].ID, "ranks persisted")
+
+	// New videos take their place in the rotation; "play next" does not jump it.
+	require.NoError(t, f.room.QueueAdd(ctx, f.guest, "https://g2", true, false))
+	assert.Equal(t, []string{"a1", "g1", "a2", "g2", "a3"}, titles())
+
+	// Manual ordering is refused while turns decide.
+	var re *Error
+	require.ErrorAs(t, f.room.QueueMove(ctx, f.owner, conn.lastSnapshot().Queue[4].ID, nil), &re)
+	assert.Contains(t, re.Message, "fair queue")
+	assert.Error(t, f.room.QueueShuffle(ctx, f.owner))
+
+	// Advancing keeps the turns stable.
+	require.NoError(t, f.room.Next(ctx, f.owner))
+	assert.Equal(t, []string{"g1", "a2", "g2", "a3"}, titles())
+}

@@ -75,7 +75,10 @@ const AddToQueue: Component<Props> = (props) => {
   // "Play next" only makes sense when a moderator orders the queue by hand
   // and something is playing.
   const canPlayNext = () =>
-    props.room.isModerator() && !(props.room.state.snapshot?.room.settings.voteMode ?? false) && props.room.current() !== null;
+    props.room.isModerator() &&
+    !(props.room.state.snapshot?.room.settings.voteMode ?? false) &&
+    !(props.room.state.snapshot?.room.settings.fairQueue ?? false) &&
+    props.room.current() !== null;
 
   const add = (next: boolean) => {
     const u = url().trim();

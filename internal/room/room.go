@@ -1273,10 +1273,13 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, 
 	}
 	r.queue = append(r.queue, item)
 	r.media[media.ID] = media
-	if next && !r.info.Settings.VoteMode && r.current != nil && len(r.queue) > 1 {
+	if next && r.orderedByRule() == "" && r.current != nil && len(r.queue) > 1 {
 		if err := r.placeAfterLocked(ctx, len(r.queue)-1, r.current); err != nil {
 			return err
 		}
+	}
+	if err := r.fairReorderLocked(ctx); err != nil {
+		return err
 	}
 	if actor.User != nil {
 		r.logLocked(ctx, actor.User.Username+" added "+mediaLabel(media))
@@ -1374,7 +1377,7 @@ func (r *Room) QueueAddMany(ctx context.Context, actor access.Actor, urls []stri
 	for i, item := range added {
 		r.media[item.MediaID] = medias[i]
 	}
-	if next && !r.info.Settings.VoteMode && r.current != nil {
+	if next && r.orderedByRule() == "" && r.current != nil {
 		// One re-rank for the whole batch: current, the batch, the rest.
 		ordered := make([]*entity.QueueItem, 0, len(r.queue)+len(added))
 		rest := make([]*entity.QueueItem, 0, len(r.queue))
@@ -1400,6 +1403,9 @@ func (r *Room) QueueAddMany(ctx context.Context, actor access.Actor, urls []stri
 	}
 	// In vote mode the batch has no votes yet and is the newest: the end
 	// of the queue is already where the vote order puts it.
+	if err := r.fairReorderLocked(ctx); err != nil {
+		return err
+	}
 
 	if actor.User != nil {
 		line := fmt.Sprintf("%s added %d %s from a playlist", actor.User.Username, len(added), plural(len(added), "video", "videos"))
@@ -1467,8 +1473,8 @@ func (r *Room) QueueShuffle(ctx context.Context, actor access.Actor) error {
 	if err := r.requireLocked(actor, access.ManageQueue); err != nil {
 		return err
 	}
-	if r.info.Settings.VoteMode {
-		return invalid("the queue is ordered by votes while vote mode is on")
+	if why := r.orderedByRule(); why != "" {
+		return invalid(why)
 	}
 	rest := r.queue
 	if r.current != nil && len(r.queue) > 0 && r.queue[0].ID == *r.current {
@@ -1535,6 +1541,9 @@ func (r *Room) QueueReplay(ctx context.Context, actor access.Actor, itemID uuid.
 		r.logLocked(ctx, actor.User.Username+" re-added "+mediaLabel(r.media[src.MediaID]))
 	}
 	r.queue = append(r.queue, item)
+	if err := r.fairReorderLocked(ctx); err != nil {
+		return err
+	}
 	if r.current == nil {
 		r.setCurrentLocked(item)
 		if err := r.persistLocked(ctx); err != nil {
@@ -1613,8 +1622,8 @@ func (r *Room) QueueMove(ctx context.Context, actor access.Actor, itemID uuid.UU
 	if err := r.requireLocked(actor, access.ManageQueue); err != nil {
 		return err
 	}
-	if r.info.Settings.VoteMode {
-		return invalid("the queue is ordered by votes while vote mode is on")
+	if why := r.orderedByRule(); why != "" {
+		return invalid(why)
 	}
 	idx := r.indexOf(itemID)
 	if idx < 0 {

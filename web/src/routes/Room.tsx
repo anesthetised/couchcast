@@ -409,6 +409,10 @@ const RoomHeader: Component<{
                   <input type="checkbox" checked={s().loop} onChange={(e) => props.store.commands.settings({ loop: e.currentTarget.checked })} />
                   Loop queue
                 </label>
+                <label class="radio" title="Videos alternate between the people who added them">
+                  <input type="checkbox" checked={s().fairQueue} disabled={s().voteMode} onChange={(e) => props.store.commands.settings({ fairQueue: e.currentTarget.checked })} />
+                  Fair queue (take turns)
+                </label>
                 <label class="radio" title="Pause while someone buffers for more than a few seconds (up to 30 s)">
                   <input type="checkbox" checked={s().waitForBuffering} onChange={(e) => props.store.commands.settings({ waitForBuffering: e.currentTarget.checked })} />
                   Wait for viewers who are buffering

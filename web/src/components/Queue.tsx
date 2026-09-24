@@ -47,7 +47,10 @@ const Queue: Component<Props> = (props) => {
 
   // Pointer drag-and-drop in manual mode. The current item is pinned; a
   // drop maps to queue.move with the item above the target as the anchor.
-  const canDrag = () => canManage() && !voteMode();
+  // Votes or turns decide the order in those modes, not a moderator's hand.
+  const fair = () => props.room.state.snapshot?.room.settings.fairQueue ?? false;
+  const manualOrder = () => !voteMode() && !fair();
+  const canDrag = () => canManage() && manualOrder();
   const [dragging, setDragging] = createSignal<string | null>(null);
   const [over, setOver] = createSignal<string | null>(null);
 
@@ -102,6 +105,11 @@ const Queue: Component<Props> = (props) => {
     <section class="queue">
       <h2 class="section-title">
         Up next <span class="muted">{items().length}</span>
+        <Show when={fair() && !voteMode()}>
+          <span class="muted queue-total" title="Videos alternate between the people who added them">
+            · taking turns
+          </span>
+        </Show>
         <Show when={remainingMs() > 0}>
           <span class="muted queue-total" title="Time left in the queue">
             · {formatDuration(remainingMs())}
@@ -109,7 +117,7 @@ const Queue: Component<Props> = (props) => {
         </Show>
         <Show when={canManage() && waiting() >= 2}>
           <span class="section-actions">
-            <Show when={!voteMode()}>
+            <Show when={manualOrder()}>
               <button type="button" class="link small" onClick={() => props.room.commands.shuffle()} title="Reorder the waiting videos at random">
                 Shuffle
               </button>
@@ -166,7 +174,7 @@ const Queue: Component<Props> = (props) => {
                     <button type="button" class="link" onClick={() => props.room.commands.jump(item.id)} title="Play now">
                       play
                     </button>
-                    <Show when={!voteMode()}>
+                    <Show when={manualOrder()}>
                       <button type="button" class="link" onClick={() => moveUp(idx())} disabled={idx() < 2} title="Move up">
                         ↑
                       </button>

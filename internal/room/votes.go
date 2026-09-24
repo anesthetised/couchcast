@@ -93,6 +93,9 @@ func (r *Room) SettingsSet(ctx context.Context, actor access.Actor, in protocol.
 		}
 	} else {
 		r.skipVotes = map[uuid.UUID]struct{}{}
+		if err := r.fairReorderLocked(ctx); err != nil {
+			return err
+		}
 	}
 	r.broadcastLocked()
 	return nil

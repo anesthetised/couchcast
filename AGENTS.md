@@ -138,7 +138,11 @@ and a production image build.
   players report their position every 5 s while playing; the room keeps
   each viewer's distance from the clock (`Presence.lagMs`, half-second
   steps, 0 within a second, broadcast only when it changes) and
-  moderators see an amber ring and "2.5 s behind" on the avatar; `queue.add` with `next` lands
+  moderators see an amber ring and "2.5 s behind" on the avatar;
+  `fairQueue` (manual mode) interleaves waiting items by adder, taking
+  turns after the current video's adder (`fair.go`, re-applied on every
+  add, replay and when switched on); `orderedByRule()` refuses moves and
+  shuffles and ignores "play next" while votes or turns decide; `queue.add` with `next` lands
   right after the current item; a video already queued or in the history
   is refused with `duplicate` until the client repeats it with `force`
   (the add form asks). `queue.clear` drops the waiting items (the current
