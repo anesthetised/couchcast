@@ -75,6 +75,23 @@ type Probe struct {
 	Chapters     []Chapter
 }
 
+// PlaylistEntry is one video of a playlist, as far as a flat listing
+// knows it (no formats).
+type PlaylistEntry struct {
+	URL          string
+	Title        string
+	DurationMs   int64
+	ThumbnailURL string
+}
+
+// Playlist is the first entries of a playlist; Total is its full length
+// when the site reports it.
+type Playlist struct {
+	Title   string
+	Total   int
+	Entries []PlaylistEntry
+}
+
 // Selection is the set of formats chosen for packaging.
 type Selection struct {
 	Video []Format // best per ladder height, descending height
@@ -105,6 +122,12 @@ type Extractor interface {
 	Key(url string) (key string, ok bool)
 	// Probe fetches metadata and the available formats.
 	Probe(ctx context.Context, url string) (*Probe, error)
+	// PlaylistURL recognises a link that names a playlist and returns its
+	// canonical URL; video reports whether the link also names one video
+	// of it (a watch link inside a playlist).
+	PlaylistURL(url string) (playlist string, video bool, ok bool)
+	// Playlist lists up to limit entries without resolving each video.
+	Playlist(ctx context.Context, url string, limit int) (*Playlist, error)
 	// Download fetches the given formats into dir and returns a map from
 	// format id to file path. progress receives 0..1 for the whole batch,
 	// weighted by the formats' expected sizes when known.

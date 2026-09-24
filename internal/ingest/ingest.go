@@ -148,6 +148,24 @@ func (s *Service) Preview(ctx context.Context, rawURL string) (*Preview, error) 
 	return out, nil
 }
 
+// PlaylistLimit bounds how many entries a playlist import offers.
+const PlaylistLimit = 50
+
+// PlaylistURL reports whether the link names a playlist (see
+// source.Extractor.PlaylistURL).
+func (s *Service) PlaylistURL(rawURL string) (playlist string, video bool, ok bool) {
+	return s.extractor.PlaylistURL(rawURL)
+}
+
+// Playlist lists the first entries of a playlist link.
+func (s *Service) Playlist(ctx context.Context, rawURL string) (*source.Playlist, error) {
+	list, _, ok := s.extractor.PlaylistURL(rawURL)
+	if !ok {
+		return nil, ErrUnsupportedURL
+	}
+	return s.extractor.Playlist(ctx, list, PlaylistLimit)
+}
+
 // Retry re-queues a failed media item.
 func (s *Service) Retry(ctx context.Context, media *entity.Media) error {
 	if media.Status != entity.MediaFailed {

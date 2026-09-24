@@ -1018,6 +1018,132 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, 
 	return nil
 }
 
+// maxAddMany bounds one bulk add (ingest.PlaylistLimit on the import side).
+const maxAddMany = 50
+
+// QueueAddMany queues several links at once, in order — a playlist
+// import. Links the room already has (queued or played), unsupported or
+// blocked links are skipped, and so is anything past the queue limit. The
+// add budget is charged once. With next (manual mode, something playing)
+// the batch lands right after the current item.
+func (r *Room) QueueAddMany(ctx context.Context, actor access.Actor, urls []string, next bool) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.requireLocked(actor, access.AddToQueue); err != nil {
+		return err
+	}
+	if len(urls) == 0 || len(urls) > maxAddMany {
+		return invalid(fmt.Sprintf("send between 1 and %d links", maxAddMany))
+	}
+	if r.deps.QueueAddLimiter != nil && actor.User != nil && !r.deps.QueueAddLimiter.Allow(actor.User.ID.String()) {
+		return &Error{Code: protocol.CodeRateLimit, Message: "you are adding videos too quickly"}
+	}
+
+	seen := map[uuid.UUID]bool{}
+	for _, it := range r.queue {
+		seen[it.MediaID] = true
+	}
+	for _, it := range r.played {
+		seen[it.MediaID] = true
+	}
+
+	tx, err := r.deps.Store.Pool().Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
+
+	var addedBy *uuid.UUID
+	if actor.User != nil {
+		addedBy = &actor.User.ID
+	}
+	var (
+		added   []*entity.QueueItem
+		medias  []*entity.Media
+		skipped int
+	)
+	for _, raw := range urls {
+		if len(r.queue)+len(added) >= 200 {
+			skipped++
+			continue
+		}
+		media, err := r.deps.Admit.EnsureMedia(ctx, tx, raw)
+		if errors.Is(err, errUnsupported) || errors.Is(err, errBlocked) {
+			skipped++
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		if seen[media.ID] {
+			skipped++
+			continue
+		}
+		seen[media.ID] = true
+		item, err := r.deps.Store.AddQueueItem(ctx, tx, r.info.ID, media.ID, addedBy)
+		if err != nil {
+			return err
+		}
+		if actor.User != nil {
+			item.AddedByName = actor.User.Username
+		}
+		added = append(added, item)
+		medias = append(medias, media)
+	}
+	if len(added) == 0 {
+		return &Error{Code: protocol.CodeDuplicate, Message: "nothing to add: these videos are already here or cannot be played"}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+
+	for i, item := range added {
+		r.media[item.MediaID] = medias[i]
+	}
+	if next && !r.info.Settings.VoteMode && r.current != nil {
+		// One re-rank for the whole batch: current, the batch, the rest.
+		ordered := make([]*entity.QueueItem, 0, len(r.queue)+len(added))
+		rest := make([]*entity.QueueItem, 0, len(r.queue))
+		for _, it := range r.queue {
+			if it.ID == *r.current {
+				ordered = append(ordered, it)
+			} else {
+				rest = append(rest, it)
+			}
+		}
+		ordered = append(append(ordered, added...), rest...)
+		ids := make([]uuid.UUID, len(ordered))
+		for i, it := range ordered {
+			ids[i] = it.ID
+			it.Rank = fmt.Sprintf("%08d", i+1)
+		}
+		if err := r.deps.Store.SetQueueRanks(ctx, r.info.ID, ids); err != nil {
+			return err
+		}
+		r.queue = ordered
+	} else {
+		r.queue = append(r.queue, added...)
+	}
+	// In vote mode the batch has no votes yet and is the newest: the end
+	// of the queue is already where the vote order puts it.
+
+	if actor.User != nil {
+		line := fmt.Sprintf("%s added %d %s from a playlist", actor.User.Username, len(added), plural(len(added), "video", "videos"))
+		if skipped > 0 {
+			line += fmt.Sprintf(" (%d skipped)", skipped)
+		}
+		r.logLocked(ctx, line)
+	}
+	if r.current == nil {
+		r.setCurrentLocked(added[0])
+		if err := r.persistLocked(ctx); err != nil {
+			return err
+		}
+	}
+	r.broadcastLocked()
+	return nil
+}
+
 // duplicateLocked answers CodeDuplicate when the media is already queued
 // or was played in this session, so the client can ask before doubling.
 func (r *Room) duplicateLocked(mediaID uuid.UUID) error {

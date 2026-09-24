@@ -240,6 +240,7 @@ export function createRoomStore(slug: string) {
       replay: (itemId: string) => send({ type: "queue.replay", itemId }),
       clearPlayed: () => send({ type: "queue.clearPlayed" }),
       clear: () => send({ type: "queue.clear" }),
+      addMany: (urls: string[], next = false) => send({ type: "queue.addMany", urls, next: next || undefined }),
       shuffle: () => send({ type: "queue.shuffle" }),
       remove: (itemId: string) => send({ type: "queue.remove", itemId }),
       move: (itemId: string, afterId: string | null) => send({ type: "queue.move", itemId, afterId }),

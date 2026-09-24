@@ -242,6 +242,9 @@ func (c *conn) dispatch(ctx context.Context, data []byte) {
 	case protocol.TypeQueueAdd:
 		m := msg.(*protocol.QueueAdd)
 		err = c.room.QueueAdd(cmdCtx, actor, m.URL, m.Next, m.Force)
+	case protocol.TypeQueueAddMany:
+		m := msg.(*protocol.QueueAddMany)
+		err = c.room.QueueAddMany(cmdCtx, actor, m.URLs, m.Next)
 	case protocol.TypeQueueReplay:
 		err = c.room.QueueReplay(cmdCtx, actor, msg.(*protocol.ItemRef).ItemID)
 	case protocol.TypeQueueClearPlayed:

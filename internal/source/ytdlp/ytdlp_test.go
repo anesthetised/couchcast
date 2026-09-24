@@ -126,3 +126,45 @@ func TestChapters(t *testing.T) {
 	assert.Nil(t, chapters(infoJSON{Chapters: []chapterJSON{{EndTime: 10, Title: "All"}}}))
 	assert.Nil(t, chapters(infoJSON{}))
 }
+
+func TestPlaylistURL(t *testing.T) {
+	e := New("yt-dlp", nil, nil)
+	pl, video, ok := e.PlaylistURL("https://www.youtube.com/playlist?list=PLabcdefghij123")
+	assert.True(t, ok)
+	assert.False(t, video)
+	assert.Equal(t, "https://www.youtube.com/playlist?list=PLabcdefghij123", pl)
+
+	pl, video, ok = e.PlaylistURL("https://youtube.com/watch?v=aqz-KE-bpKQ&list=PLabcdefghij123&index=2")
+	assert.True(t, ok)
+	assert.True(t, video, "a watch link inside a playlist")
+	assert.Equal(t, "https://www.youtube.com/playlist?list=PLabcdefghij123", pl)
+
+	for _, raw := range []string{
+		"https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+		"https://www.youtube.com/watch?v=aqz-KE-bpKQ&list=RDaqz-KE-bpKQ", // a mix
+		"https://vimeo.com/showcase/123?list=PLabcdefghij123",
+	} {
+		_, _, ok := e.PlaylistURL(raw)
+		assert.False(t, ok, raw)
+	}
+}
+
+func TestParsePlaylist(t *testing.T) {
+	data := []byte(`{"_type": "playlist", "title": "Cooking basics", "playlist_count": 12, "entries": [
+		{"_type": "url", "id": "a1", "url": "https://www.youtube.com/watch?v=a1", "title": "Knife skills", "duration": 312,
+		 "thumbnails": [{"url": "https://i.ytimg.com/vi/a1/small.jpg"}, {"url": "https://i.ytimg.com/vi/a1/big.jpg"}]},
+		{"_type": "url", "id": "a2", "url": "https://www.youtube.com/watch?v=a2", "title": "[Private video]", "duration": null},
+		{"_type": "url", "id": "a3", "url": "https://www.youtube.com/watch?v=a3", "title": "Stocks and sauces", "duration": 605.5},
+		{"_type": "url", "id": "a4", "url": "https://www.youtube.com/watch?v=a4", "title": "Bread", "duration": 100}
+	]}`)
+	pl, err := ParsePlaylist(data, 2)
+	require.NoError(t, err)
+	assert.Equal(t, "Cooking basics", pl.Title)
+	assert.Equal(t, 12, pl.Total)
+	require.Len(t, pl.Entries, 2, "private entries are skipped, the limit applies to what is left")
+	assert.Equal(t, source.PlaylistEntry{URL: "https://www.youtube.com/watch?v=a1", Title: "Knife skills", DurationMs: 312_000, ThumbnailURL: "https://i.ytimg.com/vi/a1/big.jpg"}, pl.Entries[0])
+	assert.EqualValues(t, 605_500, pl.Entries[1].DurationMs)
+
+	_, err = ParsePlaylist([]byte(`{"_type": "video", "title": "x"}`), 10)
+	assert.Error(t, err)
+}

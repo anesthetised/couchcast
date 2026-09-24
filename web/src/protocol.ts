@@ -191,6 +191,7 @@ export type ClientMessage =
   | { type: "queue.replay"; itemId: string }
   | { type: "queue.clearPlayed" }
   | { type: "queue.clear" }
+  | { type: "queue.addMany"; urls: string[]; next?: boolean }
   | { type: "queue.shuffle" }
   | { type: "queue.remove"; itemId: string }
   | { type: "queue.move"; itemId: string; afterId: string | null }

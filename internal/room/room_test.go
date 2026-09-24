@@ -70,6 +70,9 @@ type fakeAdmit struct {
 }
 
 func (f *fakeAdmit) EnsureMedia(ctx context.Context, q repository.Querier, rawURL string) (*entity.Media, error) {
+	if rawURL == "unsupported" {
+		return nil, errUnsupported
+	}
 	m, _, err := f.repo.CreateMedia(ctx, q, "url:"+rawURL, rawURL)
 	return m, err
 }
@@ -579,4 +582,47 @@ func TestQueueDuplicatesClearShuffle(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, saved, 1)
 	assert.Len(t, snap.Played, 1, "history untouched")
+}
+
+func TestQueueAddMany(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	conn := &fakeConn{}
+	f.room.Join(ctx, conn, f.owner)
+	for _, u := range []string{"https://a", "https://b", "https://p1", "https://p2", "https://p3"} {
+		f.ready(u, 10_000)
+	}
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false, false))
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://b", false, false))
+	titles := func() []string {
+		out := []string{}
+		for _, q := range conn.lastSnapshot().Queue {
+			out = append(out, q.Media.Title)
+		}
+		return out
+	}
+
+	// Next: the batch lands after the current item, in order; the
+	// duplicate and the unsupported link are skipped and the room says so.
+	require.NoError(t, f.room.QueueAddMany(ctx, f.owner, []string{"https://p1", "https://b", "unsupported", "https://p2", "https://p1"}, true))
+	assert.Equal(t, []string{"T https://a", "T https://p1", "T https://p2", "T https://b"}, titles())
+	saved, err := f.repo.ListQueue(ctx, f.room.ID())
+	require.NoError(t, err)
+	require.Len(t, saved, 4)
+	assert.Equal(t, conn.lastSnapshot().Queue[1].ID, saved[1].ID, "ranks persisted")
+	msgs, err := f.repo.ListRecentMessages(ctx, f.room.ID(), 10)
+	require.NoError(t, err)
+	assert.Contains(t, msgs[len(msgs)-1].Body, "added 2 videos from a playlist (3 skipped)")
+
+	// Without next the batch goes to the end; nothing new is an error.
+	require.NoError(t, f.room.QueueAddMany(ctx, f.owner, []string{"https://p3"}, false))
+	assert.Equal(t, "T https://p3", titles()[4])
+	var re *Error
+	require.ErrorAs(t, f.room.QueueAddMany(ctx, f.owner, []string{"https://p3", "unsupported"}, false), &re)
+	assert.Equal(t, protocol.CodeDuplicate, re.Code)
+
+	// Limits and permissions.
+	assert.Error(t, f.room.QueueAddMany(ctx, f.owner, nil, false))
+	assert.Error(t, f.room.QueueAddMany(ctx, f.owner, make([]string, maxAddMany+1), false))
+	assert.Error(t, f.room.QueueAddMany(ctx, access.Actor{}, []string{"https://x"}, false))
 }

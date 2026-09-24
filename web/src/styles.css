@@ -3581,3 +3581,93 @@ label .hint {
   flex: 1;
   min-width: 12rem;
 }
+
+/* --- playlist import ----------------------------------------------------------- */
+
+.add-playlist {
+  flex: none;
+  margin-left: auto;
+}
+
+.playlist-picker {
+  width: min(640px, 94vw);
+  max-height: 86vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.playlist-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.playlist-head h2 {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.playlist-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.25rem;
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.playlist-row:hover {
+  background: var(--surface-2);
+}
+
+.playlist-row input {
+  flex: none;
+  width: auto;
+}
+
+.playlist-index {
+  flex: none;
+  min-width: 1.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.playlist-thumb {
+  flex: none;
+  width: 64px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+
+.playlist-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playlist-actions {
+  align-items: center;
+}
+
+.playlist-actions > .muted {
+  margin-right: auto;
+}

@@ -231,6 +231,7 @@ func New(deps Deps) *Server {
 			}
 			if deps.Prober != nil {
 				r.Get("/media/probe", s.handleProbe)
+				r.Get("/media/playlist", s.handlePlaylist)
 			}
 		})
 

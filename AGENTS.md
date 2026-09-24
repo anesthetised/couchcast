@@ -257,6 +257,15 @@ and a production image build.
   current one, revokes every session, reissues the caller's). The SPA page
   is `/me`; the colour travels with presence and chat lines, and the web
   app derives a stable colour from the name for users who never chose.
+- Playlist import: the extractor recognises playlist links
+  (`PlaylistURL`, YouTube `list=`; mixes are not offered) and lists them
+  flat (`yt-dlp --flat-playlist`, first 50, private/deleted entries
+  dropped). The probe marks such links with `playlistUrl` (a bare
+  playlist link is not probed as a video); `GET /api/v1/media/playlist?url=`
+  feeds `PlaylistPicker`, and `queue.addMany {urls, next}` queues the
+  picked entries in order in one transaction — duplicates, unsupported
+  links and anything past the queue limit are skipped and counted in the
+  room log line; the add budget is charged once.
 - `GET /api/v1/media/probe?url=` (signed in, rate limited) previews a link
   for the add form: known sources answer from the database, new ones go
   through `ingest.Service.Preview` → the extractor, bounded by a timeout.

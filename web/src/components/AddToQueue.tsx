@@ -1,12 +1,14 @@
 import { createSignal, Match, onCleanup, Show, Switch, type Component } from "solid-js";
 
+import PlaylistPicker from "~/components/PlaylistPicker";
 import { api, ApiError } from "~/lib/api";
+import { toast } from "~/lib/toast";
 import { formatTime } from "~/lib/format";
 import type { RoomStore } from "~/store/room";
 
 type Props = { room: RoomStore };
 
-type Preview = { title: string; durationMs: number; thumbnailUrl?: string; status?: string };
+type Preview = { title: string; durationMs: number; thumbnailUrl?: string; status?: string; playlistUrl?: string };
 type Lookup = { url: string; state: "loading" } | { url: string; state: "ok"; preview: Preview } | { url: string; state: "error"; message: string };
 
 const PROBE_DEBOUNCE_MS = 400;
@@ -53,6 +55,21 @@ const AddToQueue: Component<Props> = (props) => {
   });
 
   const blocked = () => lookup()?.state === "error";
+  // A playlist link: the form offers the picker instead of queueing the
+  // link itself (a bare playlist) or next to it (a video in a playlist).
+  const playlistOf = () => {
+    const l = lookup();
+    return l?.state === "ok" ? (l.preview.playlistUrl ?? null) : null;
+  };
+  const bareList = () => playlistOf() !== null && !(previewOf(lookup()!)?.title ?? "");
+  const [picker, setPicker] = createSignal<string | null>(null);
+  const importMany = (urls: string[], next: boolean) => {
+    props.room.commands.addMany(urls, next);
+    toast(`Adding ${urls.length} ${urls.length === 1 ? "video" : "videos"}…`);
+    setUrl("");
+    setLookup(null);
+    seq++;
+  };
   // "Play next" only makes sense when a moderator orders the queue by hand
   // and something is playing.
   const canPlayNext = () =>
@@ -70,6 +87,8 @@ const AddToQueue: Component<Props> = (props) => {
 
   const submit = (e: SubmitEvent) => {
     e.preventDefault();
+    const list = playlistOf();
+    if (list && bareList()) return setPicker(list);
     add(false);
   };
 
@@ -121,6 +140,15 @@ const AddToQueue: Component<Props> = (props) => {
                     <span class="muted">Looking up…</span>
                   </Match>
                   <Match when={errorOf(l())}>{(m) => <span>{m()}</span>}</Match>
+                  <Match when={bareList()}>
+                    <span class="add-preview-body">
+                      <strong>Playlist</strong>
+                      <span class="muted small">Pick the videos to queue</span>
+                    </span>
+                    <button type="button" class="ghost small" onClick={() => setPicker(playlistOf())}>
+                      Choose videos…
+                    </button>
+                  </Match>
                   <Match when={previewOf(l())}>
                     {(p) => (
                       <>
@@ -133,6 +161,13 @@ const AddToQueue: Component<Props> = (props) => {
                             <Show when={p().status && p().status !== "ready" && p().status !== "failed"}> · being prepared</Show>
                           </span>
                         </span>
+                        <Show when={p().playlistUrl}>
+                          {(list) => (
+                            <button type="button" class="link small add-playlist" onClick={() => setPicker(list())}>
+                              Whole playlist…
+                            </button>
+                          )}
+                        </Show>
                       </>
                     )}
                   </Match>
@@ -152,6 +187,9 @@ const AddToQueue: Component<Props> = (props) => {
           </Show>
         </div>
       </form>
+      <Show when={picker()}>
+        {(list) => <PlaylistPicker url={list()} canPlayNext={canPlayNext()} onAdd={importMany} onClose={() => setPicker(null)} />}
+      </Show>
     </Show>
   );
 };

@@ -59,6 +59,89 @@ func (e *Extractor) Key(raw string) (string, bool) {
 	return "url:" + u.String(), true
 }
 
+var youtubeList = regexp.MustCompile(`[?&]list=([A-Za-z0-9_-]{10,64})`)
+
+// PlaylistURL implements source.Extractor for YouTube playlists. Mixes
+// and "radio" lists (RD…) are generated per viewer and endless, so they
+// are not offered.
+func (e *Extractor) PlaylistURL(raw string) (string, bool, bool) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return "", false, false
+	}
+	host := strings.TrimPrefix(strings.ToLower(u.Host), "www.")
+	host = strings.TrimPrefix(host, "m.")
+	if host != "youtube.com" && host != "music.youtube.com" && host != "youtu.be" {
+		return "", false, false
+	}
+	m := youtubeList.FindStringSubmatch(raw)
+	if m == nil || strings.HasPrefix(m[1], "RD") {
+		return "", false, false
+	}
+	return "https://www.youtube.com/playlist?list=" + m[1], youtubeID.MatchString(raw), true
+}
+
+// playlistJSON is the subset of yt-dlp's --flat-playlist -J output we read.
+type playlistJSON struct {
+	Title         string `json:"title"`
+	Type          string `json:"_type"`
+	PlaylistCount int    `json:"playlist_count"`
+	Entries       []struct {
+		ID         string  `json:"id"`
+		URL        string  `json:"url"`
+		Title      string  `json:"title"`
+		Duration   float64 `json:"duration"`
+		Thumbnails []struct {
+			URL string `json:"url"`
+		} `json:"thumbnails"`
+	} `json:"entries"`
+}
+
+// Playlist implements source.Extractor with a flat listing: one request
+// for the page, no per-video resolution.
+func (e *Extractor) Playlist(ctx context.Context, rawURL string, limit int) (*source.Playlist, error) {
+	args := append([]string{"-J", "--flat-playlist", "--no-warnings", "--playlist-end", strconv.Itoa(limit)}, e.ExtraArgs...)
+	args = append(args, "--", rawURL)
+	cmd := exec.CommandContext(ctx, e.Path, args...) //nolint:gosec // binary from config; url passed after "--"
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("yt-dlp playlist: %w: %s", err, lastLine(stderr.String()))
+	}
+	return ParsePlaylist(stdout.Bytes(), limit)
+}
+
+// ParsePlaylist converts flat yt-dlp JSON into a Playlist, dropping
+// entries YouTube lists but will not play (private, deleted). Exported
+// for tests against recorded fixtures.
+func ParsePlaylist(data []byte, limit int) (*source.Playlist, error) {
+	var pl playlistJSON
+	if err := json.Unmarshal(data, &pl); err != nil {
+		return nil, fmt.Errorf("yt-dlp: decode playlist: %w", err)
+	}
+	if pl.Type != "playlist" {
+		return nil, errors.New("yt-dlp: not a playlist")
+	}
+	out := &source.Playlist{Title: pl.Title, Total: pl.PlaylistCount}
+	for _, en := range pl.Entries {
+		if len(out.Entries) == limit {
+			break
+		}
+		if en.URL == "" || en.Title == "[Private video]" || en.Title == "[Deleted video]" {
+			continue
+		}
+		entry := source.PlaylistEntry{URL: en.URL, Title: en.Title, DurationMs: int64(en.Duration * 1000)}
+		if n := len(en.Thumbnails); n > 0 {
+			entry.ThumbnailURL = en.Thumbnails[n-1].URL
+		}
+		out.Entries = append(out.Entries, entry)
+	}
+	if out.Total < len(out.Entries) {
+		out.Total = len(out.Entries)
+	}
+	return out, nil
+}
+
 // infoJSON is the subset of yt-dlp's -J output we read.
 type infoJSON struct {
 	ID           string        `json:"id"`

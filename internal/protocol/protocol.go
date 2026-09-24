@@ -31,6 +31,7 @@ const (
 	TypeQueueClearPlayed = "queue.clearPlayed"
 	TypeQueueClear       = "queue.clear"
 	TypeQueueShuffle     = "queue.shuffle"
+	TypeQueueAddMany     = "queue.addMany"
 	TypeSkipVote         = "skip.vote"
 	TypeSettingsSet      = "settings.set"
 	TypeSessionEnd       = "session.end"
@@ -78,6 +79,13 @@ type QueueAdd struct {
 	// Force adds a video that is already queued or in the history; without
 	// it the server answers CodeDuplicate and the client asks first.
 	Force bool `json:"force,omitempty"`
+}
+
+// QueueAddMany enqueues several URLs in order (a playlist import); links
+// the room already has are skipped.
+type QueueAddMany struct {
+	URLs []string `json:"urls"`
+	Next bool     `json:"next,omitempty"`
 }
 
 // QueueMove places ItemID right after AfterID, or at the head when
@@ -144,6 +152,8 @@ func Decode(data []byte) (string, any, error) {
 		msg = &ItemRef{}
 	case TypeQueueAdd:
 		msg = &QueueAdd{}
+	case TypeQueueAddMany:
+		msg = &QueueAddMany{}
 	case TypeQueueMove:
 		msg = &QueueMove{}
 	case TypeSettingsSet:
