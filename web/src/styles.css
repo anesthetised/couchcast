@@ -2997,8 +2997,8 @@ button.timecode {
 
 .room-card-wrap .star {
   position: absolute;
-  right: 0.5rem;
-  bottom: 0.5rem;
+  right: 0.45rem;
+  bottom: 0.8rem;
   padding: 0.15rem 0.4rem;
   border-radius: var(--radius-sm);
   background: none;
@@ -3032,6 +3032,11 @@ button.timecode {
   .room-card-wrap .star {
     opacity: 1;
   }
+}
+
+/* The star sits at the end of the meta line; keep the text clear of it. */
+.room-card-wrap:has(.star) .room-card-meta {
+  padding-right: 2rem;
 }
 
 /* --- chat replies and the pin ------------------------------------------------ */
