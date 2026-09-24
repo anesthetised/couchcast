@@ -3,7 +3,7 @@
 // text); probes registered by the player and the room store describe the
 // current state; collect() assembles everything the report dialog sends.
 
-export type EventKind = "player" | "server" | "socket" | "toast" | "media" | "window";
+export type EventKind = "player" | "server" | "socket" | "toast" | "media" | "window" | "app";
 
 export interface DiagEvent {
   t: number; // client time, unix ms

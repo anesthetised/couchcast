@@ -63,7 +63,7 @@ const BugReportDialog: Component<Props> = (props) => {
         client: withDetails() ? snapshot : undefined,
         frame: blob ? await toBase64(blob) : undefined,
       });
-      logEvent("window", "bug report sent");
+      logEvent("app", "bug report sent");
       setDone(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));

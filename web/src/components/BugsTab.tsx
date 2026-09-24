@@ -1,7 +1,7 @@
 import { createSignal, For, Show, type Component, type JSX } from "solid-js";
 
 import { BUG_CATEGORIES, bugs, type BugReport } from "~/lib/bugs";
-import { formatAgo } from "~/lib/format";
+import { formatAgo, formatTime } from "~/lib/format";
 import { toast } from "~/lib/toast";
 
 // BugsTab is the admin view of problem reports: a list of open or
@@ -153,9 +153,9 @@ const BugDetail: Component<{ report: BugReport; onResolved: () => void }> = (pro
         <Facts title="Server">
           <Fact k="Version" v={s.version} />
           <Fact k="Room" v={s.room && `${s.room.slug} · ${s.room.loaded ? "loaded" : "not loaded"} · ${s.room.role || "guest"}`} />
-          <Fact k="Live" v={s.room?.live && `${s.room.live.viewers} viewers${s.room.live.buffering?.length ? ` · buffering: ${s.room.live.buffering.join(", ")}` : ""} · ${s.room.live.playback?.playing ? "playing" : "paused"} at ${Math.round((s.room.live.playback?.positionMs ?? 0) / 1000)} s`} />
+          <Fact k="Live" v={s.room?.live && `${s.room.live.viewers} viewers${s.room.live.buffering?.length ? ` · buffering: ${s.room.live.buffering.join(", ")}` : ""} · ${s.room.live.playback?.playing ? "playing" : "paused"} at ${formatTime(livePosition(s.room.live))}`} />
           <Fact k="Media" v={s.media && `${s.media.status}${s.media.error ? ` · ${s.media.error}` : ""} · ${s.media.renditions?.map((x) => x.height).join("/")}p`} />
-          <Fact k="Ingest job" v={s.media?.job && `${s.media.job.status} · ${s.media.job.attempts} attempts${s.media.job.lastError ? ` · ${s.media.job.lastError}` : ""}`} />
+          <Fact k="Ingest job" v={s.media?.job && `${s.media.job.status} · ${s.media.job.attempts} ${s.media.job.attempts === 1 ? "attempt" : "attempts"}${s.media.job.lastError ? ` · ${s.media.job.lastError}` : ""}`} />
         </Facts>
       </div>
 
@@ -252,10 +252,19 @@ type Server = {
     slug: string;
     role: string;
     loaded: boolean;
-    live?: { viewers: number; buffering?: string[]; playback?: { playing: boolean; positionMs: number } };
+    live?: { viewers: number; buffering?: string[]; serverMs?: number; playback?: { playing: boolean; positionMs: number; atServerMs: number; rate: number } };
   };
   media?: { status: string; error?: string; renditions?: { height: number }[]; job?: { status: string; attempts: number; lastError?: string } };
 };
+
+// livePosition is where the room's clock stood when the report arrived:
+// the anchor position plus the time played since, at the room's rate.
+function livePosition(live: NonNullable<NonNullable<Server["room"]>["live"]>): number {
+  const pb = live.playback;
+  if (!pb) return 0;
+  if (!pb.playing || !live.serverMs) return pb.positionMs;
+  return pb.positionMs + (live.serverMs - pb.atServerMs) * (pb.rate || 1);
+}
 
 const categoryLabel = (c: string) => BUG_CATEGORIES.find((x) => x.id === c)?.label ?? c;
 const firstLine = (s: string) => s.split("\n")[0]!.slice(0, 120);
