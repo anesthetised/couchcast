@@ -134,7 +134,11 @@ and a production image build.
   room (`Snapshot.waiting`, "Waiting for …" overlay, log line); it
   resumes when everyone plays again, or after 30 s without them — then
   that stall is ignored until the viewer plays. A moderator's play or
-  pause ends the wait. `Deps.WaitScale` shortens the timers in tests; `queue.add` with `next` lands
+  pause ends the wait. `Deps.WaitScale` shortens the timers in tests;
+  players report their position every 5 s while playing; the room keeps
+  each viewer's distance from the clock (`Presence.lagMs`, half-second
+  steps, 0 within a second, broadcast only when it changes) and
+  moderators see an amber ring and "2.5 s behind" on the avatar; `queue.add` with `next` lands
   right after the current item; a video already queued or in the history
   is refused with `duplicate` until the client repeats it with `force`
   (the add form asks). `queue.clear` drops the waiting items (the current

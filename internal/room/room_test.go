@@ -759,3 +759,38 @@ func TestWaitForBuffering(t *testing.T) {
 	assert.False(t, f.room.Playback().Playing)
 	assert.Empty(t, owner.lastSnapshot().Waiting)
 }
+
+func TestViewerLag(t *testing.T) {
+	assert.EqualValues(t, 0, lagOf(900))
+	assert.EqualValues(t, 0, lagOf(-999))
+	assert.EqualValues(t, 1000, lagOf(1100))
+	assert.EqualValues(t, 2500, lagOf(2400))
+	assert.EqualValues(t, -1500, lagOf(-1600))
+
+	f := newFixture(t)
+	ctx := context.Background()
+	owner, guest := &fakeConn{}, &fakeConn{}
+	f.room.Join(ctx, owner, f.owner)
+	f.room.Join(ctx, guest, f.guest)
+	f.ready("https://a", 600_000)
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false, false))
+	f.now = f.now.Add(10 * time.Second)
+
+	lag := func() int64 {
+		for _, m := range owner.lastSnapshot().Members {
+			if m.Username == "guest" {
+				return m.LagMs
+			}
+		}
+		return -1
+	}
+	f.room.Report(guest, "playing", 9_500) // half a second behind: in sync
+	assert.EqualValues(t, 0, lag())
+	n := len(owner.msgs)
+	f.room.Report(guest, "playing", 7_400) // 2.6 s behind
+	assert.EqualValues(t, 2500, lag())
+	assert.Greater(t, len(owner.msgs), n, "a change is broadcast")
+	n = len(owner.msgs)
+	f.room.Report(guest, "playing", 7_450) // same bucket: no broadcast
+	assert.Len(t, owner.msgs, n)
+}

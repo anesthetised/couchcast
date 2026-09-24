@@ -3716,3 +3716,9 @@ label .hint {
   font-size: var(--fs-sm);
   z-index: 3;
 }
+
+/* --- viewer lag (moderators) ------------------------------------------------- */
+
+.presence .avatar.lagging {
+  box-shadow: 0 0 0 2px var(--warn);
+}

@@ -69,6 +69,7 @@ export interface Presence {
   color?: string;
   role?: RoomRole;
   buffering: boolean;
+  lagMs?: number; // positive: behind the room clock (half-second steps)
 }
 
 export interface RoomInfo {

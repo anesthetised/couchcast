@@ -271,7 +271,10 @@ const Chat: Component<Props> = (props) => {
         <div class="presence" title={members().map((m) => m.username).join(", ")}>
           <For each={members().slice(0, 6)}>
             {(m) => (
-              <span class={`avatar ${avatarClass(m.username, m.color)} ${m.buffering ? "buffering" : ""}`} title={`${m.username}${m.role && m.role !== "member" ? ` · ${m.role}` : ""}${m.buffering ? " · buffering" : ""}`}>
+              <span
+                class={`avatar ${avatarClass(m.username, m.color)} ${m.buffering ? "buffering" : ""} ${canModerate() && m.lagMs ? "lagging" : ""}`}
+                title={`${m.username}${m.role && m.role !== "member" ? ` · ${m.role}` : ""}${m.buffering ? " · buffering" : ""}${canModerate() && m.lagMs ? ` · ${lagText(m.lagMs)}` : ""}`}
+              >
                 {m.username.slice(0, 1)}
               </span>
             )}
@@ -478,6 +481,12 @@ const Chat: Component<Props> = (props) => {
     </section>
   );
 };
+
+// lagText says how far a viewer is from the room clock.
+function lagText(ms: number): string {
+  const s = (Math.abs(ms) / 1000).toFixed(1).replace(/\.0$/, "");
+  return ms > 0 ? `${s} s behind` : `${s} s ahead`;
+}
 
 function typingText(names: string[]): string {
   if (names.length === 1) return `${names[0]} is typing…`;

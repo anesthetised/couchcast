@@ -126,6 +126,8 @@ type viewer struct {
 	// ignored: the room already waited for this viewer to the limit;
 	// cleared when they play again, so they cannot stall the room twice.
 	ignored bool
+	// lagMs is the last reported distance from the room clock (see lagOf).
+	lagMs int64
 }
 
 // Room is the in-memory state of one room.
@@ -660,10 +662,13 @@ func (r *Room) snapshotLocked() protocol.Snapshot {
 		}
 		if i, ok := seen[v.user.Username]; ok {
 			snap.Members[i].Buffering = snap.Members[i].Buffering || v.buffering
+			if abs(v.lagMs) > abs(snap.Members[i].LagMs) {
+				snap.Members[i].LagMs = v.lagMs // the worst of their tabs
+			}
 			continue
 		}
 		seen[v.user.Username] = len(snap.Members)
-		snap.Members = append(snap.Members, protocol.Presence{Username: v.user.Username, Color: v.user.AvatarColor, Role: v.role, Buffering: v.buffering})
+		snap.Members = append(snap.Members, protocol.Presence{Username: v.user.Username, Color: v.user.AvatarColor, Role: v.role, Buffering: v.buffering, LagMs: v.lagMs})
 	}
 	sort.Slice(snap.Members, func(i, j int) bool { return snap.Members[i].Username < snap.Members[j].Username })
 
@@ -929,7 +934,20 @@ func (r *Room) Report(conn Conn, state string, positionMs int64) {
 	if !ok {
 		return
 	}
+	// How far the viewer's video is from the clock, coarsely: presence
+	// only changes (and is broadcast) when that moves by half a second
+	// or crosses the one-second "in sync" band.
+	changed := false
+	if r.current != nil && state != "ended" {
+		if lag := lagOf(r.positionLocked(r.now()) - positionMs); lag != v.lagMs {
+			v.lagMs = lag
+			changed = true
+		}
+	}
 	buffering := state == "buffering"
+	if changed && v.buffering == buffering {
+		r.broadcastLocked()
+	}
 	if v.buffering != buffering {
 		v.buffering = buffering
 		if !buffering {
@@ -938,6 +956,29 @@ func (r *Room) Report(conn Conn, state string, positionMs int64) {
 		r.checkBufferingLocked()
 		r.broadcastLocked()
 	}
+}
+
+// lagOf rounds a distance from the clock (positive: behind) to half
+// seconds, and to 0 inside the band where the synchroniser keeps up.
+func lagOf(ms int64) int64 {
+	if ms > -1000 && ms < 1000 {
+		return 0
+	}
+	return (ms + sign(ms)*250) / 500 * 500
+}
+
+func abs(n int64) int64 {
+	if n < 0 {
+		return -n
+	}
+	return n
+}
+
+func sign(n int64) int64 {
+	if n < 0 {
+		return -1
+	}
+	return 1
 }
 
 const (

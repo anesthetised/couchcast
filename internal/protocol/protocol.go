@@ -258,6 +258,9 @@ type Presence struct {
 	Color     string          `json:"color,omitempty"` // avatar palette key
 	Role      entity.RoomRole `json:"role,omitempty"`
 	Buffering bool            `json:"buffering"`
+	// LagMs is how far this viewer's video is from the room clock
+	// (positive: behind), in half-second steps; 0 within a second.
+	LagMs int64 `json:"lagMs,omitempty"`
 }
 
 // RoomInfo is the static part of the room.

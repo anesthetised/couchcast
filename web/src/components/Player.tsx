@@ -34,6 +34,7 @@ const VOLUME_STEP = 0.05;
 const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "👏", "🎉"];
 const CLICK_DELAY_MS = 220; // single click waits this long for a double click
+const REPORT_EVERY_MS = 5000; // position heartbeat for the lag indicator
 
 type SyncState = "ok" | "nudge" | "seek" | "off";
 
@@ -197,6 +198,13 @@ const Player: Component<Props> = (props) => {
     video.volume = volume();
     const tick = window.setInterval(() => setNowMs(video.currentTime * 1000), 250);
     onCleanup(() => window.clearInterval(tick));
+    // Tell the room where this video is, so moderators see who lags.
+    const heartbeat = window.setInterval(() => {
+      if (loadedMediaId() && props.room.state.playback?.playing) {
+        props.room.commands.report(buffering() ? "buffering" : "playing", video.currentTime * 1000);
+      }
+    }, REPORT_EVERY_MS);
+    onCleanup(() => window.clearInterval(heartbeat));
 
     document.addEventListener("keydown", onKey);
     onCleanup(() => document.removeEventListener("keydown", onKey));
