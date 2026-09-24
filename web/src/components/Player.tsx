@@ -582,120 +582,122 @@ const Player: Component<Props> = (props) => {
           </div>
           <span class="time">{formatTime(duration())}</span>
         </div>
-        <Show when={chapters().length > 0}>
-          <div class="chapter-menu">
-            <button type="button" class="chapter-btn" onClick={() => setShowChapters(!showChapters())} title="Chapters ([ ])" aria-expanded={showChapters()}>
-              <span class="chapter-icon" aria-hidden="true">§</span>
-              <span class="chapter-title">{currentChapter()?.title ?? "Chapters"}</span>
-            </button>
-            <Show when={showChapters()}>
-              <ol class="chapter-list" role="menu">
-                <For each={chapters()}>
-                  {(c) => (
-                    <li>
-                      <button type="button" role="menuitem" class={c === currentChapter() ? "active" : ""} onClick={() => jumpToChapter(c)} disabled={!canControl()}>
-                        <span class="time">{formatTime(c.startMs)}</span>
-                        <span class="chapter-name">{c.title}</span>
-                      </button>
-                    </li>
-                  )}
-                </For>
-              </ol>
-            </Show>
-          </div>
-        </Show>
-        <button type="button" class="icon" onClick={toggleMute} title="Mute (M)">
-          {muted() ? "🔇" : "🔊"}
-        </button>
-        <input type="range" class="volume" min="0" max="1" step="0.05" value={volume()} onInput={onVolume} aria-label="Volume" />
-        <select class="quality" value={chosen() === null ? "auto" : String(chosen())} onChange={(e) => pickQuality(e.currentTarget.value === "auto" ? null : Number(e.currentTarget.value))} aria-label="Quality">
-          <option value="auto">Auto{activeHeight() && chosen() === null ? ` (${activeHeight()}p)` : ""}</option>
-          <For each={qualities()}>{(q) => <option value={String(q.height)}>{q.height}p</option>}</For>
-        </select>
-        <Show when={subtitles().length > 0}>
-          <select class="quality cc-select" value={activeSubtitle()} onChange={(e) => pickSubtitle(e.currentTarget.value)} aria-label="Subtitles" title="Subtitles (C)">
-            <option value="">CC off</option>
-            <For each={subtitles()}>
-              {(s) => (
-                <option value={s.lang}>
-                  {s.name || s.lang}
-                  {s.auto ? " (auto)" : ""}
-                </option>
-              )}
-            </For>
-          </select>
-        </Show>
-        <Show when={current()}>
-          <Show
-            when={canControl()}
-            fallback={
-              <Show when={rate() !== 1}>
-                <span class="badge rate" title="Playback speed">
-                  {rate()}×
-                </span>
+        <div class="control-group">
+          <Show when={chapters().length > 0}>
+            <div class="chapter-menu">
+              <button type="button" class="chapter-btn" onClick={() => setShowChapters(!showChapters())} title="Chapters ([ ])" aria-expanded={showChapters()}>
+                <span class="chapter-icon" aria-hidden="true">§</span>
+                <span class="chapter-title">{currentChapter()?.title ?? "Chapters"}</span>
+              </button>
+              <Show when={showChapters()}>
+                <ol class="chapter-list" role="menu">
+                  <For each={chapters()}>
+                    {(c) => (
+                      <li>
+                        <button type="button" role="menuitem" class={c === currentChapter() ? "active" : ""} onClick={() => jumpToChapter(c)} disabled={!canControl()}>
+                          <span class="time">{formatTime(c.startMs)}</span>
+                          <span class="chapter-name">{c.title}</span>
+                        </button>
+                      </li>
+                    )}
+                  </For>
+                </ol>
               </Show>
-            }
-          >
-            <select class="quality rate-select" value={String(rate())} onChange={(e) => props.room.commands.rate(Number(e.currentTarget.value))} aria-label="Playback speed" title="Speed (< >)">
-              <For each={RATES}>{(r) => <option value={String(r)}>{r}×</option>}</For>
+            </div>
+          </Show>
+          <button type="button" class="icon" onClick={toggleMute} title="Mute (M)">
+            {muted() ? "🔇" : "🔊"}
+          </button>
+          <input type="range" class="volume" min="0" max="1" step="0.05" value={volume()} onInput={onVolume} aria-label="Volume" />
+          <select class="quality" value={chosen() === null ? "auto" : String(chosen())} onChange={(e) => pickQuality(e.currentTarget.value === "auto" ? null : Number(e.currentTarget.value))} aria-label="Quality">
+            <option value="auto">Auto{activeHeight() && chosen() === null ? ` (${activeHeight()}p)` : ""}</option>
+            <For each={qualities()}>{(q) => <option value={String(q.height)}>{q.height}p</option>}</For>
+          </select>
+          <Show when={subtitles().length > 0}>
+            <select class="quality cc-select" value={activeSubtitle()} onChange={(e) => pickSubtitle(e.currentTarget.value)} aria-label="Subtitles" title="Subtitles (C)">
+              <option value="">CC off</option>
+              <For each={subtitles()}>
+                {(s) => (
+                  <option value={s.lang}>
+                    {s.name || s.lang}
+                    {s.auto ? " (auto)" : ""}
+                  </option>
+                )}
+              </For>
             </select>
           </Show>
-        </Show>
-        <button
-          type="button"
-          class={`icon sync-dot ${syncState()}`}
-          onClick={() => setShowSync(!showSync())}
-          title={syncTitle(syncState(), debug())}
-          aria-label="Sync status"
-        >
-          <span />
-        </button>
-        <Show when={props.room.state.me !== null}>
-          <button type="button" class="icon dim" onClick={() => openBugReport()} title="Report a problem (Shift+B)" aria-label="Report a problem">
-            ⚠
-          </button>
-        </Show>
-        <Show when={canReact() && current()}>
-          <div class="react-menu">
-            <button type="button" class={`icon ${showReactions() ? "" : "dim"}`} onClick={() => setShowReactions(!showReactions())} title="React" aria-expanded={showReactions()}>
-              ☺
-            </button>
-            <Show when={showReactions()}>
-              <div class="react-bar" role="menu">
-                <For each={REACTIONS}>
-                  {(e) => (
-                    <button type="button" class="react-btn" role="menuitem" onClick={() => react(e)}>
-                      {e}
-                    </button>
-                  )}
-                </For>
-              </div>
+          <Show when={current()}>
+            <Show
+              when={canControl()}
+              fallback={
+                <Show when={rate() !== 1}>
+                  <span class="badge rate" title="Playback speed">
+                    {rate()}×
+                  </span>
+                </Show>
+              }
+            >
+              <select class="quality rate-select" value={String(rate())} onChange={(e) => props.room.commands.rate(Number(e.currentTarget.value))} aria-label="Playback speed" title="Speed (< >)">
+                <For each={RATES}>{(r) => <option value={String(r)}>{r}×</option>}</For>
+              </select>
             </Show>
-          </div>
-        </Show>
-        <Show when={pipSupported && current()}>
-          <button type="button" class={`icon ${pip() ? "" : "dim"}`} onClick={() => void togglePip()} title={pip() ? "Leave picture-in-picture" : "Picture-in-picture"}>
-            ▣
+          </Show>
+          <button
+            type="button"
+            class={`icon sync-dot ${syncState()}`}
+            onClick={() => setShowSync(!showSync())}
+            title={syncTitle(syncState(), debug())}
+            aria-label="Sync status"
+          >
+            <span />
           </button>
-        </Show>
-        <Show when={props.isFullscreen && props.onToggleQueue}>
-          <button type="button" class={`icon ${props.queueVisible ? "" : "dim"}`} onClick={props.onToggleQueue} title={props.queueVisible ? "Hide queue" : "Show queue"}>
-            ☰
+          <Show when={props.room.state.me !== null}>
+            <button type="button" class="icon dim" onClick={() => openBugReport()} title="Report a problem (Shift+B)" aria-label="Report a problem">
+              ⚠
+            </button>
+          </Show>
+          <Show when={canReact() && current()}>
+            <div class="react-menu">
+              <button type="button" class={`icon ${showReactions() ? "" : "dim"}`} onClick={() => setShowReactions(!showReactions())} title="React" aria-expanded={showReactions()}>
+                ☺
+              </button>
+              <Show when={showReactions()}>
+                <div class="react-bar" role="menu">
+                  <For each={REACTIONS}>
+                    {(e) => (
+                      <button type="button" class="react-btn" role="menuitem" onClick={() => react(e)}>
+                        {e}
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
+            </div>
+          </Show>
+          <Show when={pipSupported && current()}>
+            <button type="button" class={`icon ${pip() ? "" : "dim"}`} onClick={() => void togglePip()} title={pip() ? "Leave picture-in-picture" : "Picture-in-picture"}>
+              ▣
+            </button>
+          </Show>
+          <Show when={props.isFullscreen && props.onToggleQueue}>
+            <button type="button" class={`icon ${props.queueVisible ? "" : "dim"}`} onClick={props.onToggleQueue} title={props.queueVisible ? "Hide queue" : "Show queue"}>
+              ☰
+            </button>
+          </Show>
+          <Show when={props.overlay && props.onToggleChat}>
+            <button type="button" class={`icon ${props.chatVisible ? "" : "dim"}`} onClick={props.onToggleChat} title={props.chatVisible ? "Hide chat" : "Show chat"}>
+              💬
+            </button>
+          </Show>
+          <Show when={props.onTheater && !props.isFullscreen}>
+            <button type="button" class={`icon ${props.isTheater ? "" : "dim"}`} onClick={props.onTheater} title={props.isTheater ? "Leave theater mode (T)" : "Theater mode (T)"}>
+              ▭
+            </button>
+          </Show>
+          <button type="button" class="icon" onClick={fullscreen} title={props.isFullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}>
+            ⛶
           </button>
-        </Show>
-        <Show when={props.overlay && props.onToggleChat}>
-          <button type="button" class={`icon ${props.chatVisible ? "" : "dim"}`} onClick={props.onToggleChat} title={props.chatVisible ? "Hide chat" : "Show chat"}>
-            💬
-          </button>
-        </Show>
-        <Show when={props.onTheater && !props.isFullscreen}>
-          <button type="button" class={`icon ${props.isTheater ? "" : "dim"}`} onClick={props.onTheater} title={props.isTheater ? "Leave theater mode (T)" : "Theater mode (T)"}>
-            ▭
-          </button>
-        </Show>
-        <button type="button" class="icon" onClick={fullscreen} title={props.isFullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}>
-          ⛶
-        </button>
+        </div>
       </div>
 
       <Show when={showKeys()}>

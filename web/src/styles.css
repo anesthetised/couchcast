@@ -1164,14 +1164,26 @@ kbd {
   background: var(--surface);
 }
 
-/* Play, times and the seek bar; takes its own row when the settings
-   crowd it out. */
+/* Play, times and the seek bar. The basis is wide on purpose: when the
+   settings next to it would leave the seek bar short, the transport takes
+   a row of its own and the settings wrap below. */
 .transport {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  flex: 1 1 340px;
+  flex: 1 1 560px;
   min-width: 0;
+}
+
+/* Everything else moves as one block: beside the seek bar when it all
+   fits, otherwise on a row of its own below it. */
+.control-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 1 auto;
+  margin-left: auto;
 }
 
 .controls .icon:disabled {
