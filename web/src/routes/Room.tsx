@@ -2,10 +2,12 @@ import { useLocation, useNavigate, useParams, useSearchParams } from "@solidjs/r
 import { createEffect, createResource, createSignal, For, on, onCleanup, onMount, Show, type Component } from "solid-js";
 
 import AddToQueue from "~/components/AddToQueue";
+import BugReportDialog from "~/components/BugReportDialog";
 import Chat from "~/components/Chat";
 import Player from "~/components/Player";
 import Queue from "~/components/Queue";
 import { ApiError } from "~/lib/api";
+import { bugRequest, closeBugReport, openBugReport } from "~/lib/bugs";
 import { createFullscreen, readFullscreenPanel, readTheater, storeFullscreenPanel, storeTheater, type FullscreenPanel } from "~/lib/fullscreen";
 import { formatStart } from "~/lib/format";
 import { notify } from "~/lib/notify";
@@ -53,6 +55,7 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
     const e = store.ended();
     if (e?.kind === "kicked" && e.reason === "left") navigate("/", { replace: true });
   });
+  onCleanup(closeBugReport);
   let stage: HTMLDivElement | undefined;
   const fs = createFullscreen(() => stage);
   const usePanel = (panel: FullscreenPanel) => {
@@ -178,6 +181,15 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
             <div class="reconnecting" role="status">
               <span class="ring small" aria-hidden="true" />
               Reconnecting{store.attempts() > 1 ? ` · attempt ${store.attempts()}` : ""}…
+              <Show when={store.attempts() >= 3 && store.state.me !== null}>
+                <button
+                  type="button"
+                  class="link small"
+                  onClick={() => openBugReport({ category: "other", description: `The room keeps reconnecting (attempt ${store.attempts()}).` })}
+                >
+                  Report
+                </button>
+              </Show>
             </div>
           </Show>
           <Show when={store.ended()}>
@@ -265,6 +277,18 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
         <aside class="room-chat">
           <Chat room={store} />
         </aside>
+      </Show>
+
+      <Show when={bugRequest()}>
+        {(prefill) => (
+          <BugReportDialog
+            prefill={prefill()}
+            roomSlug={props.slug}
+            mediaId={store.current()?.media.id ?? null}
+            signedIn={store.state.me !== null}
+            onClose={closeBugReport}
+          />
+        )}
       </Show>
     </div>
   );

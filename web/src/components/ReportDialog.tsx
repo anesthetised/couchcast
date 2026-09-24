@@ -1,6 +1,7 @@
-import { createSignal, onCleanup, onMount, Show, type Component } from "solid-js";
+import { createSignal, onMount, Show, type Component } from "solid-js";
 
 import { reports, type ReportReason } from "~/lib/admin";
+import { trapFocus } from "~/lib/focusTrap";
 
 type Props = { mediaId: string; title: string; roomSlug: string; onClose: () => void };
 
@@ -13,28 +14,7 @@ const ReportDialog: Component<Props> = (props) => {
   let dialog!: HTMLFormElement;
 
   // Keep focus inside the dialog; Esc closes it.
-  onMount(() => {
-    const focusables = () =>
-      [...dialog.querySelectorAll<HTMLElement>("input, select, button, textarea, [tabindex]:not([tabindex='-1'])")].filter((el) => !el.hasAttribute("disabled"));
-    focusables()[0]?.focus();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") return props.onClose();
-      if (e.key !== "Tab") return;
-      const list = focusables();
-      const first = list[0];
-      const last = list[list.length - 1];
-      if (!first || !last) return;
-      if (e.shiftKey && document.activeElement === first) {
-        e.preventDefault();
-        last.focus();
-      } else if (!e.shiftKey && document.activeElement === last) {
-        e.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    onCleanup(() => document.removeEventListener("keydown", onKey));
-  });
+  onMount(() => trapFocus(dialog, props.onClose));
 
   const submit = async (e: SubmitEvent) => {
     e.preventDefault();

@@ -230,6 +230,12 @@ and a production image build.
   ingest job — and an optional JPEG frame; `/api/v1/admin/bug-reports`
   lists, shows, serves the frame and resolves. Reports older than 90
   days are purged hourly.
+  `BugReportDialog` is mounted once by the room page and opened through
+  `lib/bugs.ts` `openBugReport(prefill)` — from the ⚠ control, `Shift+B`,
+  the player error overlay and the reconnecting strip (attempt 3+); it
+  snapshots diagnostics and the frame when it opens, shows what will be
+  sent, and asks anonymous viewers to log in. `lib/focusTrap.ts` is the
+  shared modal focus trap.
 - `GET /api/v1/users?q=` (signed in) is username autocomplete; the
   `UsernamePicker` component wraps it wherever usernames are typed.
 - Browser notifications (`lib/notify.ts`) are opt-in from the bell in the

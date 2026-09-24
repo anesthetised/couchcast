@@ -3381,3 +3381,44 @@ label .hint {
 .stage.fullscreen:not(.idle) .video-wrap video::-webkit-media-text-track-container {
   transform: translateY(-64px);
 }
+
+/* --- bug reports --------------------------------------------------------------- */
+
+.bug-dialog {
+  width: min(520px, 92vw);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.bug-dialog .chips {
+  flex-wrap: wrap;
+}
+
+.bug-frame {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  border-radius: var(--radius-sm);
+  background: #000;
+}
+
+.bug-preview pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0.4rem 0 0;
+  padding: 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  font-size: var(--fs-xs);
+  white-space: pre;
+}
+
+.video-overlay.error {
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.reconnecting .link {
+  margin-left: 0.5rem;
+}

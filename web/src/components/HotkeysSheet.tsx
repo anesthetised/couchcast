@@ -13,6 +13,7 @@ const KEYS: { key: string; what: string; mod?: boolean }[] = [
   { key: "M", what: "Mute" },
   { key: "C", what: "Subtitles on / off" },
   { key: "Wheel", what: "Volume (over the video)" },
+  { key: "⇧ B", what: "Report a problem" },
   { key: "?", what: "This sheet" },
 ];
 

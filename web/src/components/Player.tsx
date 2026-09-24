@@ -1,6 +1,7 @@
 import { createEffect, createSignal, on, onCleanup, onMount, Show, For, type Component } from "solid-js";
 
 import HotkeysSheet from "~/components/HotkeysSheet";
+import { openBugReport } from "~/lib/bugs";
 import { bufferedRanges, registerProbe, registerVideo } from "~/lib/diagnostics";
 import { formatTime, progressDetail } from "~/lib/format";
 import { Player as ShakaPlayer, type QualityOption } from "~/lib/player";
@@ -395,6 +396,9 @@ const Player: Component<Props> = (props) => {
       case "T":
         props.onTheater?.();
         break;
+      case "B":
+        if (e.shiftKey) openBugReport();
+        break;
       case "m":
       case "M":
         toggleMute();
@@ -471,7 +475,16 @@ const Player: Component<Props> = (props) => {
             <span class="ring" />
           </div>
         </Show>
-        <Show when={error()}>{(e) => <div class="video-overlay error">{e()}</div>}</Show>
+        <Show when={error()}>
+          {(e) => (
+            <div class="video-overlay error">
+              <span>{e()}</span>
+              <button type="button" class="ghost small" onClick={() => openBugReport({ category: "playback", description: `The player stopped with “${e()}”.` })}>
+                Report this
+              </button>
+            </div>
+          )}
+        </Show>
 
         <Show when={nearEnd() && upNext()}>
           {(next) => (
@@ -610,6 +623,11 @@ const Player: Component<Props> = (props) => {
         >
           <span />
         </button>
+        <Show when={props.room.state.me !== null}>
+          <button type="button" class="icon dim" onClick={() => openBugReport()} title="Report a problem (Shift+B)" aria-label="Report a problem">
+            ⚠
+          </button>
+        </Show>
         <Show when={canReact() && current()}>
           <div class="react-menu">
             <button type="button" class={`icon ${showReactions() ? "" : "dim"}`} onClick={() => setShowReactions(!showReactions())} title="React" aria-expanded={showReactions()}>
