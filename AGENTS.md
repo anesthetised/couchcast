@@ -84,6 +84,11 @@ and a production image build.
   `sub-<lang>.vtt` (same media prefix, same token) and records
   `media.subtitles`. The web player attaches them with
   `addTextTrackAsync`; a failure to fetch subtitles never fails the ingest.
+  Every track is stored through `internal/webvtt.Normalize`: YouTube's
+  roll-up automatic captions (repeated lines, word timestamps, 10 ms
+  bridges, `align:start position:0%`) become centred pop-on cues of up to
+  two lines. The player keeps native cues (they survive picture-in-picture)
+  and styles them with `::cue`.
 - The poster is copied at ingest (`fetchThumbnail`, ≤ 8 MB, jpeg/png/webp)
   to `thumb.<ext>` in the media prefix and `media.thumbnail_url` becomes
   `/media/<id>/thumb.<ext>` once uploaded; the media proxy serves

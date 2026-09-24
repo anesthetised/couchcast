@@ -21,6 +21,7 @@ import (
 	"github.com/anesthetised/couchcast/internal/metrics"
 	"github.com/anesthetised/couchcast/internal/packager"
 	"github.com/anesthetised/couchcast/internal/source"
+	"github.com/anesthetised/couchcast/internal/webvtt"
 )
 
 // Worker runs the pipeline for one job at a time per slot.
@@ -101,8 +102,15 @@ func (w *Worker) fetchSubtitles(ctx context.Context, rawURL string, subs []sourc
 		if !ok {
 			continue
 		}
-		if err := os.Rename(src, filepath.Join(outDir, SubtitleFile(s.Lang))); err != nil {
-			log.Warn("subtitles: move", "lang", s.Lang, "error", err)
+		// Stored normalised: YouTube's roll-up captions become plain
+		// pop-on cues (see internal/webvtt).
+		data, err := os.ReadFile(src) //nolint:gosec // path from our own work dir
+		if err != nil {
+			log.Warn("subtitles: read", "lang", s.Lang, "error", err)
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(outDir, SubtitleFile(s.Lang)), webvtt.Normalize(data), 0o600); err != nil { //nolint:gosec // SubtitleFile sanitises the language tag
+			log.Warn("subtitles: write", "lang", s.Lang, "error", err)
 			continue
 		}
 		out = append(out, entity.Subtitle{Lang: s.Lang, Name: s.Name, Auto: s.Auto})
