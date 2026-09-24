@@ -44,8 +44,9 @@ commands run from the repo root via `just` (see `justfile`):
 Run `just test` and `just lint` before opening a PR. CI
 (`.github/workflows/ci.yml`) runs gofmt, go vet, golangci-lint, the Go tests
 against Postgres, the TypeScript check and build, Atlas migration checks
-(validate, lint, apply, and that `db/schema.sql` matches `db/migrations`)
-and a production image build.
+(validate, lint, apply, and that `db/schema.sql` matches `db/migrations`),
+the Playwright suite through `just e2e` (the report is uploaded when it
+fails) and a production image build.
 
 ## Architecture
 

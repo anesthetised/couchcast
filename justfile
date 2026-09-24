@@ -106,6 +106,7 @@ check:
 # available in a container, use `--debug` locally instead).
 [group('code')]
 e2e *args:
+    {{compose}} build web
     {{compose}} up -d postgres minio minio-init
     {{e2e}} stop e2e-web e2e-frontend
     {{compose}} exec -T postgres psql -q -U ${POSTGRES_USER:-couchcast} -d postgres -c 'DROP DATABASE IF EXISTS couchcast_e2e WITH (FORCE)' -c 'CREATE DATABASE couchcast_e2e'
