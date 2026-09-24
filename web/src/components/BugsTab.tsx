@@ -3,6 +3,7 @@ import { createSignal, For, Show, type Component, type JSX } from "solid-js";
 import { BUG_CATEGORIES, bugs, type BugReport } from "~/lib/bugs";
 import { formatAgo, formatTime } from "~/lib/format";
 import { toast } from "~/lib/toast";
+import { uaBrowser } from "~/lib/ua";
 
 // BugsTab is the admin view of problem reports: a list of open or
 // resolved reports, each expanding into the collected diagnostics.
@@ -275,10 +276,7 @@ function browser(c: Client): string | undefined {
   const brand = c.device?.brands?.find((b) => !/not.?a.?brand/i.test(b));
   if (brand) return brand;
   const ua = c.device?.userAgent ?? "";
-  const m = ua.match(/(Firefox|Edg|OPR|Chrome|Version)\/(\d+)/);
-  if (!m) return ua ? ua.slice(0, 60) : undefined;
-  const name = m[1] === "Version" ? "Safari" : m[1] === "Edg" ? "Edge" : m[1] === "OPR" ? "Opera" : m[1]!;
-  return `${name} ${m[2]}`;
+  return uaBrowser(ua) ?? (ua ? ua.slice(0, 60) : undefined);
 }
 
 export function deviceSummary(client: Record<string, unknown>): string {

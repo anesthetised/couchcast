@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"uuid"
 
@@ -27,9 +29,40 @@ func newMemStore() *memStore {
 	return &memStore{sessions: map[string]*entity.Session{}, users: map[uuid.UUID]*entity.User{}}
 }
 
-func (m *memStore) CreateSession(_ context.Context, h []byte, uid uuid.UUID, exp time.Time) error {
-	m.sessions[string(h)] = &entity.Session{TokenHash: h, UserID: uid, ExpiresAt: exp, LastSeenAt: exp.Add(-time.Hour)}
+func (m *memStore) CreateSession(_ context.Context, h []byte, uid uuid.UUID, ua string, exp time.Time) error {
+	m.sessions[string(h)] = &entity.Session{TokenHash: h, ID: uuid.New(), UserID: uid, UserAgent: ua, ExpiresAt: exp, LastSeenAt: exp.Add(-time.Hour)}
 	return nil
+}
+
+func (m *memStore) ListUserSessions(_ context.Context, uid uuid.UUID, now time.Time) ([]entity.Session, error) {
+	var out []entity.Session
+	for _, s := range m.sessions {
+		if s.UserID == uid && s.ExpiresAt.After(now) {
+			out = append(out, *s)
+		}
+	}
+	return out, nil
+}
+
+func (m *memStore) DeleteUserSession(_ context.Context, uid, id uuid.UUID) error {
+	for k, s := range m.sessions {
+		if s.UserID == uid && s.ID == id {
+			delete(m.sessions, k)
+			return nil
+		}
+	}
+	return repository.ErrNotFound
+}
+
+func (m *memStore) DeleteOtherSessions(_ context.Context, uid uuid.UUID, keep []byte) (int64, error) {
+	var n int64
+	for k, s := range m.sessions {
+		if s.UserID == uid && k != string(keep) {
+			delete(m.sessions, k)
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (m *memStore) GetSessionUser(_ context.Context, h []byte, now time.Time) (*entity.Session, *entity.User, error) {
@@ -192,4 +225,17 @@ func TestRequireMiddlewares(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, code(RequireAdmin(ok), anon))
 	assert.Equal(t, http.StatusForbidden, code(RequireAdmin(ok), user))
 	assert.Equal(t, http.StatusNoContent, code(RequireAdmin(ok), admin))
+}
+
+func TestIssueStoresUserAgent(t *testing.T) {
+	store := newMemStore()
+	s := NewSessions(store, time.Hour, true)
+	req := httptest.NewRequest(http.MethodPost, "/", nil)
+	req.Header.Set("User-Agent", strings.Repeat("я", 400)) // 800 bytes
+	require.NoError(t, s.Issue(context.Background(), httptest.NewRecorder(), req, uuid.New()))
+	require.Len(t, store.sessions, 1)
+	for _, sess := range store.sessions {
+		assert.LessOrEqual(t, len(sess.UserAgent), maxUserAgent)
+		assert.True(t, utf8.ValidString(sess.UserAgent), "cut on a rune boundary")
+	}
 }

@@ -26,7 +26,12 @@ CREATE UNIQUE INDEX users_username_lower_idx ON users (lower(username));
 
 CREATE TABLE sessions (
     token_hash   bytea       PRIMARY KEY,
+    -- Public handle for the profile's session list; the hash never leaves
+    -- the server.
+    id           uuid        NOT NULL DEFAULT gen_random_uuid() UNIQUE,
     user_id      uuid        NOT NULL REFERENCES users (id) ON DELETE CASCADE,
+    -- Browser that signed in, shown in the session list (truncated).
+    user_agent   text        NOT NULL DEFAULT '',
     created_at   timestamptz NOT NULL DEFAULT now(),
     last_seen_at timestamptz NOT NULL DEFAULT now(),
     expires_at   timestamptz NOT NULL

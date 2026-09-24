@@ -11,6 +11,8 @@ import (
 
 	"uuid"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/anesthetised/couchcast/internal/auth"
 	"github.com/anesthetised/couchcast/internal/entity"
 	"github.com/anesthetised/couchcast/internal/repository"
@@ -260,4 +262,60 @@ func (s *Server) handleChangePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// sessionResponse is one place the user is signed in.
+type sessionResponse struct {
+	ID         uuid.UUID `json:"id"`
+	UserAgent  string    `json:"userAgent"`
+	CreatedAt  time.Time `json:"createdAt"`
+	LastSeenAt time.Time `json:"lastSeenAt"`
+	Current    bool      `json:"current"`
+}
+
+func (s *Server) handleMySessions(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFrom(r.Context())
+	list, err := s.deps.Sessions.List(r.Context(), r, u.ID)
+	if err != nil {
+		s.internalError(w, r, "list sessions", err)
+		return
+	}
+	out := make([]sessionResponse, 0, len(list))
+	for _, sess := range list {
+		out = append(out, sessionResponse{ID: sess.ID, UserAgent: sess.UserAgent, CreatedAt: sess.CreatedAt, LastSeenAt: sess.LastSeenAt, Current: sess.Current})
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// handleRevokeSession signs one other session out; the current one
+// logs out through /auth/logout instead.
+func (s *Server) handleRevokeSession(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFrom(r.Context())
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		writeError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	err = s.deps.Sessions.RevokeByID(r.Context(), r, u.ID, id)
+	switch {
+	case errors.Is(err, auth.ErrCurrentSession):
+		writeError(w, http.StatusBadRequest, "this is the current session: log out instead")
+	case errors.Is(err, repository.ErrNotFound):
+		writeError(w, http.StatusNotFound, "session not found")
+	case err != nil:
+		s.internalError(w, r, "revoke session", err)
+	default:
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// handleRevokeOtherSessions signs out everywhere but here.
+func (s *Server) handleRevokeOtherSessions(w http.ResponseWriter, r *http.Request) {
+	u := auth.UserFrom(r.Context())
+	n, err := s.deps.Sessions.RevokeOthers(r.Context(), r, u.ID)
+	if err != nil {
+		s.internalError(w, r, "revoke other sessions", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]int64{"revoked": n})
 }

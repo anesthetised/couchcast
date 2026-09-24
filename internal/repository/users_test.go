@@ -61,12 +61,14 @@ func TestSessions(t *testing.T) {
 	require.NoError(t, err)
 
 	hash := []byte("token-hash-1")
-	require.NoError(t, repo.CreateSession(ctx, hash, u.ID, now.Add(time.Hour)))
+	require.NoError(t, repo.CreateSession(ctx, hash, u.ID, "Firefox", now.Add(time.Hour)))
 
 	s, got, err := repo.GetSessionUser(ctx, hash, now)
 	require.NoError(t, err)
 	assert.Equal(t, u.ID, got.ID)
 	assert.Equal(t, hash, s.TokenHash)
+	assert.Equal(t, "Firefox", s.UserAgent)
+	assert.NotEqual(t, uuid.Nil(), s.ID)
 
 	// Expired sessions are invisible.
 	_, _, err = repo.GetSessionUser(ctx, hash, now.Add(2*time.Hour))
@@ -76,15 +78,32 @@ func TestSessions(t *testing.T) {
 	_, _, err = repo.GetSessionUser(ctx, hash, now.Add(2*time.Hour))
 	require.NoError(t, err)
 
-	require.NoError(t, repo.CreateSession(ctx, []byte("token-hash-2"), u.ID, now.Add(time.Hour)))
-	n, err := repo.DeleteUserSessions(ctx, u.ID)
+	require.NoError(t, repo.CreateSession(ctx, []byte("token-hash-2"), u.ID, "", now.Add(time.Hour)))
+	other, _ := repo.CreateUser(ctx, "eve", "hash")
+
+	// The list shows live sessions, most recently seen first; one is
+	// removed by its public id (only by its owner), or all but one.
+	list, err := repo.ListUserSessions(ctx, u.ID, now)
+	require.NoError(t, err)
+	require.Len(t, list, 2)
+	assert.Equal(t, hash, list[0].TokenHash, "touched later")
+	assert.ErrorIs(t, repo.DeleteUserSession(ctx, other.ID, list[1].ID), ErrNotFound)
+	require.NoError(t, repo.DeleteUserSession(ctx, u.ID, list[1].ID))
+	assert.ErrorIs(t, repo.DeleteUserSession(ctx, u.ID, list[1].ID), ErrNotFound)
+	require.NoError(t, repo.CreateSession(ctx, []byte("token-hash-3"), u.ID, "", now.Add(time.Hour)))
+	n, err := repo.DeleteOtherSessions(ctx, u.ID, hash)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, n)
+
+	require.NoError(t, repo.CreateSession(ctx, []byte("token-hash-2"), u.ID, "", now.Add(time.Hour)))
+	n, err = repo.DeleteUserSessions(ctx, u.ID)
 	require.NoError(t, err)
 	assert.EqualValues(t, 2, n)
 
 	_, _, err = repo.GetSessionUser(ctx, hash, now)
 	assert.ErrorIs(t, err, ErrNotFound)
 
-	require.NoError(t, repo.CreateSession(ctx, []byte("old"), u.ID, now.Add(-time.Minute)))
+	require.NoError(t, repo.CreateSession(ctx, []byte("old"), u.ID, "", now.Add(-time.Minute)))
 	n, err = repo.DeleteExpiredSessions(ctx, now)
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, n)

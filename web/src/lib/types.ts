@@ -11,6 +11,15 @@ export interface User {
   avatarColor?: AvatarColor;
 }
 
+// Session is one place the user is signed in (the profile's list).
+export interface Session {
+  id: string;
+  userAgent: string;
+  createdAt: string;
+  lastSeenAt: string;
+  current: boolean;
+}
+
 // Palette keys shared with the server (entity.AvatarColors); the tokens
 // live in styles.css as --c-<key>.
 export const AVATAR_COLORS = ["amber", "coral", "rose", "violet", "sky", "teal", "lime", "slate"] as const;

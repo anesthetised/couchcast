@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -93,11 +94,49 @@ func (f *fakeStore) SetUserPassword(_ context.Context, id uuid.UUID, hash string
 	return repository.ErrNotFound
 }
 
-func (f *fakeStore) CreateSession(_ context.Context, h []byte, uid uuid.UUID, exp time.Time) error {
+func (f *fakeStore) CreateSession(_ context.Context, h []byte, uid uuid.UUID, ua string, exp time.Time) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.sessions[string(h)] = &entity.Session{TokenHash: h, UserID: uid, LastSeenAt: time.Now(), ExpiresAt: exp}
+	f.sessions[string(h)] = &entity.Session{TokenHash: h, ID: uuid.New(), UserID: uid, UserAgent: ua, CreatedAt: time.Now(), LastSeenAt: time.Now(), ExpiresAt: exp}
 	return nil
+}
+
+func (f *fakeStore) ListUserSessions(_ context.Context, uid uuid.UUID, now time.Time) ([]entity.Session, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []entity.Session
+	for _, s := range f.sessions {
+		if s.UserID == uid && s.ExpiresAt.After(now) {
+			out = append(out, *s)
+		}
+	}
+	slices.SortFunc(out, func(a, b entity.Session) int { return b.CreatedAt.Compare(a.CreatedAt) })
+	return out, nil
+}
+
+func (f *fakeStore) DeleteUserSession(_ context.Context, uid, id uuid.UUID) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for k, s := range f.sessions {
+		if s.UserID == uid && s.ID == id {
+			delete(f.sessions, k)
+			return nil
+		}
+	}
+	return repository.ErrNotFound
+}
+
+func (f *fakeStore) DeleteOtherSessions(_ context.Context, uid uuid.UUID, keep []byte) (int64, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var n int64
+	for k, s := range f.sessions {
+		if s.UserID == uid && k != string(keep) {
+			delete(f.sessions, k)
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (f *fakeStore) GetSessionUser(_ context.Context, h []byte, now time.Time) (*entity.Session, *entity.User, error) {

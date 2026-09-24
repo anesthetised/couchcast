@@ -317,6 +317,13 @@ and a production image build.
   current one, revokes every session, reissues the caller's). The SPA page
   is `/me`; the colour travels with presence and chat lines, and the web
   app derives a stable colour from the name for users who never chose.
+- Sessions in the profile: `sessions.id` is the public handle (the token
+  hash never leaves the server) and `sessions.user_agent` is stored on
+  login (512 bytes max; older sessions show "Unknown browser").
+  `GET /api/v1/me/sessions` marks the caller's own one `current`;
+  `DELETE /api/v1/me/sessions/{id}` signs another one out (the current
+  one is refused — that is logout) and `DELETE /api/v1/me/sessions` all
+  but the current. `web/src/lib/ua.ts` shortens the user agent.
 - Playlist import: the extractor recognises playlist links
   (`PlaylistURL`, YouTube `list=`; mixes are not offered) and lists them
   flat (`yt-dlp --flat-playlist`, first 50, private/deleted entries

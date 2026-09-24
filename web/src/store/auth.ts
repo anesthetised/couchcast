@@ -3,7 +3,7 @@ import { createEffect, createResource, createRoot, onCleanup } from "solid-js";
 import { api, ApiError } from "~/lib/api";
 import { notify, syncPush } from "~/lib/notify";
 import { rooms } from "~/lib/rooms";
-import type { Invite, UpcomingRoom, User } from "~/lib/types";
+import type { Invite, Session, UpcomingRoom, User } from "~/lib/types";
 
 const INVITE_POLL_MS = 60_000;
 const REMIND_BEFORE_MS = 10 * 60_000;
@@ -51,6 +51,18 @@ function createAuthStore() {
 
   async function changePassword(current: string, next: string) {
     await api<void>("/api/v1/me/password", { method: "POST", body: JSON.stringify({ current, new: next }) });
+  }
+
+  async function sessions() {
+    return api<Session[]>("/api/v1/me/sessions");
+  }
+
+  async function revokeSession(id: string) {
+    await api<void>(`/api/v1/me/sessions/${encodeURIComponent(id)}`, { method: "DELETE" });
+  }
+
+  async function revokeOtherSessions() {
+    return api<{ revoked: number }>("/api/v1/me/sessions", { method: "DELETE" });
   }
 
   async function logout() {
@@ -114,7 +126,7 @@ function createAuthStore() {
     onCleanup(() => window.clearInterval(timer));
   });
 
-  return { user, login, register, logout, refetch, invites, refetchInvites, setInvites, updateMe, changePassword };
+  return { user, login, register, logout, refetch, invites, refetchInvites, setInvites, updateMe, changePassword, sessions, revokeSession, revokeOtherSessions };
 }
 
 export const auth = createRoot(createAuthStore);

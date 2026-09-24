@@ -100,3 +100,52 @@ func TestAuthIPRateLimit(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, env.do(http.MethodPost, "/api/v1/auth/register", c).Code)
 	assert.Equal(t, http.StatusTooManyRequests, env.do(http.MethodPost, "/api/v1/auth/login", c).Code)
 }
+
+func TestMySessions(t *testing.T) {
+	laptop := newTestEnv(t, fstest.MapFS{})
+	phone := &testEnv{t: t, store: laptop.store, handler: laptop.handler}
+	tablet := &testEnv{t: t, store: laptop.store, handler: laptop.handler}
+	stranger := &testEnv{t: t, store: laptop.store, handler: laptop.handler}
+
+	creds := credentials{Username: "alice", Password: "correct-horse"}
+	require.Equal(t, http.StatusCreated, laptop.doWith(http.MethodPost, "/api/v1/auth/register", creds, map[string]string{"User-Agent": "Firefox/140"}).Code)
+	require.Equal(t, http.StatusOK, phone.doWith(http.MethodPost, "/api/v1/auth/login", creds, map[string]string{"User-Agent": "Mobile Safari"}).Code)
+	require.Equal(t, http.StatusOK, tablet.do(http.MethodPost, "/api/v1/auth/login", creds).Code)
+	require.Equal(t, http.StatusCreated, stranger.do(http.MethodPost, "/api/v1/auth/register", credentials{Username: "mallory", Password: "correct-horse"}).Code)
+
+	rec := laptop.do(http.MethodGet, "/api/v1/me/sessions", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	list := decodeBody[[]sessionResponse](t, rec)
+	require.Len(t, list, 3, "only alice's sessions")
+	var current, onPhone *sessionResponse
+	for i := range list {
+		if list[i].Current {
+			current = &list[i]
+		}
+		if list[i].UserAgent == "Mobile Safari" {
+			onPhone = &list[i]
+		}
+	}
+	require.NotNil(t, current)
+	assert.Equal(t, "Firefox/140", current.UserAgent)
+	require.NotNil(t, onPhone)
+
+	// The current session is not revoked here; others' ids are unknown.
+	assert.Equal(t, http.StatusBadRequest, laptop.do(http.MethodDelete, "/api/v1/me/sessions/"+current.ID.String(), nil).Code)
+	assert.Equal(t, http.StatusNotFound, stranger.do(http.MethodDelete, "/api/v1/me/sessions/"+onPhone.ID.String(), nil).Code)
+	assert.Equal(t, http.StatusNotFound, laptop.do(http.MethodDelete, "/api/v1/me/sessions/nope", nil).Code)
+
+	// Signing the phone out ends its session.
+	assert.Equal(t, http.StatusNoContent, laptop.do(http.MethodDelete, "/api/v1/me/sessions/"+onPhone.ID.String(), nil).Code)
+	assert.Equal(t, http.StatusUnauthorized, phone.do(http.MethodGet, "/api/v1/auth/me", nil).Code)
+	assert.Equal(t, http.StatusOK, tablet.do(http.MethodGet, "/api/v1/auth/me", nil).Code)
+
+	// Everywhere else: the tablet goes, the laptop and the stranger stay.
+	rec = laptop.do(http.MethodDelete, "/api/v1/me/sessions", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.EqualValues(t, 1, decodeBody[map[string]int64](t, rec)["revoked"])
+	assert.Equal(t, http.StatusUnauthorized, tablet.do(http.MethodGet, "/api/v1/auth/me", nil).Code)
+	assert.Equal(t, http.StatusOK, laptop.do(http.MethodGet, "/api/v1/auth/me", nil).Code)
+	assert.Equal(t, http.StatusOK, stranger.do(http.MethodGet, "/api/v1/auth/me", nil).Code)
+	assert.Equal(t, http.StatusUnauthorized, phone.do(http.MethodGet, "/api/v1/me/sessions", nil).Code)
+}

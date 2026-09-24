@@ -57,7 +57,9 @@ func (u *User) IsBanned() bool { return u != nil && u.BannedAt != nil }
 // stored; the token itself lives in the client's cookie.
 type Session struct {
 	TokenHash  []byte
+	ID         uuid.UUID // public handle; the hash stays server-side
 	UserID     uuid.UUID
+	UserAgent  string
 	CreatedAt  time.Time
 	LastSeenAt time.Time
 	ExpiresAt  time.Time

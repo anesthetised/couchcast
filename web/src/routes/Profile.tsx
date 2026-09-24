@@ -1,12 +1,14 @@
 import { useNavigate } from "@solidjs/router";
-import { createEffect, createSignal, For, Show, type Component } from "solid-js";
+import { createEffect, createResource, createSignal, For, Show, type Component } from "solid-js";
 
+import { formatAgo } from "~/lib/format";
 import { toast } from "~/lib/toast";
+import { describeUA } from "~/lib/ua";
 import { AVATAR_COLORS, avatarClass } from "~/lib/types";
 import { auth } from "~/store/auth";
 
-// Profile: the account (name, colour) and the password, in the
-// room-settings layout.
+// Profile: the account (name, colour), the password and where the user
+// is signed in, in the room-settings layout.
 const Profile: Component = () => {
   const navigate = useNavigate();
   createEffect(() => {
@@ -17,6 +19,28 @@ const Profile: Component = () => {
   const [next, setNext] = createSignal("");
   const [again, setAgain] = createSignal("");
   const [busy, setBusy] = createSignal(false);
+
+  const [sessions, { refetch: reloadSessions }] = createResource(() => auth.user()?.id, () => auth.sessions());
+  const signOut = async (id: string) => {
+    try {
+      await auth.revokeSession(id);
+      toast("Signed out.");
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), "error");
+    }
+    void reloadSessions();
+  };
+  const signOutOthers = async () => {
+    if (!confirm("Sign out every other device?")) return;
+    try {
+      const { revoked } = await auth.revokeOtherSessions();
+      toast(revoked === 1 ? "Signed out 1 device." : `Signed out ${revoked} devices.`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : String(err), "error");
+    }
+    void reloadSessions();
+  };
+  const others = () => (sessions() ?? []).filter((s) => !s.current).length;
 
   const pick = async (color: string) => {
     try {
@@ -39,6 +63,7 @@ const Profile: Component = () => {
       setNext("");
       setAgain("");
       toast("Password changed. Other devices were signed out.");
+      void reloadSessions();
     } catch (err) {
       toast(err instanceof Error ? err.message : String(err), "error");
     } finally {
@@ -113,6 +138,56 @@ const Profile: Component = () => {
               </div>
             </div>
           </form>
+
+          <section class="settings-section">
+            <div class="settings-label">
+              <h2>Sessions</h2>
+              <p class="muted small">Where you are signed in. Sign out a device you do not recognise.</p>
+            </div>
+            <div class="settings-body">
+              <table class="table sessions">
+                <thead>
+                  <tr>
+                    <th>Device</th>
+                    <th>Last active</th>
+                    <th>Signed in</th>
+                    <th />
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={sessions() ?? []}>
+                    {(s) => (
+                      <tr>
+                        <td title={s.userAgent || undefined}>
+                          {describeUA(s.userAgent) || "Unknown browser"}
+                          <Show when={s.current}>
+                            {" "}
+                            <span class="badge">this device</span>
+                          </Show>
+                        </td>
+                        <td class="small">{s.current ? "now" : formatAgo(Date.parse(s.lastSeenAt))}</td>
+                        <td class="small">{new Date(s.createdAt).toLocaleDateString()}</td>
+                        <td class="row-actions">
+                          <Show when={!s.current}>
+                            <button type="button" class="link danger-text" onClick={() => void signOut(s.id)}>
+                              Sign out
+                            </button>
+                          </Show>
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+              <Show when={others() > 0}>
+                <div class="actions">
+                  <button type="button" class="ghost" onClick={() => void signOutOthers()}>
+                    Sign out everywhere else
+                  </button>
+                </div>
+              </Show>
+            </div>
+          </section>
         </div>
       )}
     </Show>
