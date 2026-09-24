@@ -79,6 +79,10 @@ type Deps struct {
 	Mutes MuteStore
 	// Stars serves per-user starred rooms; nil disables them.
 	Stars StarStore
+	// BugReports stores problem reports; nil disables them.
+	BugReports BugReportStore
+	// RoomDebug snapshots a loaded room for a bug report (room.Manager.Debug).
+	RoomDebug func(roomID uuid.UUID) (any, bool)
 
 	// MediaObjects deletes packaged media when an administrator removes it.
 	MediaObjects MediaDeleter
@@ -113,6 +117,7 @@ type Deps struct {
 	RoomCreateLimiter *ratelimit.Limiter
 	InviteLimiter     *ratelimit.Limiter
 	ReportLimiter     *ratelimit.Limiter
+	BugReportLimiter  *ratelimit.Limiter
 	ProbeLimiter      *ratelimit.Limiter
 }
 
@@ -216,6 +221,9 @@ func New(deps Deps) *Server {
 			r.Get("/users", s.handleSearchUsers)
 			r.Get("/invites", s.handleMyInvites)
 			r.Get("/me/upcoming", s.handleMyUpcoming)
+			if deps.BugReports != nil {
+				r.Post("/bug-reports", s.handleCreateBugReport)
+			}
 			r.Post("/invites/{id}/accept", s.handleAcceptInvite)
 			r.Post("/invites/{id}/decline", s.handleDeclineInvite)
 			if deps.Admin != nil {
@@ -243,6 +251,12 @@ func New(deps Deps) *Server {
 				r.Delete("/blocklist/*", s.handleAdminUnblock)
 				r.Get("/audit", s.handleAdminAudit)
 				r.Get("/storage", s.handleAdminStorage)
+				if deps.BugReports != nil {
+					r.Get("/bug-reports", s.handleAdminBugReports)
+					r.Get("/bug-reports/{id}", s.handleAdminBugReport)
+					r.Get("/bug-reports/{id}/frame", s.handleAdminBugReportFrame)
+					r.Post("/bug-reports/{id}/resolve", s.handleAdminResolveBugReport)
+				}
 				r.Post("/storage/evict", s.handleAdminEvictStale)
 				r.Post("/media/{id}/evict", s.handleAdminEvictMedia)
 			})
@@ -294,7 +308,12 @@ const maxBodyBytes = 64 << 10
 // decodeJSON parses the body into v, writing a 400 and returning false on
 // malformed input.
 func decodeJSON(w http.ResponseWriter, r *http.Request, v any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	return decodeJSONLimit(w, r, v, maxBodyBytes)
+}
+
+// decodeJSONLimit is decodeJSON with a body limit other than the default.
+func decodeJSONLimit(w http.ResponseWriter, r *http.Request, v any, limit int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	err := json.NewDecoder(r.Body).Decode(v)
 	switch {
 	case err == nil:

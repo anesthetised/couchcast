@@ -110,6 +110,16 @@ func (m *Manager) Playback(roomID uuid.UUID) (protocol.Playback, bool) {
 	return r.Playback(), true
 }
 
+// Debug snapshots a loaded room for a bug report; false when the room is
+// not in memory (nobody is watching).
+func (m *Manager) Debug(roomID uuid.UUID) (DebugState, bool) {
+	r, ok := m.Peek(roomID)
+	if !ok {
+		return DebugState{}, false
+	}
+	return r.Debug(), true
+}
+
 // Loaded returns the number of rooms in memory.
 func (m *Manager) Loaded() int {
 	m.mu.Lock()

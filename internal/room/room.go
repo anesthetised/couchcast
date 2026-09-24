@@ -755,6 +755,53 @@ func (r *Room) Playback() protocol.Playback {
 	return pb
 }
 
+// DebugState is the server half of a bug report for a loaded room.
+type DebugState struct {
+	Playback  protocol.Playback `json:"playback"`
+	ServerMs  int64             `json:"serverMs"`
+	Viewers   int               `json:"viewers"`
+	Buffering []string          `json:"buffering"` // users reporting buffering right now
+	Settings  entity.Settings   `json:"settings"`
+	Queue     []DebugItem       `json:"queue"` // the first few items
+	Played    int               `json:"played"`
+}
+
+// DebugItem is a queue entry as seen by the room.
+type DebugItem struct {
+	ID      uuid.UUID          `json:"id"`
+	MediaID uuid.UUID          `json:"mediaId"`
+	Title   string             `json:"title"`
+	Status  entity.MediaStatus `json:"status"`
+	Current bool               `json:"current"`
+}
+
+// Debug snapshots the room for a bug report.
+func (r *Room) Debug() DebugState {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	d := DebugState{
+		Playback: r.playbackLocked(), ServerMs: r.now().UnixMilli(), Viewers: len(r.viewers),
+		Buffering: []string{}, Settings: r.info.Settings, Played: len(r.played),
+	}
+	d.Playback.Type = ""
+	for _, v := range r.viewers {
+		if v.buffering && v.user != nil {
+			d.Buffering = append(d.Buffering, v.user.Username)
+		}
+	}
+	for i, it := range r.queue {
+		if i == 5 {
+			break
+		}
+		item := DebugItem{ID: it.ID, MediaID: it.MediaID, Current: r.current != nil && *r.current == it.ID}
+		if m := r.media[it.MediaID]; m != nil {
+			item.Title, item.Status = m.Title, m.Status
+		}
+		d.Queue = append(d.Queue, item)
+	}
+	return d
+}
+
 // Viewers returns the number of connections.
 func (r *Room) Viewers() int {
 	r.mu.Lock()

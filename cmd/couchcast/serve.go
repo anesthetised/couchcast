@@ -73,24 +73,28 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}, logger, m)
 
 	api = apihttp.New(apihttp.Deps{
-		Logger:       logger,
-		DB:           pool,
-		Metrics:      m,
-		Static:       web.Dist(),
-		Users:        repo,
-		Rooms:        repo,
-		Admin:        repo,
-		Sessions:     sessions,
-		Directory:    repo,
-		Live:         rooms,
-		Signer:       signer,
-		Admit:        admit,
-		LiveQueue:    liveQueue{rooms},
-		Prober:       admit,
-		InviteLinks:  repo,
-		Meta:         repo,
-		Mutes:        repo,
-		Stars:        repo,
+		Logger:      logger,
+		DB:          pool,
+		Metrics:     m,
+		Static:      web.Dist(),
+		Users:       repo,
+		Rooms:       repo,
+		Admin:       repo,
+		Sessions:    sessions,
+		Directory:   repo,
+		Live:        rooms,
+		Signer:      signer,
+		Admit:       admit,
+		LiveQueue:   liveQueue{rooms},
+		Prober:      admit,
+		InviteLinks: repo,
+		Meta:        repo,
+		Mutes:       repo,
+		Stars:       repo,
+		BugReports:  repo,
+		RoomDebug: func(roomID uuid.UUID) (any, bool) {
+			return rooms.Debug(roomID)
+		},
 		Media:        mediaHandler,
 		MediaObjects: store,
 		CacheBudget:  cfg.Web.MaxCacheBytes,
@@ -117,6 +121,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		RoomCreateLimiter: roomCreateLimiter,
 		InviteLimiter:     inviteLimiter,
 		ReportLimiter:     reportLimiter,
+		BugReportLimiter:  ratelimit.PerHour(5, 5),
 		ProbeLimiter:      probeLimiter,
 	})
 
@@ -187,20 +192,27 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 					logger.Info("purged old messages", "count", n)
 				}
 			}
+			if n, err := repo.PurgeBugReports(ctx, time.Now().AddDate(0, 0, -bugReportRetentionDays)); err != nil {
+				logger.Warn("purge bug reports", "error", err)
+			} else if n > 0 {
+				logger.Info("purged bug reports", "count", n)
+			}
 		})
 	})
 
 	return g.Wait()
 }
 
-// runPeriodic calls fn every interval until the context is cancelled.
 // Played queue items are history: keep a week and at most this many per
-// room so the table does not grow with every session.
+// room so the table does not grow with every session. Problem reports
+// are kept for a quarter.
 const (
-	playedRetentionDays = 7
-	playedKeptPerRoom   = 50
+	playedRetentionDays    = 7
+	playedKeptPerRoom      = 50
+	bugReportRetentionDays = 90
 )
 
+// runPeriodic calls fn every interval until the context is cancelled.
 func runPeriodic(ctx context.Context, interval time.Duration, fn func(context.Context)) error {
 	t := time.NewTicker(interval)
 	defer t.Stop()

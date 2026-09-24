@@ -219,6 +219,17 @@ and a production image build.
   the URL `/join/<token>` is returned once), list and revoke them;
   `GET /api/v1/join/{token}` previews, `POST` joins as a member (existing
   members pass without charging the link).
+- Bug reports: `web/src/lib/diagnostics.ts` keeps a ring buffer of recent
+  events (player/server/socket errors, error toasts, uncaught errors,
+  media status changes; never chat text) and the last sync corrections;
+  the room store and the player register probes (`session`, `media`) and
+  `collect()` adds the device and bundle version (`__APP_VERSION__`, the
+  image build passes `VERSION`). `POST /api/v1/bug-reports` (signed in,
+  5/hour) stores it in `bug_reports` with the server's half — version,
+  the live room (`room.Manager.Debug`), the media row and its latest
+  ingest job — and an optional JPEG frame; `/api/v1/admin/bug-reports`
+  lists, shows, serves the frame and resolves. Reports older than 90
+  days are purged hourly.
 - `GET /api/v1/users?q=` (signed in) is username autocomplete; the
   `UsernamePicker` component wraps it wherever usernames are typed.
 - Browser notifications (`lib/notify.ts`) are opt-in from the bell in the

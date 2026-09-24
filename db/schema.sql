@@ -99,6 +99,31 @@ CREATE TABLE media_reports (
 
 CREATE INDEX media_reports_open_idx ON media_reports (media_id) WHERE resolved_at IS NULL;
 
+-- Problem reports from viewers: what their client saw (client) and what
+-- the server knew when the report arrived (server), plus an optional
+-- frame of the video.
+CREATE TABLE bug_reports (
+    id          uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     uuid        REFERENCES users (id) ON DELETE SET NULL,
+    room_id     uuid, -- FK added after rooms is defined below
+    media_id    uuid        REFERENCES media (id) ON DELETE SET NULL,
+    category    text        NOT NULL,
+    description text        NOT NULL DEFAULT '',
+    client      jsonb       NOT NULL DEFAULT '{}'::jsonb,
+    server      jsonb       NOT NULL DEFAULT '{}'::jsonb,
+    frame       bytea,
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    resolved_at timestamptz,
+    resolved_by uuid        REFERENCES users (id) ON DELETE SET NULL,
+    note        text        NOT NULL DEFAULT '',
+
+    CONSTRAINT bug_reports_category_check CHECK (category IN ('playback', 'sync', 'subtitles', 'chat', 'other')),
+    CONSTRAINT bug_reports_description_length CHECK (char_length(description) <= 2000)
+);
+
+CREATE INDEX bug_reports_created_at_idx ON bug_reports (created_at DESC);
+CREATE INDEX bug_reports_open_idx ON bug_reports (created_at DESC) WHERE resolved_at IS NULL;
+
 -- ---------------------------------------------------------------------------
 -- Rooms, membership, bans, invites
 -- ---------------------------------------------------------------------------
@@ -142,6 +167,10 @@ CREATE INDEX room_slug_history_room_id_idx ON room_slug_history (room_id);
 
 ALTER TABLE media_reports
     ADD CONSTRAINT media_reports_room_fk
+    FOREIGN KEY (room_id) REFERENCES rooms (id) ON DELETE SET NULL;
+
+ALTER TABLE bug_reports
+    ADD CONSTRAINT bug_reports_room_fk
     FOREIGN KEY (room_id) REFERENCES rooms (id) ON DELETE SET NULL;
 
 CREATE TABLE room_members (

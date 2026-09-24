@@ -1,6 +1,7 @@
 package entity
 
 import (
+	"encoding/json"
 	"time"
 
 	"uuid"
@@ -83,4 +84,45 @@ type Stats struct {
 type AdminUser struct {
 	User      User
 	RoomCount int
+}
+
+// BugCategory is what a problem report is about.
+type BugCategory string
+
+const (
+	BugPlayback  BugCategory = "playback"
+	BugSync      BugCategory = "sync"
+	BugSubtitles BugCategory = "subtitles"
+	BugChat      BugCategory = "chat"
+	BugOther     BugCategory = "other"
+)
+
+// Valid reports whether the category is known.
+func (c BugCategory) Valid() bool {
+	switch c {
+	case BugPlayback, BugSync, BugSubtitles, BugChat, BugOther:
+		return true
+	}
+	return false
+}
+
+// BugReport is a viewer's problem report with the diagnostics both sides
+// collected. Client and Server are opaque JSON; Frame is a JPEG.
+type BugReport struct {
+	ID          uuid.UUID
+	UserID      *uuid.UUID
+	Username    string // populated by queries
+	RoomID      *uuid.UUID
+	RoomSlug    string // populated by queries
+	MediaID     *uuid.UUID
+	MediaTitle  string // populated by queries
+	Category    BugCategory
+	Description string
+	Client      json.RawMessage
+	Server      json.RawMessage
+	HasFrame    bool
+	CreatedAt   time.Time
+	ResolvedAt  *time.Time
+	ResolvedBy  *uuid.UUID
+	Note        string
 }
