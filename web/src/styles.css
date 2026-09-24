@@ -3158,6 +3158,11 @@ button.timecode {
   font-size: var(--fs-xs);
 }
 
+.chat-edited {
+  margin-left: 4px;
+  font-size: 0.85em;
+}
+
 .chat-replying .chat-quote-body {
   flex: 1;
   color: var(--muted);

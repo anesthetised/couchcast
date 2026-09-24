@@ -312,6 +312,8 @@ CREATE TABLE messages (
     -- The message this one answers, quoted in the UI.
     reply_to   bigint      REFERENCES messages (id) ON DELETE SET NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
+    -- Set when the author rewrote the body (allowed for a few minutes).
+    edited_at  timestamptz,
     deleted_at timestamptz,
     deleted_by uuid        REFERENCES users (id) ON DELETE SET NULL,
 

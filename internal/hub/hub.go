@@ -283,6 +283,9 @@ func (c *conn) dispatch(ctx context.Context, data []byte) {
 		err = c.room.React(actor, msg.(*protocol.React).Emoji)
 	case protocol.TypeChatClear:
 		err = c.room.ChatClear(cmdCtx, actor)
+	case protocol.TypeChatEdit:
+		m := msg.(*protocol.ChatEdit)
+		err = c.room.ChatEdit(cmdCtx, actor, m.ID, m.Body)
 	case protocol.TypeChatDelete:
 		err = c.room.ChatDelete(cmdCtx, actor, msg.(*protocol.ChatDelete).ID)
 	case protocol.TypeChatPin:

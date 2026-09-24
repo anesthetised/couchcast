@@ -253,6 +253,12 @@ and a production image build.
   `chat.pin {id}` / `chat.unpin` (moderators) keep one message above the
   chat (`rooms.pinned_message_id`, `RoomInfo.pinned`, broadcast as
   `chat.pinned`); deleting or clearing unpins.
+- `chat.edit {id, body}` lets the author (not moderators) rewrite a line
+  for 5 minutes (`editWindow`, checked in SQL against `created_at`); it
+  sets `messages.edited_at` (`ChatMessage.editedMs`, "(edited)" in the
+  UI), broadcasts `chat.edited {message}` and refreshes a pin of it;
+  clients also refresh quotes of it. Mentions are not pushed again. In
+  the composer, Up in an empty field edits one's last line.
 - Emoji live in `web/src/lib/emoji.ts` (a curated set with shortcodes):
   the composer's ☺ opens `EmojiPicker`, `:smi` autocompletes like `@`
   mentions, and remaining `:name:` codes are expanded on send.

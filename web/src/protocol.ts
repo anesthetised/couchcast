@@ -116,6 +116,7 @@ export interface ChatMessage {
   body: string;
   system?: boolean;
   createdMs: number;
+  editedMs?: number;
   replyTo?: Quote;
 }
 
@@ -154,6 +155,11 @@ export interface ChatDeleted {
   id: number;
 }
 
+export interface ChatEdited {
+  type: "chat.edited";
+  message: ChatMessage;
+}
+
 export interface ChatCleared {
   type: "chat.cleared";
 }
@@ -187,6 +193,7 @@ export type ServerMessage =
   | PlaybackMessage
   | ChatMessage
   | ChatDeleted
+  | ChatEdited
   | ChatCleared
   | ChatPinned
   | Typing
@@ -218,6 +225,7 @@ export type ClientMessage =
   | { type: "chat.send"; body: string; replyTo?: number }
   | { type: "chat.pin"; id: number }
   | { type: "chat.unpin" }
+  | { type: "chat.edit"; id: number; body: string }
   | { type: "chat.delete"; id: number }
   | { type: "chat.typing" }
   | { type: "chat.clear" }

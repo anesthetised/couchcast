@@ -68,7 +68,7 @@ func (r *Repo) CreateSystemMessage(ctx context.Context, roomID uuid.UUID, body s
 
 // messageSelect lists visible messages with author and quote.
 const messageSelect = `
-	SELECT m.id, m.room_id, m.user_id, coalesce(u.username, '') AS username, coalesce(u.avatar_color, '') AS color, m.body, m.system, m.created_at,
+	SELECT m.id, m.room_id, m.user_id, coalesce(u.username, '') AS username, coalesce(u.avatar_color, '') AS color, m.body, m.system, m.created_at, m.edited_at,
 	       q.id AS reply_id, coalesce(qu.username, '') AS reply_username, q.body AS reply_body
 	FROM messages m
 	LEFT JOIN users u ON u.id = m.user_id
@@ -86,7 +86,7 @@ func scanMessages(rows pgx.Rows) ([]entity.Message, error) {
 			qUser *string
 			qBody *string
 		)
-		if err := rows.Scan(&m.ID, &m.RoomID, &m.UserID, &m.Username, &m.Color, &m.Body, &m.System, &m.CreatedAt, &qID, &qUser, &qBody); err != nil {
+		if err := rows.Scan(&m.ID, &m.RoomID, &m.UserID, &m.Username, &m.Color, &m.Body, &m.System, &m.CreatedAt, &m.EditedAt, &qID, &qUser, &qBody); err != nil {
 			return nil, err
 		}
 		if qID != nil {
@@ -122,6 +122,25 @@ func (r *Repo) GetMessage(ctx context.Context, roomID uuid.UUID, id int64) (*ent
 		return nil, ErrNotFound
 	}
 	return &out[0], nil
+}
+
+// EditMessage rewrites the body of the author's own visible message
+// written within the window, and returns it updated. ErrNotFound when
+// the message is missing, a system line, someone else's or too old.
+func (r *Repo) EditMessage(ctx context.Context, roomID uuid.UUID, id int64, userID uuid.UUID, body string, window time.Duration) (*entity.Message, error) {
+	const q = `
+		UPDATE messages SET body = $4, edited_at = now()
+		WHERE id = $2 AND room_id = $1 AND user_id = $3 AND deleted_at IS NULL AND NOT system
+		  AND created_at > now() - make_interval(secs => $5)
+	`
+	tag, err := r.pool.Exec(ctx, q, roomID, id, userID, body, window.Seconds())
+	if err != nil {
+		return nil, wrapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, ErrNotFound
+	}
+	return r.GetMessage(ctx, roomID, id)
 }
 
 // SetPinnedMessage pins a message of the room (nil unpins).

@@ -128,6 +128,20 @@ export function createRoomStore(slug: string) {
         setState("messages", (m) => [...m.slice(-199), msg]);
         if (document.visibilityState === "hidden") setUnread((n) => n + 1);
         break;
+      case "chat.edited": {
+        // Replace the line and refresh quotes of it in replies.
+        const e = msg.message;
+        setState("messages", (m) =>
+          m.map((x) =>
+            x.id === e.id
+              ? { ...x, body: e.body, editedMs: e.editedMs }
+              : x.replyTo?.id === e.id
+                ? { ...x, replyTo: { ...x.replyTo, body: e.body } }
+                : x,
+          ),
+        );
+        break;
+      }
       case "chat.deleted":
         setState("messages", (m) => m.filter((x) => x.id !== msg.id));
         break;
@@ -255,6 +269,7 @@ export function createRoomStore(slug: string) {
       chatUnpin: () => send({ type: "chat.unpin" }),
       typing: () => send({ type: "chat.typing" }),
       react: (emoji: string) => send({ type: "react", emoji }),
+      chatEdit: (id: number, body: string) => send({ type: "chat.edit", id, body }),
       chatDelete: (id: number) => send({ type: "chat.delete", id }),
       chatClear: () => send({ type: "chat.clear" }),
       report: (s: "playing" | "buffering" | "ended", positionMs: number) =>

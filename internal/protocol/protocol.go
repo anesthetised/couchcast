@@ -38,6 +38,7 @@ const (
 	TypeRateSet          = "rate.set"
 	TypeChatSend         = "chat.send"
 	TypeChatDelete       = "chat.delete"
+	TypeChatEdit         = "chat.edit"
 	TypeChatClear        = "chat.clear"
 	TypeChatPin          = "chat.pin"
 	TypeChatUnpin        = "chat.unpin"
@@ -124,6 +125,12 @@ type ChatSend struct {
 	ReplyTo *int64 `json:"replyTo,omitempty"`
 }
 
+// ChatEdit rewrites the author's own recent message.
+type ChatEdit struct {
+	ID   int64  `json:"id"`
+	Body string `json:"body"`
+}
+
 // ChatDelete removes a message: one's own, or anyone's for moderators.
 type ChatDelete struct {
 	ID int64 `json:"id"`
@@ -173,6 +180,8 @@ func Decode(data []byte) (string, any, error) {
 		msg = &ChatSend{}
 	case TypeChatDelete:
 		msg = &ChatDelete{}
+	case TypeChatEdit:
+		msg = &ChatEdit{}
 	case TypeChatPin:
 		msg = &ChatPin{}
 	case TypeReact:
@@ -201,6 +210,7 @@ const (
 	TypePlayback    = "playback"
 	TypeChatMessage = "chat.message"
 	TypeChatDeleted = "chat.deleted"
+	TypeChatEdited  = "chat.edited"
 	TypeChatCleared = "chat.cleared"
 	TypeChatPinned  = "chat.pinned"
 	TypeTyping      = "typing"
@@ -322,6 +332,7 @@ type ChatMessage struct {
 	Body      string `json:"body"`
 	System    bool   `json:"system,omitempty"`
 	CreatedMs int64  `json:"createdMs"`
+	EditedMs  int64  `json:"editedMs,omitempty"`
 	ReplyTo   *Quote `json:"replyTo,omitempty"`
 }
 
@@ -342,6 +353,12 @@ type ChatPinned struct {
 type ChatDeleted struct {
 	Type string `json:"type"`
 	ID   int64  `json:"id"`
+}
+
+// ChatEdited carries a message whose body the author changed.
+type ChatEdited struct {
+	Type    string      `json:"type"`
+	Message ChatMessage `json:"message"`
 }
 
 // ChatCleared tells clients to drop every message they hold.

@@ -27,6 +27,7 @@ type ChatStore interface {
 	CreateSystemMessage(ctx context.Context, roomID uuid.UUID, body string) (*entity.Message, error)
 	ListRecentMessages(ctx context.Context, roomID uuid.UUID, limit int) ([]entity.Message, error)
 	GetMessage(ctx context.Context, roomID uuid.UUID, id int64) (*entity.Message, error)
+	EditMessage(ctx context.Context, roomID uuid.UUID, id int64, userID uuid.UUID, body string, window time.Duration) (*entity.Message, error)
 	DeleteMessage(ctx context.Context, roomID uuid.UUID, id int64, deletedBy uuid.UUID, onlyOwn bool) error
 	ClearMessages(ctx context.Context, roomID uuid.UUID, deletedBy uuid.UUID) (int64, error)
 	SetPinnedMessage(ctx context.Context, roomID uuid.UUID, id *int64) error
@@ -35,10 +36,15 @@ type ChatStore interface {
 const (
 	maxMessageLen  = 2000
 	recentMessages = 100
+	// editWindow is how long authors may rewrite a message.
+	editWindow = 5 * time.Minute
 )
 
 func toChatMessage(m *entity.Message) protocol.ChatMessage {
 	out := protocol.ChatMessage{Type: protocol.TypeChatMessage, ID: m.ID, Username: m.Username, Color: m.Color, Body: m.Body, System: m.System, CreatedMs: m.CreatedAt.UnixMilli()}
+	if m.EditedAt != nil {
+		out.EditedMs = m.EditedAt.UnixMilli()
+	}
 	if m.ReplyTo != nil {
 		out.ReplyTo = &protocol.Quote{ID: m.ReplyTo.ID, Username: m.ReplyTo.Username, Body: m.ReplyTo.Body}
 	}
@@ -283,6 +289,46 @@ func (r *Room) Log(ctx context.Context, line string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.logLocked(ctx, line)
+}
+
+// ChatEdit rewrites the actor's own message within editWindow. Viewers
+// get the new line; a pin of it follows. Mentions are not pushed again.
+func (r *Room) ChatEdit(ctx context.Context, actor access.Actor, id int64, body string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.deps.Chat == nil {
+		return invalid("chat is disabled")
+	}
+	if actor.Muted() {
+		return &Error{Code: protocol.CodeForbidden, Message: "you are muted until " + actor.MutedUntil.Local().Format("15:04")}
+	}
+	if err := r.requireLocked(actor, access.Chat); err != nil {
+		return err
+	}
+	body = strings.TrimSpace(body)
+	if body == "" || utf8.RuneCountInString(body) > maxMessageLen {
+		return invalid("message must be between 1 and 2000 characters")
+	}
+	if !r.chatLimiter(actor.User.ID).Allow() {
+		return &Error{Code: protocol.CodeRateLimit, Message: "you are sending messages too quickly"}
+	}
+	msg, err := r.deps.Chat.EditMessage(ctx, r.info.ID, id, actor.User.ID, body, editWindow)
+	if errors.Is(err, repository.ErrNotFound) {
+		return &Error{Code: protocol.CodeForbidden, Message: "you can only edit your own messages from the last 5 minutes"}
+	}
+	if err != nil {
+		return err
+	}
+	line := toChatMessage(msg)
+	line.Type = ""
+	out := protocol.ChatEdited{Type: protocol.TypeChatEdited, Message: line}
+	for _, v := range r.viewers {
+		v.conn.Send(out)
+	}
+	if r.pinned != nil && r.pinned.ID == id {
+		r.setPinnedLocked(&line)
+	}
+	return nil
 }
 
 // ChatDelete removes a message (moderators only).

@@ -66,6 +66,54 @@ func TestChat(t *testing.T) {
 	assert.Equal(t, "spam", user[0].Body)
 }
 
+func TestChatEdit(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	owner, guest := &fakeConn{}, &fakeConn{}
+	f.room.Join(ctx, owner, f.owner)
+	f.room.Join(ctx, guest, f.guest)
+
+	require.NoError(t, f.room.ChatSend(ctx, f.guest, "helo", nil))
+	msg := guest.last().(protocol.ChatMessage)
+	require.NoError(t, f.room.ChatPin(ctx, f.owner, msg.ID))
+
+	// The author rewrites it; everyone gets the new body, the pin follows.
+	require.NoError(t, f.room.ChatEdit(ctx, f.guest, msg.ID, "  hello  "))
+	var edited *protocol.ChatEdited
+	for _, m := range owner.msgs {
+		if e, ok := m.(protocol.ChatEdited); ok {
+			edited = &e
+		}
+	}
+	require.NotNil(t, edited)
+	assert.Equal(t, msg.ID, edited.Message.ID)
+	assert.Equal(t, "hello", edited.Message.Body)
+	assert.NotZero(t, edited.Message.EditedMs)
+	pin, ok := owner.last().(protocol.ChatPinned)
+	require.True(t, ok)
+	assert.Equal(t, "hello", pin.Message.Body)
+
+	// Nobody else may edit it, not even a moderator; empty bodies fail.
+	var re *Error
+	require.ErrorAs(t, f.room.ChatEdit(ctx, f.owner, msg.ID, "hijacked"), &re)
+	assert.Equal(t, protocol.CodeForbidden, re.Code)
+	assert.Error(t, f.room.ChatEdit(ctx, f.guest, msg.ID, "   "))
+	assert.Error(t, f.room.ChatEdit(ctx, access.Actor{}, msg.ID, "anon"))
+
+	// Late joiners see the edited line with its mark.
+	late := &fakeConn{}
+	f.room.Join(ctx, late, access.Actor{})
+	var got *protocol.ChatMessage
+	for _, m := range late.msgs[0].(protocol.Welcome).Messages {
+		if m.ID == msg.ID {
+			got = &m
+		}
+	}
+	require.NotNil(t, got)
+	assert.Equal(t, "hello", got.Body)
+	assert.NotZero(t, got.EditedMs)
+}
+
 func TestRoomLog(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()

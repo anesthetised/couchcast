@@ -43,6 +43,43 @@ test("chat: send, reply, pin, emoji", async ({ page }) => {
   await expect(input).toHaveValue("popcorn time 🍿 ");
 });
 
+test("chat: edit one's own message, others see (edited)", async ({ browser }) => {
+  const hostCtx = await browser.newContext();
+  const guestCtx = await browser.newContext();
+  const host = await hostCtx.newPage();
+  const guest = await guestCtx.newPage();
+  await signUp(host, "editor");
+  const slug = await createRoom(host);
+  await signUp(guest, "reader");
+  await host.goto(`/r/${slug}`);
+  await guest.goto(`/r/${slug}`);
+
+  await chat(host, "see you at 9");
+  const line = host.locator(".chat-line", { hasText: "see you at 9" });
+  await line.hover();
+  await line.getByRole("button", { name: "edit", exact: true }).click();
+  const input = host.getByPlaceholder("Say something");
+  await expect(input).toHaveValue("see you at 9");
+  await expect(host.locator(".chat-replying")).toContainText("Editing");
+  await input.fill("see you at 10");
+  await host.getByRole("button", { name: "Save" }).click();
+
+  const seen = guest.locator(".chat-line", { hasText: "see you at 10" });
+  await expect(seen).toContainText("(edited)");
+  await expect(guest.locator(".chat-line", { hasText: "see you at 9" })).toHaveCount(0);
+  // Only the author gets the edit action; Up in an empty field edits the
+  // last own line.
+  await seen.hover();
+  await expect(seen.getByRole("button", { name: "edit", exact: true })).toHaveCount(0);
+  await input.press("ArrowUp");
+  await expect(input).toHaveValue("see you at 10");
+  await input.press("Escape");
+  await expect(input).toHaveValue("");
+
+  await hostCtx.close();
+  await guestCtx.close();
+});
+
 test("star a room and find it under Starred", async ({ page }) => {
   await signUp(page, "fan");
   const slug = await createRoom(page, { name: "Starred one" });

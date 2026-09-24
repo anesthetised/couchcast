@@ -20,7 +20,8 @@ const GROUP_WINDOW_MS = 60_000;
 const NEAR_BOTTOM_PX = 80;
 
 // Chat shows the backlog plus live messages. Anonymous viewers read only;
-// authors delete their own lines, moderators anyone's and pin one.
+// authors edit (for a few minutes) and delete their own lines, moderators
+// delete anyone's and pin one.
 const Chat: Component<Props> = (props) => {
   let list!: HTMLUListElement;
   let input!: HTMLInputElement;
@@ -266,9 +267,44 @@ const Chat: Component<Props> = (props) => {
   // --- replies and the pin -----------------------------------------------------
   const [replyTo, setReplyTo] = createSignal<ChatMessage | null>(null);
   const startReply = (m: ChatMessage) => {
+    if (editing()) cancelEdit();
     setReplyTo(m);
     input.focus();
   };
+
+  // --- editing -------------------------------------------------------------
+  // The composer doubles as the editor: the line's text moves into it and
+  // Send saves. The server holds the same window and has the last word.
+  const EDIT_WINDOW_MS = 5 * 60_000;
+  const [editing, setEditing] = createSignal<ChatMessage | null>(null);
+  const canEdit = (m: ChatMessage) => !m.system && me() !== null && m.username === me() && now() - m.createdMs < EDIT_WINDOW_MS;
+  const startEdit = (m: ChatMessage) => {
+    setReplyTo(null);
+    setEditing(m);
+    setBody(m.body);
+    queueMicrotask(() => {
+      input.focus();
+      input.setSelectionRange(m.body.length, m.body.length);
+    });
+  };
+  const cancelEdit = () => {
+    setEditing(null);
+    setBody("");
+  };
+  // Up in an empty field edits one's latest line, as in most chat apps.
+  const editLast = (): boolean => {
+    const all = messages();
+    let mine: ChatMessage | undefined;
+    for (let i = all.length - 1; i >= 0 && !mine; i--) if (canEdit(all[i]!)) mine = all[i];
+    if (!mine) return false;
+    startEdit(mine);
+    return true;
+  };
+  // A line deleted meanwhile ends the edit.
+  createEffect(() => {
+    const e = editing();
+    if (e && !messages().some((m) => m.id === e.id)) cancelEdit();
+  });
   const scrollToMessage = (id: number) => {
     const el = list.querySelector<HTMLElement>(`[data-id="${id}"]`);
     if (!el) return toast("That message is no longer in view.");
@@ -288,6 +324,15 @@ const Chat: Component<Props> = (props) => {
     e.preventDefault();
     const text = body().trim();
     if (!text) return;
+    const e0 = editing();
+    if (e0) {
+      const next = expandShortcodes(text);
+      if (next !== e0.body) props.room.commands.chatEdit(e0.id, next);
+      cancelEdit();
+      setMention(null);
+      setShortcode(null);
+      return;
+    }
     lastTyping = 0;
     props.room.commands.chat(expandShortcodes(text), replyTo()?.id);
     setBody("");
@@ -422,8 +467,20 @@ const Chat: Component<Props> = (props) => {
                         }
                       </For>
                     </span>
+                    <Show when={m.editedMs}>
+                      {(at) => (
+                        <span class="chat-edited muted" title={`Edited at ${time(at())}`}>
+                          (edited)
+                        </span>
+                      )}
+                    </Show>
                     <Show when={!m.system && me()}>
                       <span class="chat-tools">
+                        <Show when={canEdit(m)}>
+                          <button type="button" class="link" title="Edit" onClick={() => startEdit(m)}>
+                            edit
+                          </button>
+                        </Show>
                         <Show when={canModerate() || m.username === me()}>
                           <button type="button" class="link danger-text" title="Delete" onClick={() => props.room.commands.chatDelete(m.id)}>
                             ✕
@@ -463,6 +520,17 @@ const Chat: Component<Props> = (props) => {
       </div>
       <Show when={canWrite()} fallback={<p class="muted small"><a href="/login">Log in</a> to chat.</p>}>
         <form class="chat-form" onSubmit={submit}>
+          <Show when={editing()}>
+            {(m) => (
+              <div class="chat-replying">
+                <span class="muted small">Editing</span>
+                <span class="chat-quote-body">{m().body}</span>
+                <button type="button" class="link small" onClick={cancelEdit} aria-label="Cancel editing">
+                  ✕
+                </button>
+              </div>
+            )}
+          </Show>
           <Show when={replyTo()}>
             {(r) => (
               <div class="chat-replying">
@@ -495,10 +563,15 @@ const Chat: Component<Props> = (props) => {
             onInput={(e) => {
               setBody(e.currentTarget.value);
               refreshMention();
-              hintTyping(e.currentTarget.value);
+              if (!editing()) hintTyping(e.currentTarget.value);
             }}
             onKeyDown={(e) => {
-              if (e.key === "Escape" && replyTo() && !candidates().length && !emojiCandidates().length) setReplyTo(null);
+              const menu = candidates().length > 0 || emojiCandidates().length > 0;
+              if (e.key === "Escape" && !menu) {
+                if (editing()) cancelEdit();
+                else if (replyTo()) setReplyTo(null);
+              }
+              if (e.key === "ArrowUp" && !menu && !body() && editLast()) e.preventDefault();
               onKey(e);
             }}
             onBlur={() => window.setTimeout(() => (setMention(null), setShortcode(null)), 120)}
@@ -522,7 +595,7 @@ const Chat: Component<Props> = (props) => {
           <Show when={showPicker()}>
             <EmojiPicker onPick={pickEmoji} onClose={() => setShowPicker(false)} />
           </Show>
-          <button type="submit">Send</button>
+          <button type="submit">{editing() ? "Save" : "Send"}</button>
         </form>
       </Show>
     </section>
