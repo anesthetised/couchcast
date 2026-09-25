@@ -6,10 +6,11 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
 
-  rustfs:
+  seaweedfs:
     ports:
       - "${S3_PORT:-9000}:9000"
-      - "${S3_CONSOLE_PORT:-9001}:9001"
+      # Filer UI: browse the stored files (development only, no auth).
+      - "${S3_CONSOLE_PORT:-8888}:8888"
 
   web:
     build:

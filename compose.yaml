@@ -7,7 +7,7 @@ name: couchcast
 x-app-env: &app-env
   COUCHCAST_LOG_LEVEL: ${COUCHCAST_LOG_LEVEL:-info}
   COUCHCAST_DATABASE_URL: postgres://${POSTGRES_USER:-couchcast}:${POSTGRES_PASSWORD:-couchcast}@postgres:5432/${POSTGRES_DB:-couchcast}?sslmode=disable
-  COUCHCAST_S3_ENDPOINT: rustfs:9000
+  COUCHCAST_S3_ENDPOINT: seaweedfs:9000
   COUCHCAST_S3_BUCKET: ${S3_BUCKET:-couchcast}
   COUCHCAST_S3_ACCESS_KEY: ${S3_ACCESS_KEY:-couchcast}
   COUCHCAST_S3_SECRET_KEY: ${S3_SECRET_KEY:-couchcast-dev-secret}
@@ -30,21 +30,20 @@ services:
       retries: 10
     restart: unless-stopped
 
-  # S3-compatible object storage for packaged media. The web server and
-  # the ingest worker create the bucket on start.
-  rustfs:
-    image: rustfs/rustfs:1.0.0
+  # S3-compatible object storage for packaged media (SeaweedFS: many small
+  # DASH segments pack into 1 GB volumes; the count follows free disk).
+  # The web server and the ingest worker create the bucket on start.
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.47
+    command: server -dir=/data -s3 -s3.port=9000 -master.volumeSizeLimitMB=1024 -volume.max=0
     environment:
-      RUSTFS_ACCESS_KEY: ${S3_ACCESS_KEY:-couchcast}
-      RUSTFS_SECRET_KEY: ${S3_SECRET_KEY:-couchcast-dev-secret}
-      RUSTFS_VOLUMES: /data
-      RUSTFS_ADDRESS: 0.0.0.0:9000
-      RUSTFS_CONSOLE_ENABLE: "true"
-      RUSTFS_CONSOLE_ADDRESS: 0.0.0.0:9001
+      # S3 admin credentials when no identity file is given.
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY:-couchcast}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-couchcast-dev-secret}
     volumes:
       - s3data:/data
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/health"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9000/healthz"]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -88,7 +87,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      rustfs:
+      seaweedfs:
         condition: service_healthy
     restart: unless-stopped
 
@@ -109,7 +108,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      rustfs:
+      seaweedfs:
         condition: service_healthy
     restart: unless-stopped
 

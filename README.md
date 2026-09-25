@@ -30,13 +30,14 @@ Requirements: Docker and [`just`](https://github.com/casey/just).
 
 ```sh
 cp .env.example .env   # set COUCHCAST_MEDIA_TOKEN_SECRET for production
-just up                # Postgres + RustFS (S3)
+just up                # Postgres + SeaweedFS (S3)
 just migrate           # apply schema migrations
 just dev               # web server, ingest worker, Vite dev server
 ```
 
-Open http://localhost:5173. The RustFS console is at http://localhost:9001
-(`S3_ACCESS_KEY` / `S3_SECRET_KEY` from `.env`).
+Open http://localhost:5173. The SeaweedFS filer UI (stored
+files) is at http://localhost:8888; S3 itself is on :9000 with
+`S3_ACCESS_KEY` / `S3_SECRET_KEY` from `.env`.
 
 Tests: `just test` (Go, against a test database), `just lint`, `just check`
 (TypeScript) and `just e2e` (Playwright in the browser against a separate
