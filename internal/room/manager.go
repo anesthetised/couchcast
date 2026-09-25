@@ -197,9 +197,7 @@ func (m *Manager) Unload(roomID uuid.UUID, reason string) {
 		c.Close(reason)
 	}
 	r.viewers = map[Conn]*viewer{}
-	if r.advance != nil {
-		r.advance.Stop()
-	}
+	r.closeLocked()
 	r.mu.Unlock()
 }
 

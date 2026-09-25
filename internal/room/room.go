@@ -181,6 +181,10 @@ type Room struct {
 	// countdown is when a counted-down start begins (nil: none pending).
 	countdown      *time.Time
 	countdownTimer *time.Timer
+
+	// closed is set when the manager drops the room; a timer that fired
+	// just before then finds it and does nothing.
+	closed bool
 }
 
 // load builds a Room from the database.
@@ -393,6 +397,9 @@ func (r *Room) disarmEmptyPauseLocked() {
 func (r *Room) pauseIfEmpty() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return
+	}
 	r.emptyTimer = nil
 	if !r.info.Settings.PauseWhenEmpty || !r.playing || len(r.viewers) > 0 {
 		return
@@ -430,6 +437,9 @@ func (r *Room) scheduleAdvanceLocked() {
 func (r *Room) onEnded(itemID uuid.UUID, seq uint64) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return
+	}
 	if r.current == nil || *r.current != itemID || r.seq != seq || !r.playing {
 		return
 	}
@@ -807,6 +817,9 @@ func (r *Room) rejoinGrace() time.Duration {
 func (r *Room) onLeft(userID uuid.UUID, username string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return
+	}
 	delete(r.leftTimers, userID)
 	if r.userOnlineLocked(userID) {
 		return
@@ -1049,6 +1062,9 @@ func (r *Room) patience(d time.Duration) time.Duration {
 func (r *Room) startWaiting() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return
+	}
 	r.bufferTimer = nil
 	stuck := r.stuckLocked()
 	if !r.info.Settings.WaitForBuffering || !r.playing || len(stuck) == 0 || r.waiting != nil {
@@ -1070,6 +1086,9 @@ func (r *Room) startWaiting() {
 func (r *Room) stopWaiting() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return
+	}
 	r.waitTimer = nil
 	if r.waiting == nil {
 		return
@@ -1172,6 +1191,9 @@ func (r *Room) play(ctx context.Context, actor access.Actor, countdown bool) err
 func (r *Room) endCountdown() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return
+	}
 	if r.countdown == nil {
 		return
 	}
@@ -1900,14 +1922,23 @@ func (r *Room) Tick(ctx context.Context, idleAfter time.Duration) (idle bool) {
 func (r *Room) shutdown(ctx context.Context) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if r.advance != nil {
-		r.advance.Stop()
+	r.closeLocked()
+	if err := r.persistLocked(ctx); err != nil {
+		r.deps.Logger.Warn("persist playback on unload", "room", r.info.Slug, "error", err)
+	}
+}
+
+// closeLocked stops every timer and marks the room closed, so nothing
+// scheduled acts on it once the manager has let go of it.
+func (r *Room) closeLocked() {
+	r.closed = true
+	for _, t := range []*time.Timer{r.advance, r.emptyTimer, r.bufferTimer, r.waitTimer, r.countdownTimer} {
+		if t != nil {
+			t.Stop()
+		}
 	}
 	for _, t := range r.leftTimers {
 		t.Stop()
-	}
-	if err := r.persistLocked(ctx); err != nil {
-		r.deps.Logger.Warn("persist playback on unload", "room", r.info.Slug, "error", err)
 	}
 }
 
