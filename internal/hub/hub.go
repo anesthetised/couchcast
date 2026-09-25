@@ -7,6 +7,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -82,9 +83,14 @@ type conn struct {
 	actor  access.Actor
 
 	out     chan any
-	closed  chan struct{}
 	limiter *rate.Limiter
-	cancel  context.CancelFunc
+
+	// Close only signals: the write loop sends what is still queued (a
+	// kicked message), then the close frame with the reason. Closing
+	// never blocks the room, which calls it under its lock.
+	closeOnce   sync.Once
+	closed      chan struct{}
+	closeReason string
 }
 
 func newConn(ws *websocket.Conn, h *Hub, live *room.Room, rm *entity.Room, actor access.Actor) *conn {
@@ -108,49 +114,64 @@ func (c *conn) Send(msg any) {
 
 // Close implements room.Conn.
 func (c *conn) Close(reason string) {
-	select {
-	case <-c.closed:
-		return
-	default:
+	c.closeOnce.Do(func() {
+		c.closeReason = reason
 		close(c.closed)
-	}
-	if c.cancel != nil {
-		c.cancel()
-	}
-	_ = c.ws.Close(websocket.StatusPolicyViolation, reason)
+	})
 }
 
-func (c *conn) run(parent context.Context) {
-	ctx, cancel := context.WithCancel(parent)
-	c.cancel = cancel
-	defer cancel()
-
-	go c.writeLoop(ctx)
+func (c *conn) run(ctx context.Context) {
+	written := make(chan struct{})
+	go func() {
+		defer close(written)
+		c.writeLoop(ctx)
+	}()
 
 	c.room.Join(ctx, c, c.actor)
 	defer c.room.Leave(c)
 
 	c.readLoop(ctx)
 	c.Close("bye")
+	<-written
 }
 
 func (c *conn) writeLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			_ = c.ws.CloseNow()
 			return
 		case <-c.closed:
+			c.flush(ctx)
+			_ = c.ws.Close(websocket.StatusPolicyViolation, c.closeReason)
 			return
 		case msg := <-c.out:
-			wctx, cancel := context.WithTimeout(ctx, writeTimeout)
-			err := wsjson.Write(wctx, c.ws, msg)
-			cancel()
-			if err != nil {
+			if !c.write(ctx, msg) {
 				c.Close("write failed")
-				return
 			}
 		}
 	}
+}
+
+// flush writes the messages queued before the close, so a kicked client
+// learns why.
+func (c *conn) flush(ctx context.Context) {
+	for {
+		select {
+		case msg := <-c.out:
+			if !c.write(ctx, msg) {
+				return
+			}
+		default:
+			return
+		}
+	}
+}
+
+func (c *conn) write(ctx context.Context, msg any) bool {
+	wctx, cancel := context.WithTimeout(ctx, writeTimeout)
+	defer cancel()
+	return wsjson.Write(wctx, c.ws, msg) == nil
 }
 
 func (c *conn) readLoop(ctx context.Context) {
