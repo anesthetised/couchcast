@@ -4,11 +4,22 @@ export function describeUA(ua: string): string {
   return [uaBrowser(ua), uaPlatform(ua)].filter(Boolean).join(" · ");
 }
 
+// Edge and Opera also carry a Chrome token (and Chrome a Safari one), so
+// the more specific tokens are tried first.
+const BROWSERS: [RegExp, string][] = [
+  [/Edg\/(\d+)/, "Edge"],
+  [/OPR\/(\d+)/, "Opera"],
+  [/Firefox\/(\d+)/, "Firefox"],
+  [/Chrome\/(\d+)/, "Chrome"],
+  [/Version\/(\d+).*Safari/, "Safari"],
+];
+
 export function uaBrowser(ua: string): string | undefined {
-  const m = ua.match(/(Firefox|Edg|OPR|Chrome|Version)\/(\d+)/);
-  if (!m) return undefined;
-  const name = m[1] === "Version" ? "Safari" : m[1] === "Edg" ? "Edge" : m[1] === "OPR" ? "Opera" : m[1]!;
-  return `${name} ${m[2]}`;
+  for (const [re, name] of BROWSERS) {
+    const m = ua.match(re);
+    if (m) return `${name} ${m[1]}`;
+  }
+  return undefined;
 }
 
 function uaPlatform(ua: string): string | undefined {
