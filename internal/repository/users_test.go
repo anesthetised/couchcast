@@ -108,3 +108,36 @@ func TestSessions(t *testing.T) {
 	require.NoError(t, err)
 	assert.EqualValues(t, 1, n)
 }
+
+func TestUserProfileWrites(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+	alice, err := repo.CreateUser(ctx, "Alice", "h1")
+	require.NoError(t, err)
+	for _, n := range []string{"alfred", "Albert", "al_x", "alzheimer", "bob"} {
+		_, err := repo.CreateUser(ctx, n, "h")
+		require.NoError(t, err)
+	}
+	banned, err := repo.CreateUser(ctx, "alarmed", "h")
+	require.NoError(t, err)
+	require.NoError(t, repo.BanUser(ctx, banned.ID, alice.ID, "spam", time.Now()))
+
+	require.NoError(t, repo.SetUserAvatarColor(ctx, alice.ID, "teal"))
+	require.NoError(t, repo.SetUserPassword(ctx, alice.ID, "h2"))
+	got, err := repo.GetUserByID(ctx, alice.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "teal", got.AvatarColor)
+	assert.Equal(t, "h2", got.PasswordHash)
+
+	// Prefix search ignores case and banned accounts; _ is literal.
+	names, err := repo.SearchUsernames(ctx, "AL", 10)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"al_x", "Albert", "alfred", "Alice", "alzheimer"}, names)
+	names, err = repo.SearchUsernames(ctx, "al_", 10)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"al_x"}, names)
+	names, err = repo.SearchUsernames(ctx, "al", 2)
+	require.NoError(t, err)
+	assert.Len(t, names, 2)
+	require.NoError(t, repo.Ping(ctx))
+}
