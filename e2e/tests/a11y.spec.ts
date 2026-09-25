@@ -17,9 +17,12 @@ async function pages(page: Page): Promise<string[]> {
 // Anonymous pages are checked separately, logged out.
 const PUBLIC = ["/", "/login", "/register"];
 
+// settle waits for the app to render the page. Not "networkidle": the
+// room's player keeps the network busy.
 async function settle(page: Page, path: string) {
   await page.goto(path);
-  await page.waitForLoadState("networkidle");
+  await page.waitForFunction(() => (document.querySelector("#root")?.children.length ?? 0) > 0);
+  await page.locator(".skeleton").first().waitFor({ state: "detached", timeout: 5_000 }).catch(() => {});
 }
 
 async function violations(page: Page) {
@@ -30,6 +33,7 @@ async function violations(page: Page) {
 }
 
 test("the main pages have no serious accessibility problems", async ({ page }) => {
+  test.setTimeout(120_000); // eleven pages, each scanned
   const found: string[] = [];
   for (const path of await pages(page)) {
     await settle(page, path);
@@ -48,6 +52,8 @@ test("the room's dialogs have no serious accessibility problems", async ({ page 
   const slug = await createRoom(page, { firstUrl: await readyVideo("Dialog video") });
   await settle(page, `/r/${slug}`);
   const found: string[] = [];
+  // The player owns the hotkeys; wait until it is on the page.
+  await expect(page.locator(".controls .transport button.icon").first()).toBeVisible();
 
   await page.locator("body").press("?");
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -71,6 +77,7 @@ test.describe("at phone width", () => {
   test.use({ viewport: { width: 375, height: 812 }, isMobile: true, hasTouch: true });
 
   test("no page scrolls sideways", async ({ page }) => {
+    test.setTimeout(120_000);
     const wide: string[] = [];
     const check = async (path: string) => {
       await settle(page, path);
