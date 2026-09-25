@@ -5,6 +5,7 @@ other sources, pick your own quality, and let the server keep everyone on
 the same frame.
 
 [![CI](https://github.com/anesthetised/couchcast/actions/workflows/ci.yml/badge.svg)](https://github.com/anesthetised/couchcast/actions/workflows/ci.yml)
+[![Go coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/anesthetised/couchcast/badges/coverage.json)](https://github.com/anesthetised/couchcast/actions/workflows/ci.yml)
 
 ## How it works
 

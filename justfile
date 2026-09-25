@@ -79,6 +79,13 @@ dev:
 test *args:
     {{compose}} run --rm web go test -p 1 ./... {{args}}
 
+# Go test coverage in total, counting code any package's tests reach
+# (-coverpkg), as the CI badge does; `go tool cover -func coverage.out`
+# (or -html) drills down.
+[group('code')]
+cover:
+    {{compose}} run --rm web sh -c 'go test -p 1 -coverpkg=./... -coverprofile=coverage.out ./... | grep -v "no test files" && go tool cover -func=coverage.out | tail -1'
+
 [group('code')]
 lint:
     {{compose}} run --rm --no-deps web golangci-lint run

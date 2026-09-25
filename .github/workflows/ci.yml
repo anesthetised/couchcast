@@ -17,6 +17,8 @@ jobs:
   go:
     name: Go
     runs-on: ubuntu-latest
+    permissions:
+      contents: write # the coverage badge branch
     services:
       postgres:
         image: postgres:17-alpine
@@ -47,7 +49,24 @@ jobs:
         env:
           COUCHCAST_TEST_DATABASE_URL: postgres://couchcast:couchcast@localhost:5432/couchcast_test?sslmode=disable
         # Packages run serially: integration tests share one database.
-        run: go test -p 1 -race ./...
+        run: go test -p 1 -race -coverpkg=./... -coverprofile=coverage.out ./...
+      - name: Coverage
+        run: go tool cover -func=coverage.out | tail -1
+      # The README badge reads coverage.json from the `badges` branch via
+      # shields.io; the branch holds one commit, replaced on every push.
+      - name: Publish the coverage badge
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pct=$(go tool cover -func=coverage.out | awk '/^total:/ { sub("%", "", $3); print $3 }')
+          color=$(awk -v p="$pct" 'BEGIN { print (p >= 80 ? "brightgreen" : p >= 60 ? "yellow" : "red") }')
+          mkdir badge && cd badge
+          printf '{"schemaVersion":1,"label":"Go coverage","message":"%s%%","color":"%s"}\n' "$pct" "$color" > coverage.json
+          git init -q -b badges
+          git add coverage.json
+          git -c user.name=github-actions -c user.email=github-actions@users.noreply.github.com commit -q -m "coverage $pct%"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" badges
 
   web:
     name: Web
