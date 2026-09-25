@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 import { fileURLToPath, URL } from "node:url";
@@ -31,5 +32,20 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: false,
+  },
+  // Unit tests (`just test-web`): pure logic and components in jsdom;
+  // flows that need the server live in e2e/.
+  test: {
+    environment: "jsdom",
+    include: ["src/**/*.test.{ts,tsx}"],
+    setupFiles: ["src/test/setup.ts"],
+    restoreMocks: true,
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/test/**", "src/index.tsx"],
+      reporter: ["text-summary", "html"],
+      reportsDirectory: "coverage",
+    },
   },
 });

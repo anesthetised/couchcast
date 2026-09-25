@@ -29,7 +29,13 @@ commands run from the repo root via `just` (see `justfile`):
 - `just server` / `just ingest` / `just web` — the same, one service at a time
 - `just test` — `go test -p 1 ./...` in the dev container (integration
   tests share `COUCHCAST_TEST_DATABASE_URL`, hence serial; skipped when unset)
+- `just cover` — Go coverage across packages (`-coverpkg`), as the badge
 - `just lint` — golangci-lint; `just check` — TypeScript type check
+- `just test-web [args]` — Vitest unit tests (`web/src/**/*.test.ts[x]`,
+  jsdom): `lib/`, the room store and components. Tests drive the real
+  room store through `test/fakeWebSocket.ts` with `test/fixtures.ts`
+  snapshots; `--coverage` writes `web/coverage/`. Pages and flows that
+  need the server belong in `e2e/`.
 - `just e2e [args]` — Playwright browser tests (`e2e/`) against a fresh
   `couchcast_e2e` database with their own server and Vite instance
   (compose profile `e2e`, `compose.e2e.yaml`); never touches dev data.
@@ -44,7 +50,7 @@ commands run from the repo root via `just` (see `justfile`):
 
 Run `just test` and `just lint` before opening a PR. CI
 (`.github/workflows/ci.yml`) runs gofmt, go vet, golangci-lint, the Go tests
-against Postgres, the TypeScript check and build, Atlas migration checks
+against Postgres, the TypeScript check, the Vitest suite and the build, Atlas migration checks
 (validate, lint, apply, and that `db/schema.sql` matches `db/migrations`),
 the Playwright suite through `just e2e` (the report is uploaded when it
 fails) and a production image build.

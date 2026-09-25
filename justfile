@@ -107,6 +107,12 @@ check:
     just pnpm install
     just pnpm check
 
+# Frontend unit tests (Vitest); `just test-web --coverage` adds a report.
+[group('code')]
+test-web *args:
+    just pnpm install
+    just pnpm test {{args}}
+
 # End-to-end browser tests (Playwright) against a fresh couchcast_e2e
 # database and their own server and Vite instance; args go to
 # `playwright test` (e.g. `just e2e tests/chat.spec.ts --headed` is not
