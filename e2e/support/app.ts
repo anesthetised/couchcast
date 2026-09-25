@@ -43,6 +43,17 @@ export async function createRoom(
   return slug;
 }
 
+// joinAsMember makes the page's user a member of the room through an
+// invite link the owner's page creates.
+export async function joinAsMember(owner: Page, member: Page, slug: string) {
+  const res = await owner.request.post(`/api/v1/rooms/${slug}/invite-links`, { data: { expiresIn: "1d", maxUses: 1 } });
+  expect(res.status(), await res.text()).toBe(201);
+  const { url } = (await res.json()) as { url: string };
+  await member.goto(new URL(url).pathname);
+  await member.getByRole("button", { name: /Join/ }).click();
+  await expect(member).toHaveURL(new RegExp(`/r/${slug}$`));
+}
+
 // sql runs a statement against the e2e database, for what no UI does
 // (granting the admin role).
 export async function sql(text: string, values: unknown[] = []): Promise<pg.QueryResult> {
