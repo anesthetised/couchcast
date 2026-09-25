@@ -115,6 +115,9 @@ test("ending the session tells viewers why, and they stay out of the reconnect l
   const notice = guest.getByRole("alert").filter({ hasText: "Session ended" });
   await expect(notice).toBeVisible();
   await expect(notice).toContainText("A moderator closed the session");
+  // Nothing can be typed into a closed session.
+  await expect(guest.getByPlaceholder("Say something")).toHaveCount(0);
+  await expect(guest.getByPlaceholder("Paste a YouTube or video link")).toHaveCount(0);
   // No "reconnecting" banner comes back.
   await guest.waitForTimeout(1500);
   await expect(guest.getByText(/Reconnecting/)).toHaveCount(0);

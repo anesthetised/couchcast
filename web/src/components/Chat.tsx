@@ -28,7 +28,8 @@ const Chat: Component<Props> = (props) => {
   const [body, setBody] = createSignal("");
   const messages = () => props.room.state.messages;
   const me = () => props.room.state.me;
-  const canWrite = () => me() !== null;
+  // Nothing can be sent once the session is over for this viewer.
+  const canWrite = () => me() !== null && !props.room.ended();
   const canModerate = () => props.room.isModerator();
   const canAdd = () => canModerate() || (me() !== null && (props.room.state.snapshot?.room.settings.viewersCanAdd ?? false));
   const members = () => props.room.state.snapshot?.members ?? [];
@@ -518,7 +519,7 @@ const Chat: Component<Props> = (props) => {
           </button>
         </Show>
       </div>
-      <Show when={canWrite()} fallback={<p class="muted small"><a href="/login">Log in</a> to chat.</p>}>
+      <Show when={canWrite()} fallback={<Show when={!props.room.ended()}><p class="muted small"><a href="/login">Log in</a> to chat.</p></Show>}>
         <form class="chat-form" onSubmit={submit}>
           <Show when={editing()}>
             {(m) => (

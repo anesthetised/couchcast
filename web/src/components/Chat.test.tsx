@@ -123,3 +123,24 @@ describe("Chat", () => {
     expect(screen.queryByPlaceholderText("Say something")).toBeNull();
   });
 });
+
+describe("Chat after the session ends", () => {
+  beforeEach(() => {
+    FakeWebSocket.all = [];
+    vi.stubGlobal("WebSocket", FakeWebSocket);
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("hides the composer", async () => {
+    render(() => {
+      room = createRoomStore("movie-night");
+      return <Chat room={room} />;
+    });
+    ws().accept();
+    deliver({ type: "welcome", me: "alice", role: "member", snapshot: snapshot(), messages: [] });
+    expect(await screen.findByPlaceholderText("Say something")).toBeTruthy();
+    deliver({ type: "kicked", reason: "session ended" });
+    await vi.waitFor(() => expect(screen.queryByPlaceholderText("Say something")).toBeNull());
+    expect(screen.queryByText("Log in")).toBeNull();
+  });
+});

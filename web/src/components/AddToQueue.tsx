@@ -27,9 +27,10 @@ const AddToQueue: Component<Props> = (props) => {
   let timer: number | null = null;
   let seq = 0;
 
+  // Nothing can be added once the session is over for this viewer.
   const canAdd = () =>
-    props.room.isModerator() ||
-    (props.room.state.me !== null && (props.room.state.snapshot?.room.settings.viewersCanAdd ?? false));
+    !props.room.ended() &&
+    (props.room.isModerator() || (props.room.state.me !== null && (props.room.state.snapshot?.room.settings.viewersCanAdd ?? false)));
 
   const probe = (raw: string) => {
     if (timer !== null) window.clearTimeout(timer);
@@ -106,7 +107,14 @@ const AddToQueue: Component<Props> = (props) => {
   };
 
   return (
-    <Show when={canAdd()} fallback={<p class="muted small">{props.room.state.me ? "Only moderators can add videos here." : "Log in to add videos."}</p>}>
+    <Show
+      when={canAdd()}
+      fallback={
+        <Show when={!props.room.ended()}>
+          <p class="muted small">{props.room.state.me ? "Only moderators can add videos here." : "Log in to add videos."}</p>
+        </Show>
+      }
+    >
       <form class="add-form" onSubmit={submit}>
         <div class="add-field">
           <input
