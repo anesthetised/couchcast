@@ -83,18 +83,20 @@ const ALL: Emoji[] = GROUPS.flatMap((g) => g.emoji);
 const BY_NAME = new Map<string, string>();
 for (const em of ALL) for (const n of em.names) if (!BY_NAME.has(n)) BY_NAME.set(n, em.char);
 
-// searchEmoji returns entries whose shortcode contains the query, best
-// (prefix) matches first.
+// searchEmoji returns entries whose shortcode contains the query: the
+// exact name first, then prefix matches, then the rest.
 export function searchEmoji(query: string, limit = 24): Emoji[] {
   const q = query.trim().toLowerCase().replace(/^:/, "");
   if (!q) return [];
+  const exact: Emoji[] = [];
   const prefix: Emoji[] = [];
   const rest: Emoji[] = [];
   for (const em of ALL) {
-    if (em.names.some((n) => n.startsWith(q))) prefix.push(em);
+    if (em.names.includes(q)) exact.push(em);
+    else if (em.names.some((n) => n.startsWith(q))) prefix.push(em);
     else if (em.names.some((n) => n.includes(q))) rest.push(em);
   }
-  return [...prefix, ...rest].slice(0, limit);
+  return [...exact, ...prefix, ...rest].slice(0, limit);
 }
 
 // shortcodeQuery returns the ":prefix" being typed at the caret (at least
