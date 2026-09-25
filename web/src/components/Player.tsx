@@ -624,7 +624,7 @@ const Player: Component<Props> = (props) => {
         <div class="control-group">
           <Show when={chapters().length > 0}>
             <div class="chapter-menu">
-              <button type="button" class="chapter-btn" onClick={() => setShowChapters(!showChapters())} title="Chapters ([ ])" aria-expanded={showChapters()}>
+              <button type="button" class="chapter-btn" onClick={() => setShowChapters(!showChapters())} title="Chapters ([ ])" aria-label="Chapters" aria-expanded={showChapters()}>
                 <span class="chapter-icon" aria-hidden="true">§</span>
                 <span class="chapter-title">{currentChapter()?.title ?? "Chapters"}</span>
               </button>
@@ -697,7 +697,7 @@ const Player: Component<Props> = (props) => {
           </Show>
           <Show when={canReact() && current()}>
             <div class="react-menu">
-              <button type="button" class={`icon ${showReactions() ? "" : "dim"}`} onClick={() => setShowReactions(!showReactions())} title="React" aria-expanded={showReactions()}>
+              <button type="button" class={`icon ${showReactions() ? "" : "dim"}`} onClick={() => setShowReactions(!showReactions())} title="React" aria-label="React" aria-expanded={showReactions()}>
                 ☺
               </button>
               <Show when={showReactions()}>
@@ -714,26 +714,26 @@ const Player: Component<Props> = (props) => {
             </div>
           </Show>
           <Show when={pipSupported && current()}>
-            <button type="button" class={`icon ${pip() ? "" : "dim"}`} onClick={() => void togglePip()} title={pip() ? "Leave picture-in-picture" : "Picture-in-picture"}>
+            <button type="button" class={`icon ${pip() ? "" : "dim"}`} onClick={() => void togglePip()} title={pip() ? "Leave picture-in-picture" : "Picture-in-picture"} aria-label={pip() ? "Leave picture-in-picture" : "Picture-in-picture"}>
               ▣
             </button>
           </Show>
           <Show when={props.isFullscreen && props.onToggleQueue}>
-            <button type="button" class={`icon ${props.queueVisible ? "" : "dim"}`} onClick={props.onToggleQueue} title={props.queueVisible ? "Hide queue" : "Show queue"}>
+            <button type="button" class={`icon ${props.queueVisible ? "" : "dim"}`} onClick={props.onToggleQueue} title={props.queueVisible ? "Hide queue" : "Show queue"} aria-label={props.queueVisible ? "Hide queue" : "Show queue"}>
               ☰
             </button>
           </Show>
           <Show when={props.overlay && props.onToggleChat}>
-            <button type="button" class={`icon ${props.chatVisible ? "" : "dim"}`} onClick={props.onToggleChat} title={props.chatVisible ? "Hide chat" : "Show chat"}>
+            <button type="button" class={`icon ${props.chatVisible ? "" : "dim"}`} onClick={props.onToggleChat} title={props.chatVisible ? "Hide chat" : "Show chat"} aria-label={props.chatVisible ? "Hide chat" : "Show chat"}>
               💬
             </button>
           </Show>
           <Show when={props.onTheater && !props.isFullscreen}>
-            <button type="button" class={`icon ${props.isTheater ? "" : "dim"}`} onClick={props.onTheater} title={props.isTheater ? "Leave theater mode (T)" : "Theater mode (T)"}>
+            <button type="button" class={`icon ${props.isTheater ? "" : "dim"}`} onClick={props.onTheater} title={props.isTheater ? "Leave theater mode (T)" : "Theater mode (T)"} aria-label={props.isTheater ? "Leave theater mode" : "Theater mode"}>
               ▭
             </button>
           </Show>
-          <button type="button" class="icon" onClick={fullscreen} title={props.isFullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"}>
+          <button type="button" class="icon" onClick={fullscreen} title={props.isFullscreen ? "Exit fullscreen (F)" : "Fullscreen (F)"} aria-label={props.isFullscreen ? "Exit fullscreen" : "Fullscreen"}>
             ⛶
           </button>
         </div>

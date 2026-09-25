@@ -165,7 +165,7 @@ const Queue: Component<Props> = (props) => {
               </div>
               <div class="queue-actions">
                 <Show when={voteMode() && me() && !item.current}>
-                  <button type="button" class={`link vote ${item.voted ? "voted" : ""}`} onClick={() => props.room.commands.vote(item.id)} title="Vote up">
+                  <button type="button" class={`link vote ${item.voted ? "voted" : ""}`} onClick={() => props.room.commands.vote(item.id)} title="Vote up" aria-label={`Vote up (${item.votes})`} aria-pressed={item.voted}>
                     ▲ {item.votes}
                   </button>
                 </Show>
@@ -175,10 +175,10 @@ const Queue: Component<Props> = (props) => {
                       play
                     </button>
                     <Show when={manualOrder()}>
-                      <button type="button" class="link" onClick={() => moveUp(idx())} disabled={idx() < 2} title="Move up">
+                      <button type="button" class="link" onClick={() => moveUp(idx())} disabled={idx() < 2} title="Move up" aria-label="Move up">
                         ↑
                       </button>
-                      <button type="button" class="link" onClick={() => moveDown(idx())} disabled={idx() >= items().length - 1} title="Move down">
+                      <button type="button" class="link" onClick={() => moveDown(idx())} disabled={idx() >= items().length - 1} title="Move down" aria-label="Move down">
                         ↓
                       </button>
                     </Show>
@@ -190,12 +190,12 @@ const Queue: Component<Props> = (props) => {
                   </Show>
                 </Show>
                 <Show when={me()}>
-                  <button type="button" class="link" onClick={() => setReporting(item)} title="Report">
+                  <button type="button" class="link" onClick={() => setReporting(item)} title="Report" aria-label="Report">
                     ⚑
                   </button>
                 </Show>
                 <Show when={canManage() || (me() && item.addedBy === me() && !item.current)}>
-                  <button type="button" class="link danger-text" onClick={() => props.room.commands.remove(item.id)} title="Remove">
+                  <button type="button" class="link danger-text" onClick={() => props.room.commands.remove(item.id)} title="Remove" aria-label="Remove">
                     ✕
                   </button>
                 </Show>

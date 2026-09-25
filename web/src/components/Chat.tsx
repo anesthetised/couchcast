@@ -482,7 +482,7 @@ const Chat: Component<Props> = (props) => {
                           </button>
                         </Show>
                         <Show when={canModerate() || m.username === me()}>
-                          <button type="button" class="link danger-text" title="Delete" onClick={() => props.room.commands.chatDelete(m.id)}>
+                          <button type="button" class="link danger-text" title="Delete" aria-label="Delete" onClick={() => props.room.commands.chatDelete(m.id)}>
                             ✕
                           </button>
                         </Show>

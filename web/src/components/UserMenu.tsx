@@ -54,6 +54,7 @@ const UserMenu: Component = () => {
                 class={`icon-btn bell ${notifyOn() ? "on" : ""}`}
                 onClick={() => void toggleNotify()}
                 title={notifyOn() ? "Notifications on" : "Notifications off"}
+                aria-label="Notifications"
                 aria-pressed={notifyOn()}
               >
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true">
