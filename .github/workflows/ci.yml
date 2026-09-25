@@ -45,9 +45,16 @@ jobs:
       - uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
+      # Object storage tests run against the same SeaweedFS service as
+      # development (published on :9000 by compose.dev.yaml).
+      - name: Start SeaweedFS
+        run: docker compose -f compose.yaml -f compose.dev.yaml up -d --wait seaweedfs
       - name: go test
         env:
           COUCHCAST_TEST_DATABASE_URL: postgres://couchcast:couchcast@localhost:5432/couchcast_test?sslmode=disable
+          COUCHCAST_TEST_S3_ENDPOINT: localhost:9000
+          COUCHCAST_TEST_S3_ACCESS_KEY: couchcast
+          COUCHCAST_TEST_S3_SECRET_KEY: couchcast-dev-secret
         # Packages run serially: integration tests share one database.
         run: go test -p 1 -race -coverpkg=./... -coverprofile=coverage.out ./...
       - name: Coverage

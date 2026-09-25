@@ -29,7 +29,9 @@ commands run from the repo root via `just` (see `justfile`):
 - `just server` / `just ingest` / `just web` — the same, one service at a time
 - `just test` — `go test -p 1 -race ./...` in the dev container, like CI
   (the dev image carries gcc for the race detector; integration tests
-  share `COUCHCAST_TEST_DATABASE_URL`, hence serial; skipped when unset)
+  share `COUCHCAST_TEST_DATABASE_URL`, hence serial; skipped when unset;
+  object storage tests use throwaway buckets on the SeaweedFS named by
+  `COUCHCAST_TEST_S3_ENDPOINT`, also skipped when unset)
 - `just cover` — Go coverage across packages (`-coverpkg`), as the badge
 - `just lint` — golangci-lint; `just check` — TypeScript type check
 - `just test-web [args]` — Vitest unit tests (`web/src/**/*.test.ts[x]`,
