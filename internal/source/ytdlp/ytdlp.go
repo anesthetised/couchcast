@@ -40,6 +40,14 @@ func New(path string, extraArgs []string, logger *slog.Logger) *Extractor {
 
 var youtubeID = regexp.MustCompile(`(?:youtube\.com/(?:watch\?(?:.*&)?v=|shorts/|embed/|live/|v/)|youtu\.be/)([A-Za-z0-9_-]{11})`)
 
+// youtubeHosts are the hosts whose links get a youtube: key. The id is
+// only taken from these: a youtube: key promises the link points at
+// YouTube itself (ingest skips the private-address check for it).
+var youtubeHosts = map[string]bool{
+	"youtube.com": true, "www.youtube.com": true, "m.youtube.com": true, "music.youtube.com": true,
+	"youtu.be": true, "www.youtu.be": true,
+}
+
 // Key implements source.Extractor. YouTube URLs dedupe on the video id so
 // that every link form (watch, youtu.be, shorts, with playlist params)
 // maps to one media row; everything else dedupes on the normalized URL.
@@ -49,8 +57,11 @@ func (e *Extractor) Key(raw string) (string, bool) {
 		return "", false
 	}
 
-	if m := youtubeID.FindStringSubmatch(raw); m != nil {
-		return "youtube:" + m[1], true
+	host := strings.TrimSuffix(strings.ToLower(u.Hostname()), ".")
+	if youtubeHosts[host] {
+		if m := youtubeID.FindStringSubmatch(host + u.EscapedPath() + "?" + u.RawQuery); m != nil {
+			return "youtube:" + m[1], true
+		}
 	}
 
 	u.Scheme = strings.ToLower(u.Scheme)

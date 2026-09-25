@@ -52,7 +52,8 @@ func ingestCmd(ctx context.Context, cfg config.Config, logger *slog.Logger) erro
 	extractor := ytdlp.New(cfg.Ingest.YTDLPPath, cfg.Ingest.YTDLPExtraArgs, logger)
 	pkg := packager.New(cfg.Ingest.FFmpegPath, cfg.Ingest.SegmentSeconds)
 
-	pipeline := ingest.NewWorker(repo, queue, extractor, pkg, store, cfg.Ingest.WorkDir, cfg.Ingest.QualityLadder, logger, m)
+	pipeline := ingest.NewWorker(repo, queue, extractor, pkg, store, cfg.Ingest.WorkDir, cfg.Ingest.QualityLadder, logger, m,
+		ingest.SourcePolicy{AllowPrivate: cfg.Ingest.AllowPrivateSources})
 	worker := jobs.NewWorker(queue, logger, workerName(), []string{ingest.JobKind}, pipeline.Handle)
 
 	mux := http.NewServeMux()

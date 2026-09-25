@@ -36,14 +36,15 @@ type Worker struct {
 	ladder    []int
 	logger    *slog.Logger
 	metrics   *metrics.Metrics
+	policy    SourcePolicy
 	http      *http.Client // thumbnails
 }
 
 // NewWorker wires the pipeline. metrics may be nil.
 func NewWorker(repo MediaRepo, queue *jobs.Queue, extractor source.Extractor, pkg *packager.Packager,
-	store *mediastore.Store, workDir string, ladder []int, logger *slog.Logger, m *metrics.Metrics) *Worker {
+	store *mediastore.Store, workDir string, ladder []int, logger *slog.Logger, m *metrics.Metrics, policy SourcePolicy) *Worker {
 	return &Worker{repo: repo, queue: queue, extractor: extractor, packager: pkg, store: store,
-		workDir: workDir, ladder: ladder, logger: logger, metrics: m, http: &http.Client{Timeout: thumbnailTimeout}}
+		workDir: workDir, ladder: ladder, logger: logger, metrics: m, policy: policy, http: policy.httpClient(thumbnailTimeout)}
 }
 
 // Handle implements jobs.Handler.
@@ -171,6 +172,14 @@ func (w *Worker) process(ctx context.Context, media *entity.Media, log *slog.Log
 
 	// --- probe ---------------------------------------------------------------
 	if err := w.setStatus(ctx, media.ID, entity.MediaProbing); err != nil {
+		return err
+	}
+	// Checked again at fetch time: the row may predate the check (a retry)
+	// or the name may resolve elsewhere by now.
+	if err := w.policy.check(ctx, media.SourceKey, media.SourceURL); err != nil {
+		if errors.Is(err, ErrPrivateAddress) {
+			return jobs.Permanent(errors.New("links to private or local addresses are not allowed"))
+		}
 		return err
 	}
 	start := time.Now()

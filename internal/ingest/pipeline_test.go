@@ -25,6 +25,7 @@ import (
 
 	"github.com/anesthetised/couchcast/internal/entity"
 	"github.com/anesthetised/couchcast/internal/jobs"
+	"github.com/anesthetised/couchcast/internal/mediastore"
 	"github.com/anesthetised/couchcast/internal/mediastore/storetest"
 	"github.com/anesthetised/couchcast/internal/packager"
 	"github.com/anesthetised/couchcast/internal/repository"
@@ -126,6 +127,7 @@ type pipeline struct {
 	src    *fakeSource
 	svc    *Service
 	worker *Worker
+	store  *mediastore.Store
 	list   func(string) []string
 }
 
@@ -152,8 +154,11 @@ func newPipeline(t *testing.T) *pipeline {
 	logger := slog.New(slog.DiscardHandler)
 	return &pipeline{
 		repo: repo, queue: queue, src: src, list: list,
-		svc:    NewService(repo, queue, src),
-		worker: NewWorker(repo, queue, src, packager.New(ffmpeg, 1), store, t.TempDir(), []int{1080, 720, 480, 360}, logger, nil),
+		// The thumbnail server is on loopback, so the fixture allows
+		// private addresses; TestServicePrivateAddresses guards them.
+		svc:    NewService(repo, queue, src, SourcePolicy{AllowPrivate: true}),
+		worker: NewWorker(repo, queue, src, packager.New(ffmpeg, 1), store, t.TempDir(), []int{1080, 720, 480, 360}, logger, nil, SourcePolicy{AllowPrivate: true}),
+		store:  store,
 	}
 }
 
@@ -308,4 +313,48 @@ func TestServiceAdmission(t *testing.T) {
 	assert.Equal(t, PlaylistLimit, pl.Total)
 	_, err = p.svc.Playlist(ctx, "https://video.test/x")
 	require.ErrorIs(t, err, ErrUnsupportedURL)
+}
+
+func TestServicePrivateAddresses(t *testing.T) {
+	p := newPipeline(t)
+	ctx := context.Background()
+	p.src.probeErr = errors.New("must not probe")
+
+	// video.test pointing into the private network, the way a compose
+	// service name or a cloud metadata alias would.
+	guarded := NewService(p.repo, p.queue, p.src, SourcePolicy{Resolver: fakeResolver{"video.test": "169.254.169.254"}})
+	_, err := guarded.EnsureMedia(ctx, p.repo.Pool(), "https://video.test/meta")
+	require.ErrorIs(t, err, ErrPrivateAddress)
+	_, err = p.repo.GetMediaByKey(ctx, "test:meta")
+	require.ErrorIs(t, err, repository.ErrNotFound, "nothing is created or queued")
+	_, err = p.queue.Claim(ctx, "test", []string{JobKind})
+	require.ErrorIs(t, err, jobs.ErrNoJobs)
+	_, err = guarded.Preview(ctx, "https://video.test/meta")
+	require.ErrorIs(t, err, ErrPrivateAddress, "refused before the extractor runs")
+	_, err = guarded.Playlist(ctx, "https://video.test/list/abc")
+	require.ErrorIs(t, err, ErrPrivateAddress)
+
+	unknown := NewService(p.repo, p.queue, p.src, SourcePolicy{Resolver: fakeResolver{}})
+	_, err = unknown.EnsureMedia(ctx, p.repo.Pool(), "https://video.test/meta")
+	require.ErrorIs(t, err, ErrUnknownHost)
+
+	public := NewService(p.repo, p.queue, p.src, SourcePolicy{Resolver: fakeResolver{"video.test": "93.184.216.34"}})
+	m, err := public.EnsureMedia(ctx, p.repo.Pool(), "https://video.test/meta")
+	require.NoError(t, err)
+
+	// The worker checks again before fetching: the name may point
+	// elsewhere by now, or the row may predate the check.
+	logger := slog.New(slog.DiscardHandler)
+	worker := NewWorker(p.repo, p.queue, p.src, packager.New(p.src.ffmpeg, 1), p.store, t.TempDir(), []int{480}, logger, nil,
+		SourcePolicy{Resolver: fakeResolver{"video.test": "10.0.0.8"}})
+	job, err := p.queue.Claim(ctx, "test", []string{JobKind})
+	require.NoError(t, err)
+	err = worker.Handle(ctx, job)
+	require.Error(t, err)
+	assert.True(t, jobs.IsPermanent(err))
+	got, err := p.repo.GetMedia(ctx, m.ID)
+	require.NoError(t, err)
+	assert.Equal(t, entity.MediaFailed, got.Status)
+	assert.Equal(t, "links to private or local addresses are not allowed", got.Error)
+	assert.Zero(t, p.src.downloads)
 }

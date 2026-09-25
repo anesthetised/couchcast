@@ -64,7 +64,7 @@ func newWSServer(t *testing.T) (*httptest.Server, *pgxpool.Pool) {
 	repo := repository.New(pool)
 	logger := slog.New(slog.DiscardHandler)
 
-	admit := ingest.NewService(repo, jobs.New(pool), ytdlp.New("yt-dlp", nil, logger))
+	admit := ingest.NewService(repo, jobs.New(pool), ytdlp.New("yt-dlp", nil, logger), ingest.SourcePolicy{})
 	rooms := room.NewManager(room.Deps{
 		Store: repo, Chat: repo, Admit: admit, Signer: mediastore.NewSigner("0123456789abcdef0123456789abcdef", time.Hour), Logger: logger,
 	})

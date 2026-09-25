@@ -50,6 +50,12 @@ type playlistResponse struct {
 // playlistTimeout is longer than a probe: a playlist page is bigger.
 const playlistTimeout = 30 * time.Second
 
+// Answers for links the server refuses to fetch (see internal/netguard).
+const (
+	msgPrivateAddress = "links to private or local addresses are not allowed"
+	msgUnknownHost    = "this site could not be found"
+)
+
 // handleProbe answers GET /api/v1/media/probe?url= for the add form:
 // title, duration and thumbnail, plus the ingest status when the video
 // is already known. Signed in and rate limited per user.
@@ -78,6 +84,12 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, ingest.ErrBlocked):
 		writeError(w, http.StatusBadRequest, "this video has been blocked by an administrator")
+		return
+	case errors.Is(err, ingest.ErrPrivateAddress):
+		writeError(w, http.StatusBadRequest, msgPrivateAddress)
+		return
+	case errors.Is(err, ingest.ErrUnknownHost):
+		writeError(w, http.StatusBadRequest, msgUnknownHost)
 		return
 	case errors.Is(err, context.DeadlineExceeded):
 		writeError(w, http.StatusGatewayTimeout, "the site did not answer in time")
@@ -113,6 +125,12 @@ func (s *Server) handlePlaylist(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, ingest.ErrUnsupportedURL):
 		writeError(w, http.StatusBadRequest, "this is not a playlist link")
+		return
+	case errors.Is(err, ingest.ErrPrivateAddress):
+		writeError(w, http.StatusBadRequest, msgPrivateAddress)
+		return
+	case errors.Is(err, ingest.ErrUnknownHost):
+		writeError(w, http.StatusBadRequest, msgUnknownHost)
 		return
 	case errors.Is(err, context.DeadlineExceeded):
 		writeError(w, http.StatusGatewayTimeout, "the site did not answer in time")

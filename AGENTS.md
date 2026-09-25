@@ -96,6 +96,23 @@ fails) and a production image build.
   (download: bytes from the selected formats; packaging: ffmpeg
   `-progress` out_time against the duration), shown in the queue and on
   the preparing overlay.
+- `internal/netguard` keeps fetches of user-supplied links out of the
+  private network: `IsPublicIP` (loopback, RFC 1918, CGNAT, link-local,
+  unique-local, multicast, 0/8, reserved, IPv4-mapped/NAT64/6to4 forms),
+  `CheckURL` (resolves the host, also legacy spellings like `127.1`; any
+  non-public answer fails) and `Control`/`Transport` (a dialer check on
+  the address actually dialled, so redirects and DNS rebinding are caught
+  for our own HTTP clients). `ingest.SourcePolicy` applies it: `Service`
+  checks links in `EnsureMedia`, `Preview` and `Playlist`
+  (`ErrPrivateAddress` / `ErrUnknownHost`, mapped in `room` and `apihttp`
+  like `ErrUnsupportedURL`), the worker checks again before probing
+  (permanent failure) and fetches thumbnails through the guarded
+  transport. `youtube:` keys are minted only for YouTube's own hosts and
+  skip the lookup. `COUCHCAST_ALLOW_PRIVATE_SOURCES=true` turns it all off
+  for LAN self-hosters. Residual risk: yt-dlp resolves DNS and follows
+  redirects itself, so the admission check is not airtight against DNS
+  rebinding or a public page that redirects inward; deployments should keep
+  the ingest worker off networks it should not reach.
 - `internal/source` abstracts extractors; `source/ytdlp` shells out to
   yt-dlp (fixture in `testdata/`). `source.SelectFormats` picks one codec
   family and the best format per ladder height — never transcode.

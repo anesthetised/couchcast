@@ -120,6 +120,14 @@ deploy/          files mounted into infrastructure containers
   `COUCHCAST_INGEST_METRICS_ADDR` on the worker (Prometheus format).
 - **YouTube** may require cookies or a PO-token provider on some networks;
   pass extra flags through `COUCHCAST_YTDLP_EXTRA_ARGS`.
+- **Private addresses.** Links whose host is or resolves to a loopback,
+  private, CGNAT, link-local (cloud metadata) or unique-local address are
+  refused, and the worker fetches posters only from public addresses. To
+  queue files from your own LAN, set `COUCHCAST_ALLOW_PRIVATE_SOURCES=true`
+  on both `serve` and `ingest` — only on an instance where everyone who can
+  add videos is trusted. yt-dlp resolves names and follows redirects on its
+  own, so the check is not airtight: keep the ingest worker off networks it
+  has no business reaching (it needs only PostgreSQL, S3 and the internet).
 
 A room that is playing stays loaded, keeps advancing through its queue and
 is resumed after a server restart. By default it pauses two minutes after

@@ -79,7 +79,8 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 
 	queue := jobs.New(pool)
-	admit := ingest.NewService(repo, queue, ytdlp.New(cfg.Ingest.YTDLPPath, cfg.Ingest.YTDLPExtraArgs, logger))
+	admit := ingest.NewService(repo, queue, ytdlp.New(cfg.Ingest.YTDLPPath, cfg.Ingest.YTDLPExtraArgs, logger),
+		ingest.SourcePolicy{AllowPrivate: cfg.Ingest.AllowPrivateSources})
 	roomDeps := room.Deps{Store: repo, Chat: repo, Admit: admit, Signer: signer, Logger: logger, QueueAddLimiter: queueAddLimiter}
 	if notifier != nil {
 		roomDeps.Notifier = notifier

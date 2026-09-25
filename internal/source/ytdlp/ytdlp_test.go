@@ -18,7 +18,13 @@ func TestKey(t *testing.T) {
 		"https://youtu.be/aqz-KE-bpKQ?si=abc":                         "youtube:aqz-KE-bpKQ",
 		"https://www.youtube.com/shorts/aqz-KE-bpKQ":                  "youtube:aqz-KE-bpKQ",
 		"https://m.youtube.com/watch?v=aqz-KE-bpKQ":                   "youtube:aqz-KE-bpKQ",
+		"https://WWW.YouTube.com./watch?v=aqz-KE-bpKQ":                "youtube:aqz-KE-bpKQ",
 		"HTTPS://Example.COM/video.mp4#t=5":                           "url:https://example.com/video.mp4",
+		// The id is only trusted on YouTube's own hosts: these are fetched
+		// from elsewhere and must go through the address check.
+		"http://169.254.169.254/youtube.com/watch?v=aqz-KE-bpKQ": "url:http://169.254.169.254/youtube.com/watch?v=aqz-KE-bpKQ",
+		"http://10.0.0.1/?u=https://youtu.be/aqz-KE-bpKQ":        "url:http://10.0.0.1/?u=https://youtu.be/aqz-KE-bpKQ",
+		"https://10.0.0.1#www.youtube.com/watch?v=aqz-KE-bpKQ":   "url:https://10.0.0.1",
 	}
 	for in, want := range cases {
 		got, ok := e.Key(in)

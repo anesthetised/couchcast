@@ -13,6 +13,10 @@ func TestLoadDefaults(t *testing.T) {
 	assert.Equal(t, ":8080", cfg.Web.Addr)
 	assert.Equal(t, []int{1080, 720, 480, 360}, cfg.Ingest.QualityLadder)
 	assert.Equal(t, 2, cfg.Ingest.Workers)
+	assert.False(t, cfg.Ingest.AllowPrivateSources, "private sources are opt-in")
+
+	t.Setenv("COUCHCAST_ALLOW_PRIVATE_SOURCES", "true")
+	assert.True(t, Load().Ingest.AllowPrivateSources)
 }
 
 func TestValidate(t *testing.T) {

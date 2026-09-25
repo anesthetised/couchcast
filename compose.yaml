@@ -12,6 +12,7 @@ x-app-env: &app-env
   COUCHCAST_S3_ACCESS_KEY: ${S3_ACCESS_KEY:-couchcast}
   COUCHCAST_S3_SECRET_KEY: ${S3_SECRET_KEY:-couchcast-dev-secret}
   COUCHCAST_S3_USE_SSL: "false"
+  COUCHCAST_ALLOW_PRIVATE_SOURCES: ${COUCHCAST_ALLOW_PRIVATE_SOURCES:-false}
 
 services:
   postgres:

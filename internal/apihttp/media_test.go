@@ -3,6 +3,7 @@ package apihttp
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"testing/fstest"
@@ -25,6 +26,10 @@ func (fakeProber) Preview(ctx context.Context, raw string) (*ingest.Preview, err
 		return nil, ingest.ErrBlocked
 	case "https://slow":
 		return nil, context.DeadlineExceeded
+	case "http://10.0.0.1":
+		return nil, fmt.Errorf("%w: 10.0.0.1", ingest.ErrPrivateAddress)
+	case "https://nowhere":
+		return nil, fmt.Errorf("%w: lookup nowhere: no such host", ingest.ErrUnknownHost)
 	case "https://private":
 		return nil, errors.New("yt-dlp: private video")
 	case "https://known":
@@ -44,7 +49,11 @@ func (fakeProber) PlaylistURL(raw string) (string, bool, bool) {
 }
 
 func (fakeProber) Playlist(ctx context.Context, raw string) (*source.Playlist, error) {
-	if raw != "https://list" {
+	switch raw {
+	case "https://list":
+	case "http://10.0.0.1/list":
+		return nil, ingest.ErrPrivateAddress
+	default:
 		return nil, ingest.ErrUnsupportedURL
 	}
 	return &source.Playlist{Title: "Basics", Total: 9, Entries: []source.PlaylistEntry{{URL: "https://a", Title: "A", DurationMs: 1000}}}, nil
@@ -66,6 +75,9 @@ func TestPlaylist(t *testing.T) {
 	pl := decodeBody[playlistResponse](t, env.do(http.MethodGet, "/api/v1/media/playlist?url=https://list", nil))
 	assert.Equal(t, playlistResponse{Title: "Basics", Total: 9, Entries: []playlistEntryResponse{{URL: "https://a", Title: "A", DurationMs: 1000}}}, pl)
 	assert.Equal(t, http.StatusBadRequest, env.do(http.MethodGet, "/api/v1/media/playlist?url=https://fresh", nil).Code)
+	rec := env.do(http.MethodGet, "/api/v1/media/playlist?url=http://10.0.0.1/list", nil)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, msgPrivateAddress, decodeBody[errorResponse](t, rec).Error)
 }
 
 func TestProbe(t *testing.T) {
@@ -101,6 +113,15 @@ func TestProbe(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, rec.Code)
 	rec = env2.do(http.MethodGet, "/api/v1/media/probe?url=https://private", nil)
 	assert.Equal(t, http.StatusUnprocessableEntity, rec.Code)
+
+	// Links into the server's own network are refused with a plain
+	// answer, never the fetcher's error.
+	rec = env2.do(http.MethodGet, "/api/v1/media/probe?url=http://10.0.0.1", nil)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, msgPrivateAddress, decodeBody[errorResponse](t, rec).Error)
+	rec = env2.do(http.MethodGet, "/api/v1/media/probe?url=https://nowhere", nil)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, msgUnknownHost, decodeBody[errorResponse](t, rec).Error)
 
 	rec = env2.do(http.MethodGet, "/api/v1/media/probe?url=https://fresh", nil)
 	assert.Equal(t, http.StatusOK, rec.Code)
