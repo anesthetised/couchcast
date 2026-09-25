@@ -43,7 +43,13 @@ commands run from the repo root via `just` (see `justfile`):
   `couchcast_e2e` database with their own server and Vite instance
   (compose profile `e2e`, `compose.e2e.yaml`); never touches dev data.
   Tests sign up their own users (`support/app.ts`), create rooms through
-  the API and use `sql()` for what no UI does (the admin role). Failures
+  the API and use `sql()` for what no UI does (the admin role).
+  `readyVideo()` inserts a ready media row without files (enough for queue
+  and room behaviour); `PLAYABLE_URL` is one real clip that `e2e/seed`
+  (run by the recipe inside e2e-web) renders with ffmpeg, packages and
+  uploads once, for tests that need the player to play (`sync.spec.ts`).
+  Chromium runs with autoplay allowed; compare player times with
+  `expect.poll`, the display ticks every 250 ms. Failures
   leave traces and screenshots in `e2e/results/`, the HTML report in
   `e2e/report/`. Use it to verify signed-in flows.
 - `just build` — production image; `just prod-up` — run the base compose file;

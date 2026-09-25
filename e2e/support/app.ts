@@ -80,6 +80,11 @@ export async function readyVideo(title = "E2E video", durationMs = 600_000): Pro
   return url;
 }
 
+// PLAYABLE_URL is the one clip with real media files (see e2e/seed),
+// for tests that need the player to actually play.
+export const PLAYABLE_URL = "https://www.youtube.com/watch?v=e2ePlayable";
+export const PLAYABLE_TITLE = "Playable clip";
+
 export async function makeAdmin(username: string) {
   await sql("UPDATE users SET role = 'admin' WHERE username = $1", [username]);
 }
