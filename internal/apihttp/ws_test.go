@@ -78,8 +78,9 @@ func newWSServer(t *testing.T) (*httptest.Server, *pgxpool.Pool) {
 		Logger: logger, DB: repo, Metrics: metrics.New("test2"), Static: fstest.MapFS{},
 		Users: repo, Rooms: repo, Sessions: auth.NewSessions(repo, time.Hour, false),
 		AuthLimiter: ratelimit.New(6000, 1000), LoginLimiter: ratelimit.New(6000, 1000),
-		WS:    h,
-		OnBan: func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "banned") },
+		WS:       h,
+		OnBan:    func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "banned") },
+		OnRemove: func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "removed from room") },
 	})
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
@@ -452,4 +453,29 @@ func TestWebSocketAccess(t *testing.T) {
 	assert.Equal(t, websocket.StatusPolicyViolation, websocket.CloseStatus(closeErr))
 	_, err = friend.dial(ctx, "open")
 	require.Error(t, err)
+
+	// Removing a member of a private room says so, not "banned".
+	member := register(t, ts, "insider")
+	require.Equal(t, http.StatusCreated, owner.rest(ctx, http.MethodPost, "/api/v1/rooms/closed/invites", `{"username":"insider"}`))
+	invites := member.getJSON(ctx, "/api/v1/invites")
+	require.Len(t, invites, 1)
+	require.Equal(t, http.StatusOK, member.rest(ctx, http.MethodPost, "/api/v1/invites/"+invites[0]["id"].(string)+"/accept", ""))
+	_, err = member.dial(ctx, "closed")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNoContent, owner.rest(ctx, http.MethodDelete, "/api/v1/rooms/closed/members/insider", ""))
+	kicked, closeErr = member.readToClose(ctx)
+	assert.Equal(t, "removed from room", kicked)
+	assert.Equal(t, websocket.StatusPolicyViolation, websocket.CloseStatus(closeErr))
+}
+
+func (w *wsClient) getJSON(ctx context.Context, path string) []map[string]any {
+	w.t.Helper()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, w.ts.URL+path, nil)
+	req.AddCookie(w.cookie)
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(w.t, err)
+	defer func() { _ = resp.Body.Close() }()
+	var out []map[string]any
+	require.NoError(w.t, json.NewDecoder(resp.Body).Decode(&out))
+	return out
 }

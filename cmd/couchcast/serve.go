@@ -124,7 +124,8 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		CacheBudget:  cfg.Web.MaxCacheBytes,
 		RoomsLoaded:  rooms.Loaded,
 		WS:           wsHub,
-		OnBan:        func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "removed from room") },
+		OnBan:        func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "banned") },
+		OnRemove:     func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "removed from room") },
 		OnLeave:      func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "left") },
 		OnMute:       func(roomID, _ uuid.UUID, line string) { rooms.Log(ctx, roomID, line) },
 		OnRoomChanged: func(roomID uuid.UUID) {

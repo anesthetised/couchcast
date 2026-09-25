@@ -247,7 +247,12 @@ fails) and a production image build.
   makes the former owner a moderator). `session.end` (moderators) pauses,
   moves the queue to the history and closes every connection with reason
   `session ended`; the web client treats any 1008 close with a reason as
-  the end of the session (kick, ban, room deleted, left).
+  the end of the session. Reasons: `banned` (room or site ban, the `OnBan`
+  and `OnUserBanned` hooks), `removed from room` (`OnRemove`, a member
+  taken out of a private room), `room deleted`, `left`, `session ended`.
+  The hub's `Close` only signals: its write loop sends what is queued
+  (the `kicked` message), then the close frame, so a room never blocks
+  on a slow client while holding its lock.
 - The SPA handler injects Open Graph tags (`internal/apihttp/meta.go`)
   into index.html for `/r/{slug}` of public rooms — name, description or
   "Playing … · N watching", the current thumbnail — cached 30 s per slug;
