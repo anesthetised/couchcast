@@ -20,6 +20,15 @@ export async function signUp(page: Page, prefix = "user"): Promise<string> {
   return name;
 }
 
+// logIn signs an existing user in through the form.
+export async function logIn(page: Page, name: string, password = PASSWORD) {
+  await page.goto("/login");
+  await page.getByLabel("Username").fill(name);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Log in", exact: true }).click();
+  await expect(page.locator(".usermenu .username")).toContainText(name);
+}
+
 // createRoom goes through the API with the page's session: most tests
 // are about what happens inside a room, not about the form.
 export async function createRoom(
