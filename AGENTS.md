@@ -49,7 +49,10 @@ commands run from the repo root via `just` (see `justfile`):
   (run by the recipe inside e2e-web) renders with ffmpeg, packages and
   uploads once, for tests that need the player to play (`sync.spec.ts`).
   Chromium runs with autoplay allowed; compare player times with
-  `expect.poll`, the display ticks every 250 ms. Failures
+  `expect.poll`, the display ticks every 250 ms. `a11y.spec.ts` runs axe
+  (WCAG 2.1 A/AA, serious and critical findings fail) over the main
+  pages and the room's dialogs, and checks that nothing scrolls sideways
+  at 375 px. Failures
   leave traces and screenshots in `e2e/results/`, the HTML report in
   `e2e/report/`. Use it to verify signed-in flows.
 - `just build` — production image; `just prod-up` — run the base compose file;
