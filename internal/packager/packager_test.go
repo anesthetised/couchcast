@@ -1,10 +1,15 @@
 package packager
 
 import (
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestArgs(t *testing.T) {
@@ -36,4 +41,33 @@ func TestParseProgressLine(t *testing.T) {
 	assert.False(t, ok)
 	_, ok = ParseProgressLine("out_time_us=N/A")
 	assert.False(t, ok)
+}
+
+func TestRunReportsProgressAndFailures(t *testing.T) {
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Skip("ffmpeg not installed")
+	}
+	dir := t.TempDir()
+	video, audio := filepath.Join(dir, "v.webm"), filepath.Join(dir, "a.webm")
+	for _, gen := range [][]string{
+		{"-f", "lavfi", "-i", "testsrc=duration=2:rate=10:size=320x180", "-c:v", "libvpx-vp9", "-deadline", "realtime", video},
+		{"-f", "lavfi", "-i", "sine=duration=2", "-c:a", "libopus", audio},
+	} {
+		out, err := exec.Command(ffmpeg, append([]string{"-y", "-hide_banner", "-loglevel", "error"}, gen...)...).CombinedOutput() //nolint:gosec // test fixture
+		require.NoError(t, err, string(out))
+	}
+
+	p := New(ffmpeg, 1)
+	outDir := filepath.Join(dir, "dash")
+	require.NoError(t, os.MkdirAll(outDir, 0o750))
+	var last int64
+	require.NoError(t, p.Run(context.Background(), []Input{{Path: video, Width: 320, Height: 180}, {Path: audio, Audio: true}}, outDir, func(ms int64) { last = ms }))
+	assert.Greater(t, last, int64(1000))
+	_, err = os.Stat(filepath.Join(outDir, ManifestName))
+	require.NoError(t, err)
+
+	err = p.Run(context.Background(), []Input{{Path: filepath.Join(dir, "missing.webm")}}, outDir, nil)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "missing.webm", "ffmpeg's own message is kept")
 }

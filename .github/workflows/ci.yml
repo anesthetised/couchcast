@@ -45,6 +45,10 @@ jobs:
       - uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
+      # Packaging, storyboard and ingest tests render clips with ffmpeg
+      # and skip without it.
+      - name: Install ffmpeg
+        run: command -v ffmpeg || (sudo apt-get update -q && sudo apt-get install -yq --no-install-recommends ffmpeg)
       # Object storage tests run against the same SeaweedFS service as
       # development (published on :9000 by compose.dev.yaml).
       - name: Start SeaweedFS
