@@ -15,6 +15,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -55,14 +56,17 @@ func readUntil(t *testing.T, ctx context.Context, c *websocket.Conn, typ string)
 	}
 }
 
-func TestWebSocketRoom(t *testing.T) {
+// newWSServer runs the API with a real room manager and hub over the
+// test database.
+func newWSServer(t *testing.T) (*httptest.Server, *pgxpool.Pool) {
+	t.Helper()
 	pool := repotest.Pool(t)
 	repo := repository.New(pool)
 	logger := slog.New(slog.DiscardHandler)
 
 	admit := ingest.NewService(repo, jobs.New(pool), ytdlp.New("yt-dlp", nil, logger))
 	rooms := room.NewManager(room.Deps{
-		Store: repo, Admit: admit, Signer: mediastore.NewSigner("0123456789abcdef0123456789abcdef", time.Hour), Logger: logger,
+		Store: repo, Chat: repo, Admit: admit, Signer: mediastore.NewSigner("0123456789abcdef0123456789abcdef", time.Hour), Logger: logger,
 	})
 
 	var srv *Server
@@ -78,7 +82,12 @@ func TestWebSocketRoom(t *testing.T) {
 		OnBan: func(roomID, userID uuid.UUID) { rooms.Kick(roomID, userID, "banned") },
 	})
 	ts := httptest.NewServer(srv.Handler())
-	defer ts.Close()
+	t.Cleanup(ts.Close)
+	return ts, pool
+}
+
+func TestWebSocketRoom(t *testing.T) {
+	ts, pool := newWSServer(t)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
@@ -180,4 +189,267 @@ func TestWebSocketRoom(t *testing.T) {
 	raw, _ := json.Marshal(state["room"])
 	assert.Contains(t, string(raw), `"slug":"ws-room"`)
 	_ = protocol.TypeWelcome
+}
+
+// wsClient is one signed-in (or anonymous) browser for the hub tests.
+type wsClient struct {
+	t      *testing.T
+	ts     *httptest.Server
+	cookie *http.Cookie
+	c      *websocket.Conn
+}
+
+func register(t *testing.T, ts *httptest.Server, name string) *wsClient {
+	t.Helper()
+	resp, err := http.Post(ts.URL+"/api/v1/auth/register", "application/json",
+		strings.NewReader(`{"username":"`+name+`","password":"password-123"}`))
+	require.NoError(t, err)
+	require.Equal(t, http.StatusCreated, resp.StatusCode)
+	_ = resp.Body.Close()
+	return &wsClient{t: t, ts: ts, cookie: resp.Cookies()[0]}
+}
+
+func (w *wsClient) rest(ctx context.Context, method, path, body string) int {
+	w.t.Helper()
+	req, _ := http.NewRequestWithContext(ctx, method, w.ts.URL+path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if w.cookie != nil {
+		req.AddCookie(w.cookie)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	require.NoError(w.t, err)
+	_ = resp.Body.Close()
+	return resp.StatusCode
+}
+
+// dial connects to the room and returns the welcome.
+func (w *wsClient) dial(ctx context.Context, slug string) (wsMessage, error) {
+	opts := &websocket.DialOptions{}
+	if w.cookie != nil {
+		opts.HTTPHeader = http.Header{"Cookie": {w.cookie.String()}}
+	}
+	c, resp, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(w.ts.URL, "http")+"/api/v1/rooms/"+slug+"/ws", opts)
+	if resp != nil && resp.Body != nil {
+		_ = resp.Body.Close()
+	}
+	if err != nil {
+		return nil, err
+	}
+	w.t.Cleanup(func() { _ = c.CloseNow() })
+	w.c = c
+	return readMessage(w.t, ctx, c), nil
+}
+
+func (w *wsClient) send(ctx context.Context, msg map[string]any) {
+	w.t.Helper()
+	require.NoError(w.t, wsjson.Write(ctx, w.c, msg))
+}
+
+// until reads until a message of the type arrives.
+func (w *wsClient) until(ctx context.Context, typ string) wsMessage {
+	w.t.Helper()
+	return readUntil(w.t, ctx, w.c, typ)
+}
+
+// state reads snapshots until one satisfies ok.
+func (w *wsClient) state(ctx context.Context, ok func(wsMessage) bool) wsMessage {
+	w.t.Helper()
+	for {
+		m := readMessage(w.t, ctx, w.c)
+		if m["type"] == "room.state" && ok(m) {
+			return m
+		}
+		if m["type"] == "error" {
+			w.t.Fatalf("unexpected error: %v", m)
+		}
+	}
+}
+
+// expectError sends a command and returns the error code it gets.
+func (w *wsClient) expectError(ctx context.Context, msg map[string]any) string {
+	w.t.Helper()
+	w.send(ctx, msg)
+	return w.until(ctx, "error")["code"].(string)
+}
+
+func queueOf(m wsMessage) []map[string]any {
+	raw := m["queue"].([]any)
+	out := make([]map[string]any, 0, len(raw))
+	for _, q := range raw {
+		out = append(out, q.(map[string]any))
+	}
+	return out
+}
+
+func playbackOf(m wsMessage) map[string]any { return m["playback"].(map[string]any) }
+
+// readyVideo stores a playable YouTube media row, as if ingest had run.
+func readyVideo(t *testing.T, ctx context.Context, pool *pgxpool.Pool, id string) string {
+	t.Helper()
+	url := "https://www.youtube.com/watch?v=" + id
+	_, err := pool.Exec(ctx, `
+		INSERT INTO media (source_key, source_url, title, duration_ms, status, progress, renditions, s3_prefix)
+		VALUES ($1, $2, $3, 60000, 'ready', 1, '[{"id":"0","height":720,"width":1280,"codec":"vp9","bitrate":1}]', $4)`,
+		"youtube:"+id, url, "Video "+id, "media/"+id+"/")
+	require.NoError(t, err)
+	return url
+}
+
+func TestWebSocketCommands(t *testing.T) {
+	ts, pool := newWSServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	owner := register(t, ts, "host")
+	guest := register(t, ts, "friend")
+	require.Equal(t, http.StatusCreated, owner.rest(ctx, http.MethodPost, "/api/v1/rooms", `{"name":"Cmds","slug":"cmds"}`))
+	a, b, c := readyVideo(t, ctx, pool, "aaaaaaaaaaa"), readyVideo(t, ctx, pool, "bbbbbbbbbbb"), readyVideo(t, ctx, pool, "ccccccccccc")
+
+	_, err := owner.dial(ctx, "cmds")
+	require.NoError(t, err)
+	gw, err := guest.dial(ctx, "cmds")
+	require.NoError(t, err)
+	assert.Equal(t, "friend", gw["me"])
+
+	// Queue: add, add many, move, shuffle, remove.
+	owner.send(ctx, map[string]any{"type": "queue.add", "url": a})
+	st := owner.state(ctx, func(m wsMessage) bool { return len(queueOf(m)) == 1 && playbackOf(m)["playing"] == true })
+	first := queueOf(st)[0]["id"].(string)
+	owner.send(ctx, map[string]any{"type": "queue.addMany", "urls": []string{b, c}})
+	st = owner.state(ctx, func(m wsMessage) bool { return len(queueOf(m)) == 3 })
+	second, third := queueOf(st)[1]["id"].(string), queueOf(st)[2]["id"].(string)
+	owner.send(ctx, map[string]any{"type": "queue.move", "itemId": third, "afterId": first})
+	owner.state(ctx, func(m wsMessage) bool { return queueOf(m)[1]["id"] == third })
+	owner.send(ctx, map[string]any{"type": "queue.shuffle"})
+	owner.state(ctx, func(m wsMessage) bool { return len(queueOf(m)) == 3 })
+	assert.Equal(t, "forbidden", guest.expectError(ctx, map[string]any{"type": "queue.shuffle"}))
+	assert.Equal(t, "forbidden", guest.expectError(ctx, map[string]any{"type": "queue.remove", "itemId": second}))
+
+	// Playback: pause, seek, rate, play, next, jump.
+	owner.send(ctx, map[string]any{"type": "pause"})
+	pb := owner.until(ctx, "playback")
+	assert.Equal(t, false, pb["playing"])
+	owner.send(ctx, map[string]any{"type": "seek", "positionMs": 12_000})
+	pb = owner.until(ctx, "playback")
+	assert.EqualValues(t, 12_000, pb["positionMs"])
+	owner.send(ctx, map[string]any{"type": "rate.set", "rate": 1.5})
+	pb = owner.until(ctx, "playback")
+	assert.EqualValues(t, 1.5, pb["rate"])
+	owner.send(ctx, map[string]any{"type": "play"})
+	pb = owner.until(ctx, "playback")
+	assert.Equal(t, true, pb["playing"])
+	assert.Equal(t, "forbidden", guest.expectError(ctx, map[string]any{"type": "pause"}))
+	owner.send(ctx, map[string]any{"type": "next"})
+	st = owner.state(ctx, func(m wsMessage) bool { return len(queueOf(m)) == 2 })
+	require.Len(t, st["played"].([]any), 1)
+	owner.send(ctx, map[string]any{"type": "jump", "itemId": queueOf(st)[1]["id"]})
+	st = owner.state(ctx, func(m wsMessage) bool { return len(queueOf(m)) == 1 })
+
+	// Played list: replay one, then clear it.
+	playedID := st["played"].([]any)[0].(map[string]any)["id"].(string)
+	owner.send(ctx, map[string]any{"type": "queue.replay", "itemId": playedID})
+	owner.state(ctx, func(m wsMessage) bool { return len(queueOf(m)) == 2 })
+	owner.send(ctx, map[string]any{"type": "queue.clearPlayed"})
+	owner.state(ctx, func(m wsMessage) bool { return len(m["played"].([]any)) == 0 })
+	assert.Equal(t, "not_found", owner.expectError(ctx, map[string]any{"type": "queue.retry", "itemId": uuid.New().String()}))
+
+	// Votes: vote mode lets members vote for items and to skip.
+	owner.send(ctx, map[string]any{"type": "settings.set", "voteMode": true, "slowModeSec": 0})
+	st = owner.state(ctx, func(m wsMessage) bool {
+		return m["room"].(map[string]any)["settings"].(map[string]any)["voteMode"] == true
+	})
+	waiting := queueOf(st)[1]["id"].(string)
+	guest.send(ctx, map[string]any{"type": "queue.vote", "itemId": waiting})
+	guest.state(ctx, func(m wsMessage) bool { return len(queueOf(m)) == 2 && queueOf(m)[1]["voted"] == true })
+	guest.send(ctx, map[string]any{"type": "skip.vote"})
+	guest.state(ctx, func(m wsMessage) bool { return m["skipVoted"] == true || len(queueOf(m)) == 1 })
+
+	// Chat: send, typing, react, edit, pin, unpin, delete, clear.
+	guest.send(ctx, map[string]any{"type": "chat.send", "body": "helo"})
+	line := owner.until(ctx, "chat.message")
+	for line["system"] == true {
+		line = owner.until(ctx, "chat.message")
+	}
+	id := line["id"]
+	guest.send(ctx, map[string]any{"type": "chat.typing"})
+	assert.Equal(t, "friend", owner.until(ctx, "typing")["username"])
+	guest.send(ctx, map[string]any{"type": "react", "emoji": "🔥"})
+	assert.Equal(t, "🔥", owner.until(ctx, "reaction")["emoji"])
+	guest.send(ctx, map[string]any{"type": "chat.edit", "id": id, "body": "hello"})
+	assert.Equal(t, "hello", owner.until(ctx, "chat.edited")["message"].(map[string]any)["body"])
+	owner.send(ctx, map[string]any{"type": "chat.pin", "id": id})
+	assert.NotNil(t, guest.until(ctx, "chat.pinned")["message"])
+	owner.send(ctx, map[string]any{"type": "chat.unpin"})
+	assert.Nil(t, guest.until(ctx, "chat.pinned")["message"])
+	guest.send(ctx, map[string]any{"type": "chat.delete", "id": id})
+	assert.Equal(t, id, owner.until(ctx, "chat.deleted")["id"])
+	assert.Equal(t, "forbidden", guest.expectError(ctx, map[string]any{"type": "chat.clear"}))
+	owner.send(ctx, map[string]any{"type": "chat.clear"})
+	guest.until(ctx, "chat.cleared")
+
+	// Unknown commands are refused without closing the connection.
+	assert.Equal(t, "invalid", owner.expectError(ctx, map[string]any{"type": "teleport"}))
+
+	// A promotion takes effect on the next command, without reconnecting.
+	require.Equal(t, http.StatusNoContent, owner.rest(ctx, http.MethodPut, "/api/v1/rooms/cmds/moderators/friend", ""))
+	guest.send(ctx, map[string]any{"type": "pause"})
+	assert.Equal(t, false, guest.until(ctx, "playback")["playing"])
+
+	// Ending the session closes every connection: the client gets the
+	// kicked message and a policy close carrying the reason.
+	owner.send(ctx, map[string]any{"type": "session.end"})
+	kicked, closeErr := guest.readToClose(ctx)
+	assert.Equal(t, "session ended", kicked)
+	assert.Equal(t, websocket.StatusPolicyViolation, websocket.CloseStatus(closeErr))
+	var ce websocket.CloseError
+	require.ErrorAs(t, closeErr, &ce)
+	assert.Equal(t, "session ended", ce.Reason)
+}
+
+// readToClose reads until the server closes, returning the kicked reason
+// seen on the way and the close error.
+func (w *wsClient) readToClose(ctx context.Context) (string, error) {
+	w.t.Helper()
+	kicked := ""
+	for {
+		var m wsMessage
+		if err := wsjson.Read(ctx, w.c, &m); err != nil {
+			return kicked, err
+		}
+		if m["type"] == "kicked" {
+			kicked, _ = m["reason"].(string)
+		}
+	}
+}
+
+func TestWebSocketAccess(t *testing.T) {
+	ts, _ := newWSServer(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	owner := register(t, ts, "keeper")
+	friend := register(t, ts, "visitor")
+	anon := &wsClient{t: t, ts: ts}
+	require.Equal(t, http.StatusCreated, owner.rest(ctx, http.MethodPost, "/api/v1/rooms", `{"name":"Closed","slug":"closed","visibility":"private"}`))
+	require.Equal(t, http.StatusCreated, owner.rest(ctx, http.MethodPost, "/api/v1/rooms", `{"name":"Open","slug":"open"}`))
+
+	// A private room refuses outsiders; an unknown room does not exist.
+	_, err := anon.dial(ctx, "closed")
+	require.Error(t, err)
+	_, err = friend.dial(ctx, "closed")
+	require.Error(t, err)
+	_, err = anon.dial(ctx, "nowhere")
+	require.Error(t, err)
+
+	// A ban closes the live connection and keeps the user out.
+	_, err = owner.dial(ctx, "open")
+	require.NoError(t, err)
+	_, err = friend.dial(ctx, "open")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusNoContent, owner.rest(ctx, http.MethodPut, "/api/v1/rooms/open/bans/visitor", `{"reason":"spam"}`))
+	kicked, closeErr := friend.readToClose(ctx)
+	assert.Equal(t, "banned", kicked)
+	assert.Equal(t, websocket.StatusPolicyViolation, websocket.CloseStatus(closeErr))
+	_, err = friend.dial(ctx, "open")
+	require.Error(t, err)
 }

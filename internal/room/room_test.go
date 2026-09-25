@@ -91,6 +91,8 @@ type fixture struct {
 	owner access.Actor
 	guest access.Actor
 	room  *Room
+	// clockMu guards now against timers and the manager loop reading it.
+	clockMu sync.Mutex
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -108,7 +110,7 @@ func newFixture(t *testing.T) *fixture {
 
 	f.deps = Deps{
 		Store: repo, Chat: repo, Admit: f.admit, Signer: mediastore.NewSigner("0123456789abcdef0123456789abcdef", time.Hour),
-		Logger: slog.New(slog.DiscardHandler), Now: func() time.Time { return f.now }, PersistEvery: 5 * time.Second,
+		Logger: slog.New(slog.DiscardHandler), Now: f.clock, PersistEvery: 5 * time.Second,
 	}
 	f.owner = access.Actor{User: owner, Member: &entity.RoomMember{Role: entity.RoomRoleOwner}}
 	f.guest = access.Actor{User: guest}
@@ -116,6 +118,19 @@ func newFixture(t *testing.T) *fixture {
 	f.room, err = load(ctx, f.deps, rm.ID)
 	require.NoError(t, err)
 	return f
+}
+
+// clock is the fixture's Now; advance moves it under the lock.
+func (f *fixture) clock() time.Time {
+	f.clockMu.Lock()
+	defer f.clockMu.Unlock()
+	return f.now
+}
+
+func (f *fixture) advance(d time.Duration) {
+	f.clockMu.Lock()
+	defer f.clockMu.Unlock()
+	f.now = f.now.Add(d)
 }
 
 // ready marks the media of a URL playable with the given duration.
