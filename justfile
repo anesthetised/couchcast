@@ -77,7 +77,7 @@ dev:
 # Packages run serially (-p 1): integration tests share one database.
 [group('code')]
 test *args:
-    {{compose}} run --rm web go test -p 1 ./... {{args}}
+    {{compose}} run --rm web go test -p 1 -race ./... {{args}}
 
 # Go test coverage in total, counting code any package's tests reach
 # (-coverpkg), as the CI badge does; `go tool cover -func coverage.out`

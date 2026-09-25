@@ -70,7 +70,8 @@ CMD ["serve"]
 FROM golang:${GO_VERSION}-alpine AS dev
 ARG AIR_VERSION
 ARG GOLANGCI_LINT_VERSION
-RUN apk add --no-cache ca-certificates ffmpeg git tzdata
+# gcc and musl-dev let `just test` run with the race detector, as CI does.
+RUN apk add --no-cache ca-certificates ffmpeg gcc git musl-dev tzdata
 COPY --from=ytdlp /usr/local/bin/yt-dlp /usr/local/bin/yt-dlp
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
