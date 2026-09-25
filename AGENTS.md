@@ -198,7 +198,9 @@ fails) and a production image build.
   shows a tap-to-play gate that resumes inside the gesture.
 - Site administration: `couchcast admin grant|revoke <username>` sets the
   role; `/api/v1/admin/*` (behind `auth.RequireAdmin`) serves the `/admin`
-  SPA route. Deleting media there also blocklists its `source_key` so it
+  SPA route, whose open tab is `?tab=` (stats when absent). Ban and
+  delete ask for a reason; cancelling the prompt cancels the action.
+  Deleting media there also blocklists its `source_key` so it
   cannot be re-added, and loaded rooms reload their queues via
   `Manager.MediaDeleted`. A site ban revokes sessions and kicks the user
   from every loaded room.

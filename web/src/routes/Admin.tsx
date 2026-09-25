@@ -1,3 +1,4 @@
+import { useSearchParams } from "@solidjs/router";
 import { createResource, createSignal, For, Show, type Component } from "solid-js";
 
 import BugsTab from "~/components/BugsTab";
@@ -23,7 +24,10 @@ const tabs: { id: Tab; label: string }[] = [
 // Admin panel. Business statistics come from Postgres; technical metrics
 // live in /metrics for Prometheus and are deliberately not duplicated.
 const Admin: Component = () => {
-  const [tab, setTab] = createSignal<Tab>("stats");
+  // The open tab lives in the URL (?tab=users) so reloads and links keep it.
+  const [params, setParams] = useSearchParams<{ tab?: string }>();
+  const tab = (): Tab => (tabs.some((t) => t.id === params.tab) ? (params.tab as Tab) : "stats");
+  const setTab = (t: Tab) => setParams({ tab: t === "stats" ? undefined : t });
   const [error, setError] = createSignal<string | null>(null);
 
   const run = async (fn: () => Promise<unknown>, after?: () => void) => {
@@ -42,7 +46,7 @@ const Admin: Component = () => {
         <nav class="tabs">
           <For each={tabs}>
             {(t) => (
-              <button type="button" class={`tab ${tab() === t.id ? "active" : ""}`} onClick={() => setTab(t.id)}>
+              <button type="button" class={`tab ${tab() === t.id ? "active" : ""}`} aria-pressed={tab() === t.id} onClick={() => setTab(t.id)}>
                 {t.label}
               </button>
             )}
@@ -152,7 +156,8 @@ const ReportsTab: Component<{ run: Runner }> = (props) => {
                   Dismiss
                 </button>
                 <button type="button" class="danger" onClick={() => {
-                  const reason = prompt("Reason for removal (added to the blocklist):", "reported") ?? "";
+                  const reason = prompt("Reason for removal (added to the blocklist):", "reported");
+                  if (reason === null) return; // cancelled
                   void props.run(() => admin.deleteMedia(rm.media.id, reason), () => void refetch());
                 }}>
                   Delete & block
@@ -190,7 +195,7 @@ const UsersTab: Component<{ run: Runner }> = (props) => {
   return (
     <section class="card">
       <h2>Users</h2>
-      <input type="text" placeholder="Search by username" value={q()} onInput={(e) => setQ(e.currentTarget.value)} />
+      <input type="search" placeholder="Search by username" aria-label="Search users" value={q()} onInput={(e) => setQ(e.currentTarget.value)} />
       <ul class="list">
         <For each={list() ?? []}>
           {(u) => (
@@ -206,7 +211,8 @@ const UsersTab: Component<{ run: Runner }> = (props) => {
                   when={u.banned}
                   fallback={
                     <button type="button" class="link danger-text" onClick={() => {
-                      const reason = prompt(`Ban ${u.username}? Reason:`, "") ?? "";
+                      const reason = prompt(`Ban ${u.username}? Reason:`, "");
+                      if (reason === null) return; // cancelled
                       void props.run(() => admin.ban(u.id, reason), () => void refetch());
                     }}>
                       Ban
@@ -232,7 +238,7 @@ const RoomsTab: Component<{ run: Runner }> = (props) => {
   return (
     <section class="card">
       <h2>Rooms</h2>
-      <input type="text" placeholder="Search by slug or name" value={q()} onInput={(e) => setQ(e.currentTarget.value)} />
+      <input type="search" placeholder="Search by slug or name" aria-label="Search rooms" value={q()} onInput={(e) => setQ(e.currentTarget.value)} />
       <ul class="list">
         <For each={list() ?? []}>
           {(r) => (
