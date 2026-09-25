@@ -88,7 +88,7 @@ const BugReportDialog: Component<Props> = (props) => {
             <div class="chips" role="radiogroup" aria-label="What is it about">
               <For each={BUG_CATEGORIES}>
                 {(c) => (
-                  <button type="button" class="chip" role="radio" aria-checked={category() === c.id} aria-pressed={category() === c.id} onClick={() => pickCategory(c.id)}>
+                  <button type="button" class="chip" role="radio" aria-checked={category() === c.id} onClick={() => pickCategory(c.id)}>
                     {c.label}
                   </button>
                 )}

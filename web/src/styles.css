@@ -78,6 +78,13 @@ a:hover {
   color: var(--accent-hover);
 }
 
+/* Links inside running text are underlined: the accent alone is too
+   close to muted text to tell them apart (WCAG link-in-text-block). */
+p a:not(.button) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 h1,
 h2,
 h3 {
@@ -215,10 +222,16 @@ code {
   color: var(--text);
 }
 
-/* Signed out, the header shows Log in and Register in full white. */
+/* Signed out, the header shows Log in in full white; Register is a
+   filled button and keeps the dark text that contrasts with the accent. */
 .usermenu .signed-out,
 .usermenu .signed-out:hover {
   color: var(--text);
+}
+
+.usermenu .signed-out.button,
+.usermenu .signed-out.button:hover {
+  color: var(--on-accent);
 }
 
 .avatar {
@@ -405,7 +418,8 @@ button.link.danger-text:hover {
   color: var(--text);
 }
 
-.chip[aria-pressed="true"] {
+.chip[aria-pressed="true"],
+.chip[aria-checked="true"] {
   background: var(--accent-soft);
   border-color: var(--accent);
   color: var(--accent);
