@@ -58,9 +58,9 @@ commands run from the repo root via `just` (see `justfile`):
   uploads once, for tests that need the player to play (`sync.spec.ts`).
   Chromium runs with autoplay allowed; compare player times with
   `expect.poll`, the display ticks every 250 ms. Tests tagged `@cross`
-  also run in Firefox and WebKit; `@media` (real playback) is left out
-  of WebKit, whose Playwright build decodes VP9 in software and is not
-  Safari — check Safari by hand. The Firefox profile turns off its
+  also run in Firefox and WebKit (`@media` marks the real-playback ones).
+  WebKit decodes VP9 in software, so slow seeks show up there first; it
+  is still not Safari — check Safari by hand. The Firefox profile turns off its
   password UI, and helpers submit forms with Enter: a click can land on
   the browser's own popup. `a11y.spec.ts` runs axe
   (WCAG 2.1 A/AA plus best practices; moderate and worse fail) over the main

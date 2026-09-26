@@ -39,9 +39,8 @@ export default defineConfig({
             "signon.autofillForms": false,
           } } },
     },
-    // Playback (@media) is left out in WebKit: Playwright's WebKitGTK decodes
-    // VP9 in software inside the container and now and then never starts or
-    // converges, which says little about Safari. Check Safari by hand.
-    { name: "webkit", grep: /@cross/, grepInvert: /@media/, use: { ...devices["Desktop Safari"] } },
+    // WebKit decodes VP9 in software here, so it catches sync bugs that
+    // only slow seeks expose; it is still not Safari: check that by hand.
+    { name: "webkit", grep: /@cross/, use: { ...devices["Desktop Safari"] } },
   ],
 });
