@@ -88,7 +88,10 @@ Run `just test` and `just lint` before opening a PR. CI
 against Postgres, the TypeScript check, the Vitest suite and the build, Atlas migration checks
 (validate, lint, apply, and that `db/schema.sql` matches `db/migrations`),
 the Playwright suite through `just e2e` (the report is uploaded when it
-fails) and a production image build.
+fails) and a production image build. The E2E job builds the dev image
+with a GitHub Actions layer cache and sets `E2E_PREBUILT` so the recipe
+skips its own build; `GO_MOD_CACHE` / `GO_BUILD_CACHE` point the Go
+caches at directories `actions/cache` keeps (named volumes otherwise).
 
 ## Architecture
 

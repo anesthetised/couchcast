@@ -119,7 +119,8 @@ test-web *args:
 # available in a container, use `--debug` locally instead).
 [group('code')]
 e2e *args:
-    {{compose}} build web
+    @# CI builds the dev image beforehand with a layer cache.
+    @if [ -z "${E2E_PREBUILT:-}" ]; then {{compose}} build web; fi
     {{compose}} up -d --wait postgres seaweedfs
     {{e2e}} stop e2e-web e2e-frontend
     {{compose}} exec -T postgres psql -q -U ${POSTGRES_USER:-couchcast} -d postgres -c 'DROP DATABASE IF EXISTS couchcast_e2e WITH (FORCE)' -c 'CREATE DATABASE couchcast_e2e'

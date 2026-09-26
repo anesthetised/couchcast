@@ -24,8 +24,9 @@ services:
       COUCHCAST_AUTH_RATE_PER_MINUTE: "1000"
     volumes:
       - ./:/src
-      - gomod:/go/pkg/mod
-      - gobuild:/root/.cache/go-build
+      # Named volumes locally; CI points these at cached directories.
+      - ${GO_MOD_CACHE:-gomod}:/go/pkg/mod
+      - ${GO_BUILD_CACHE:-gobuild}:/root/.cache/go-build
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/healthz >/dev/null"]
       interval: 2s
