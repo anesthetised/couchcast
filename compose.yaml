@@ -46,8 +46,11 @@ services:
       AWS_SECRET_ACCESS_KEY: ${S3_SECRET_KEY:-couchcast-dev-secret}
     volumes:
       - s3data:/data
+    # Healthy once S3 answers and the volume server has registered with the
+    # master: before that, reads of existing objects fail with 500 for a
+    # second or so after a restart although S3 already says ok.
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9000/healthz"]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:9000/healthz >/dev/null && wget -qO- http://127.0.0.1:9333/dir/status | grep -q '\"DataNodes\":\\[{'"]
       interval: 5s
       timeout: 3s
       retries: 20

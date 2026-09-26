@@ -17,7 +17,10 @@ and e2e with Postgres and SeaweedFS), `ingest-data` (the ingest worker
 with the same two) and `ingest-egress` (the worker's way out). The worker
 fetches links from anywhere, so it cannot reach the web server, the
 proxy or anything else; a new service joins only the networks it needs.
-SeaweedFS sits on two networks and binds `0.0.0.0` for that.
+SeaweedFS sits on two networks and binds `0.0.0.0` for that. Its
+healthcheck also waits for the volume server to register with the master
+(`/dir/status` lists a data node): S3 says ok a moment earlier, while
+reads of existing objects still fail with 500.
 
 Video is delivered as DASH (packaged by ffmpeg without transcoding) and
 played by Shaka Player; playback synchronisation runs over WebSocket with

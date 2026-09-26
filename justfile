@@ -204,7 +204,8 @@ restore dir:
         {{prod}} stop seaweedfs
         docker run --rm -v "{{project}}_s3data:/data" -v "$PWD/{{dir}}:/backup:ro" alpine:3.23 \
             sh -c 'find /data -mindepth 1 -delete && tar -xzf /backup/s3data.tar.gz -C /data'
-        {{prod}} start seaweedfs
+        # Wait until it serves reads again before the apps come back.
+        {{prod}} up -d --wait seaweedfs
     fi
     {{prod}} start web ingest
     echo "restored from {{dir}}"
@@ -231,7 +232,6 @@ backup-check:
     $dc exec -T seaweedfs curl -sf -X DELETE http://127.0.0.1:8888/buckets/couchcast/keep.txt >/dev/null
     put new.txt new
     just --yes restore "$dir" >/dev/null
-    $dc up -d --wait seaweedfs >/dev/null 2>&1
     row=$(sql "SELECT v FROM backup_check"); keep=$(get keep.txt); new=$(get new.txt)
     echo "row: $row, keep.txt: $keep, new.txt: $new"
     [ "$row" = kept ] && [ "$keep" = kept ] && [ "$new" = "(missing)" ] || { echo "backup check failed"; exit 1; }
