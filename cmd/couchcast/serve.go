@@ -62,6 +62,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	reportLimiter := ratelimit.PerHour(10, 10)
 	queueAddLimiter := ratelimit.New(10, 5)
 	probeLimiter := ratelimit.New(20, 10)
+	probeIPLimiter := ratelimit.New(40, 20)
 	bugReportLimiter := ratelimit.PerHour(5, 5)
 
 	// Web Push is optional: without VAPID keys the notifier stays nil and
@@ -149,6 +150,8 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		ReportLimiter:     reportLimiter,
 		BugReportLimiter:  bugReportLimiter,
 		ProbeLimiter:      probeLimiter,
+		ProbeIPLimiter:    probeIPLimiter,
+		ProbeConcurrency:  cfg.Web.ProbeConcurrency,
 	})
 
 	srv := &http.Server{
@@ -208,7 +211,7 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		loginLimiter.Run(ctx.Done())
 		return nil
 	})
-	for _, l := range []*ratelimit.Limiter{roomCreateLimiter, inviteLimiter, reportLimiter, queueAddLimiter, probeLimiter, bugReportLimiter} {
+	for _, l := range []*ratelimit.Limiter{roomCreateLimiter, inviteLimiter, reportLimiter, queueAddLimiter, probeLimiter, probeIPLimiter, bugReportLimiter} {
 		g.Go(func() error {
 			l.Run(ctx.Done())
 			return nil

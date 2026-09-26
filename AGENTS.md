@@ -417,7 +417,7 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
   picked entries in order in one transaction — duplicates, unsupported
   links and anything past the queue limit are skipped and counted in the
   room log line; the add budget is charged once.
-- `GET /api/v1/media/probe?url=` (signed in, rate limited) previews a link
+- `GET /api/v1/media/probe?url=` (signed in; per user 20/min, per address 40/min, at most `COUCHCAST_PROBE_CONCURRENCY` (4) yt-dlp runs at once, then 503 after 5 s; `/media/playlist` shares all three) previews a link
   for the add form: known sources answer from the database, new ones go
   through `ingest.Service.Preview` → the extractor, bounded by a timeout.
 - `GET /api/v1/rooms` is the directory (public rooms plus the caller's

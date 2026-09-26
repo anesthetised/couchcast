@@ -10,6 +10,7 @@ import (
 	"github.com/anesthetised/couchcast/internal/auth"
 	"github.com/anesthetised/couchcast/internal/entity"
 	"github.com/anesthetised/couchcast/internal/ingest"
+	"github.com/anesthetised/couchcast/internal/ratelimit"
 	"github.com/anesthetised/couchcast/internal/source"
 )
 
@@ -58,16 +59,19 @@ const (
 
 // handleProbe answers GET /api/v1/media/probe?url= for the add form:
 // title, duration and thumbnail, plus the ingest status when the video
-// is already known. Signed in and rate limited per user.
+// is already known. Signed in, rate limited per user and per address, and
+// bounded in how many run at once.
 func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	rawURL := strings.TrimSpace(r.URL.Query().Get("url"))
 	if rawURL == "" || len(rawURL) > 2048 {
 		writeError(w, http.StatusBadRequest, "url is required")
 		return
 	}
-	if !allowUser(w, s.deps.ProbeLimiter, auth.UserFrom(r.Context()).ID) {
+	release, ok := s.admitProbe(w, r)
+	if !ok {
 		return
 	}
+	defer release()
 
 	playlist, video, isList := s.deps.Prober.PlaylistURL(rawURL)
 	if isList && !video {
@@ -108,6 +112,33 @@ func (s *Server) handleProbe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+// admitProbe applies the preview budgets (per user, per address) and
+// takes one of the concurrent slots; release frees it.
+func (s *Server) admitProbe(w http.ResponseWriter, r *http.Request) (release func(), ok bool) {
+	if !allowUser(w, s.deps.ProbeLimiter, auth.UserFrom(r.Context()).ID) {
+		return nil, false
+	}
+	if l := s.deps.ProbeIPLimiter; l != nil && !l.Allow(ratelimit.ClientIP(s.deps.TrustProxy)(r)) {
+		w.Header().Set("Retry-After", "60")
+		writeError(w, http.StatusTooManyRequests, "too many link checks from your network; try again later")
+		return nil, false
+	}
+	if s.probeSlots == nil {
+		return func() {}, true
+	}
+	t := time.NewTimer(s.deps.ProbeWait)
+	defer t.Stop()
+	select {
+	case s.probeSlots <- struct{}{}:
+		return func() { <-s.probeSlots }, true
+	case <-t.C:
+	case <-r.Context().Done():
+	}
+	w.Header().Set("Retry-After", "5")
+	writeError(w, http.StatusServiceUnavailable, "the server is busy checking other links; try again in a moment")
+	return nil, false
+}
+
 // handlePlaylist answers GET /api/v1/media/playlist?url= with the first
 // entries of a playlist, for the import picker. It spends the probe budget.
 func (s *Server) handlePlaylist(w http.ResponseWriter, r *http.Request) {
@@ -116,9 +147,11 @@ func (s *Server) handlePlaylist(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "url is required")
 		return
 	}
-	if !allowUser(w, s.deps.ProbeLimiter, auth.UserFrom(r.Context()).ID) {
+	release, ok := s.admitProbe(w, r)
+	if !ok {
 		return
 	}
+	defer release()
 	ctx, cancel := context.WithTimeout(r.Context(), playlistTimeout)
 	defer cancel()
 	pl, err := s.deps.Prober.Playlist(ctx, rawURL)

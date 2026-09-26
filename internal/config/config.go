@@ -51,6 +51,9 @@ type WebConfig struct {
 	MediaTokenTTL     time.Duration
 	ChatRetentionDays int
 	MaxCacheBytes     int64
+	// ProbeConcurrency caps link previews and playlist lookups (yt-dlp
+	// runs) in flight at once.
+	ProbeConcurrency int
 	// TrustProxy makes rate limiting use X-Forwarded-For. Enable only behind
 	// a reverse proxy that overwrites the header.
 	TrustProxy bool
@@ -105,6 +108,7 @@ func fromEnv(c *Config) {
 	c.Web.ChatRetentionDays = env.Get(prefix+"CHAT_RETENTION_DAYS", 30)
 	c.Web.MaxCacheBytes = env.Get(prefix+"MAX_CACHE_BYTES", int64(50<<30))
 	c.Web.TrustProxy = env.Get(prefix+"TRUST_PROXY", false)
+	c.Web.ProbeConcurrency = env.Get(prefix+"PROBE_CONCURRENCY", 4)
 	c.Web.AuthRatePerMinute = env.Get(prefix+"AUTH_RATE_PER_MINUTE", 10)
 	c.Web.VAPIDPublicKey = env.Get(prefix+"VAPID_PUBLIC_KEY", "")
 	c.Web.VAPIDPrivateKey = env.Get(prefix+"VAPID_PRIVATE_KEY", "")

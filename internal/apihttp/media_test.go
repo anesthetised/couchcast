@@ -7,8 +7,10 @@ import (
 	"net/http"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/anesthetised/couchcast/internal/entity"
 	"github.com/anesthetised/couchcast/internal/ingest"
@@ -129,4 +131,69 @@ func TestProbe(t *testing.T) {
 
 	rec = env2.do(http.MethodGet, "/api/v1/media/probe?url=https://known", nil)
 	assert.Equal(t, entity.MediaReady, decodeBody[probeResponse](t, rec).Status)
+}
+
+// slowProber blocks previews until released, to occupy slots.
+type slowProber struct {
+	fakeProber
+	started chan struct{}
+	release chan struct{}
+}
+
+func (p slowProber) Preview(ctx context.Context, raw string) (*ingest.Preview, error) {
+	p.started <- struct{}{}
+	select {
+	case <-p.release:
+	case <-ctx.Done():
+	}
+	return &ingest.Preview{Title: "slow"}, nil
+}
+
+func TestProbeBudgets(t *testing.T) {
+	t.Run("per address, across accounts", func(t *testing.T) {
+		env := newTestEnv(t, fstest.MapFS{}, func(d *Deps) {
+			d.Prober = fakeProber{}
+			d.ProbeLimiter = ratelimit.New(600, 100)
+			d.ProbeIPLimiter = ratelimit.New(1, 2) // two, then one a minute
+		})
+		for _, name := range []string{"alice", "bob"} {
+			user := &testEnv{t: t, store: env.store, handler: env.handler}
+			require.Equal(t, http.StatusCreated, user.do(http.MethodPost, "/api/v1/auth/register", credentials{Username: name, Password: "password-123"}).Code)
+			for i := 0; i < 2; i++ {
+				code := user.do(http.MethodGet, "/api/v1/media/probe?url=https://x", nil).Code
+				if name == "alice" {
+					assert.Equal(t, http.StatusOK, code)
+				} else {
+					assert.Equal(t, http.StatusTooManyRequests, code, "same address, new account")
+				}
+			}
+		}
+	})
+
+	t.Run("a bounded number at once", func(t *testing.T) {
+		p := slowProber{started: make(chan struct{}, 4), release: make(chan struct{})}
+		env := newTestEnv(t, fstest.MapFS{}, func(d *Deps) {
+			d.Prober = p
+			d.ProbeConcurrency = 1
+			d.ProbeWait = 50 * time.Millisecond
+		})
+		require.Equal(t, http.StatusCreated, env.do(http.MethodPost, "/api/v1/auth/register", credentials{Username: "dora", Password: "password-123"}).Code)
+
+		// A second browser of the same user, so the two requests do not
+		// share a cookie jar across goroutines.
+		other := &testEnv{t: t, store: env.store, handler: env.handler, cookies: append([]*http.Cookie(nil), env.cookies...)}
+		first := make(chan int)
+		go func() { first <- other.do(http.MethodGet, "/api/v1/media/probe?url=https://slow", nil).Code }()
+		<-p.started
+		// The only slot is taken: the next one waits, then gives up.
+		rec := env.do(http.MethodGet, "/api/v1/media/probe?url=https://slow", nil)
+		assert.Equal(t, http.StatusServiceUnavailable, rec.Code)
+		assert.Equal(t, "5", rec.Header().Get("Retry-After"))
+
+		close(p.release)
+		assert.Equal(t, http.StatusOK, <-first)
+		// Freed: the next request runs.
+		go func() { <-p.started }()
+		assert.Equal(t, http.StatusOK, env.do(http.MethodGet, "/api/v1/media/probe?url=https://slow", nil).Code)
+	})
 }

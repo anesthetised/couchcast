@@ -127,18 +127,34 @@ type Deps struct {
 	ReportLimiter     *ratelimit.Limiter
 	BugReportLimiter  *ratelimit.Limiter
 	ProbeLimiter      *ratelimit.Limiter
+	// ProbeIPLimiter budgets link previews and playlist lookups per client
+	// address as well, so extra accounts do not multiply the budget.
+	ProbeIPLimiter *ratelimit.Limiter
+	// ProbeConcurrency caps previews and playlist lookups running at once
+	// (each is a yt-dlp process); 0 means no cap. ProbeWait is how long a
+	// request waits for a slot before "busy" (default 5 s).
+	ProbeConcurrency int
+	ProbeWait        time.Duration
 }
 
 // Server owns the chi router.
 type Server struct {
 	deps Deps
 	mux  chi.Router
+	// probeSlots bounds concurrent yt-dlp runs for previews (nil: unbounded).
+	probeSlots chan struct{}
 }
 
 // New builds the router. Route registration lives here so that the full
 // URL space is visible in one place.
 func New(deps Deps) *Server {
 	s := &Server{deps: deps, mux: chi.NewRouter()}
+	if deps.ProbeConcurrency > 0 {
+		s.probeSlots = make(chan struct{}, deps.ProbeConcurrency)
+	}
+	if s.deps.ProbeWait == 0 {
+		s.deps.ProbeWait = 5 * time.Second
+	}
 
 	r := s.mux
 	r.Use(middleware.RequestID)
