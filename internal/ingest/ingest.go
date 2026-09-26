@@ -7,12 +7,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"strings"
 	"time"
 
 	"uuid"
 
 	"github.com/anesthetised/couchcast/internal/entity"
 	"github.com/anesthetised/couchcast/internal/jobs"
+	"github.com/anesthetised/couchcast/internal/netguard"
 	"github.com/anesthetised/couchcast/internal/repository"
 	"github.com/anesthetised/couchcast/internal/source"
 )
@@ -37,7 +40,54 @@ var (
 	ErrUnsupportedURL = errors.New("ingest: unsupported url")
 	// ErrBlocked means an administrator has blocklisted the source.
 	ErrBlocked = errors.New("ingest: source is blocked")
+	// ErrPrivateAddress means the link points into the private network
+	// (loopback, RFC 1918, link-local, …), which the pipeline must not
+	// fetch unless SourcePolicy.AllowPrivate is set.
+	ErrPrivateAddress = netguard.ErrPrivateAddress
+	// ErrUnknownHost means the link's host does not resolve.
+	ErrUnknownHost = errors.New("ingest: unknown host")
 )
+
+// lookupTimeout bounds the address check of a link.
+const lookupTimeout = 5 * time.Second
+
+// SourcePolicy decides which addresses the pipeline may fetch from. The
+// zero value is the safe default: public addresses only.
+type SourcePolicy struct {
+	// AllowPrivate admits links to private and local addresses, for
+	// self-hosters who queue files from their LAN
+	// (COUCHCAST_ALLOW_PRIVATE_SOURCES).
+	AllowPrivate bool
+	// Resolver looks up hosts; nil uses net.DefaultResolver.
+	Resolver netguard.Resolver
+}
+
+// check refuses a link whose host is, or resolves to, a non-public
+// address. YouTube keys are only minted for YouTube's own hosts, so they
+// skip the lookup. yt-dlp resolves again on its own and follows
+// redirects, so this is admission control, not a sandbox.
+func (p SourcePolicy) check(ctx context.Context, key, rawURL string) error {
+	if p.AllowPrivate || strings.HasPrefix(key, "youtube:") {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, lookupTimeout)
+	defer cancel()
+	err := netguard.CheckURL(ctx, p.Resolver, rawURL)
+	if err == nil || errors.Is(err, ErrPrivateAddress) || errors.Is(err, context.Canceled) {
+		return err
+	}
+	return fmt.Errorf("%w: %w", ErrUnknownHost, err)
+}
+
+// httpClient is the client for fetches the pipeline makes itself
+// (thumbnails): unless private sources are allowed, it connects only to
+// public addresses, whatever DNS or a redirect says.
+func (p SourcePolicy) httpClient(timeout time.Duration) *http.Client {
+	if p.AllowPrivate {
+		return &http.Client{Timeout: timeout}
+	}
+	return &http.Client{Timeout: timeout, Transport: netguard.Transport()}
+}
 
 // MediaRepo is the persistence the package needs.
 type MediaRepo interface {
@@ -60,11 +110,12 @@ type Service struct {
 	repo      MediaRepo
 	queue     *jobs.Queue
 	extractor source.Extractor
+	policy    SourcePolicy
 }
 
 // NewService creates the admission service.
-func NewService(repo MediaRepo, queue *jobs.Queue, extractor source.Extractor) *Service {
-	return &Service{repo: repo, queue: queue, extractor: extractor}
+func NewService(repo MediaRepo, queue *jobs.Queue, extractor source.Extractor, policy SourcePolicy) *Service {
+	return &Service{repo: repo, queue: queue, extractor: extractor, policy: policy}
 }
 
 // Key returns the dedupe key for a URL, or ErrUnsupportedURL.
@@ -91,6 +142,9 @@ func (s *Service) EnsureMedia(ctx context.Context, q repository.Querier, rawURL 
 	}
 	if blocked {
 		return nil, ErrBlocked
+	}
+	if err := s.policy.check(ctx, key, rawURL); err != nil {
+		return nil, err
 	}
 
 	media, created, err := s.repo.CreateMedia(ctx, q, key, rawURL)
@@ -138,6 +192,9 @@ func (s *Service) Preview(ctx context.Context, rawURL string) (*Preview, error) 
 		return nil, err
 	}
 
+	if err := s.policy.check(ctx, key, rawURL); err != nil {
+		return nil, err
+	}
 	p, err := s.extractor.Probe(ctx, rawURL)
 	if err != nil {
 		return nil, err
@@ -163,6 +220,10 @@ func (s *Service) Playlist(ctx context.Context, rawURL string) (*source.Playlist
 	list, _, ok := s.extractor.PlaylistURL(rawURL)
 	if !ok {
 		return nil, ErrUnsupportedURL
+	}
+	key, _ := s.extractor.Key(list)
+	if err := s.policy.check(ctx, key, list); err != nil {
+		return nil, err
 	}
 	return s.extractor.Playlist(ctx, list, PlaylistLimit)
 }

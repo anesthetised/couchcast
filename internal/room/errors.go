@@ -7,4 +7,6 @@ import "github.com/anesthetised/couchcast/internal/ingest"
 var (
 	errUnsupported = ingest.ErrUnsupportedURL
 	errBlocked     = ingest.ErrBlocked
+	errPrivate     = ingest.ErrPrivateAddress
+	errUnknownHost = ingest.ErrUnknownHost
 )

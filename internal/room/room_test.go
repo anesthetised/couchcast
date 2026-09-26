@@ -3,6 +3,7 @@ package room
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -78,6 +79,10 @@ func (f *fakeAdmit) EnsureMedia(ctx context.Context, q repository.Querier, rawUR
 		return nil, errBlocked
 	case "broken":
 		return nil, errors.New("database is down")
+	case "http://10.0.0.1/":
+		return nil, fmt.Errorf("%w: 10.0.0.1", errPrivate)
+	case "https://nowhere.example/":
+		return nil, fmt.Errorf("%w: lookup nowhere.example: no such host", errUnknownHost)
 	}
 	m, _, err := f.repo.CreateMedia(ctx, q, "url:"+rawURL, rawURL)
 	return m, err
@@ -603,6 +608,30 @@ func TestQueueDuplicatesClearShuffle(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, saved, 1)
 	assert.Len(t, snap.Played, 1, "history untouched")
+}
+
+func TestQueueAddRefusedLinks(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.room.Join(ctx, &fakeConn{}, f.owner)
+
+	for raw, want := range map[string]string{
+		"unsupported":              "this link is not supported",
+		"http://10.0.0.1/":         "links to private or local addresses are not allowed",
+		"https://nowhere.example/": "this site could not be found",
+	} {
+		var re *Error
+		require.ErrorAs(t, f.room.QueueAdd(ctx, f.owner, raw, false, false), &re, raw)
+		assert.Equal(t, protocol.CodeInvalid, re.Code, raw)
+		assert.Equal(t, want, re.Message, raw)
+	}
+
+	// In a batch they are skipped like unsupported links.
+	f.ready("https://ok", 10_000)
+	require.NoError(t, f.room.QueueAddMany(ctx, f.owner, []string{"http://10.0.0.1/", "https://ok", "https://nowhere.example/"}, false))
+	msgs, err := f.repo.ListRecentMessages(ctx, f.room.ID(), 10)
+	require.NoError(t, err)
+	assert.Contains(t, msgs[len(msgs)-1].Body, "(2 skipped)")
 }
 
 func TestQueueAddMany(t *testing.T) {

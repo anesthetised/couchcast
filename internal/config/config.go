@@ -73,6 +73,11 @@ type IngestConfig struct {
 	FFmpegPath     string
 	QualityLadder  []int
 	SegmentSeconds int
+	// AllowPrivateSources lets links point at loopback, private and
+	// link-local addresses (a NAS on the LAN). Off by default: anyone who
+	// can queue a video could otherwise make the server fetch from its own
+	// network. Read by the web server (admission) and the worker.
+	AllowPrivateSources bool
 }
 
 // Load reads the configuration from the environment. It does not validate
@@ -113,6 +118,7 @@ func fromEnv(c *Config) {
 	c.Ingest.FFmpegPath = env.Get(prefix+"FFMPEG_PATH", "ffmpeg")
 	c.Ingest.QualityLadder = parseIntList(env.Get(prefix+"QUALITY_LADDER", "1080,720,480,360"))
 	c.Ingest.SegmentSeconds = env.Get(prefix+"SEGMENT_SECONDS", 4)
+	c.Ingest.AllowPrivateSources = env.Get(prefix+"ALLOW_PRIVATE_SOURCES", false)
 }
 
 // parseIntList parses a comma-separated list of integers, silently dropping

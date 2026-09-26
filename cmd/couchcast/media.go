@@ -33,13 +33,14 @@ func mediaCmd(ctx context.Context, cfg config.Config, logger *slog.Logger, args 
 	}
 	defer pool.Close()
 	repo := repository.New(pool)
+	policy := ingest.SourcePolicy{AllowPrivate: cfg.Ingest.AllowPrivateSources}
 
 	switch args[0] {
 	case "enqueue":
 		if len(args) != 2 {
 			return errors.New("media enqueue: expected exactly one url")
 		}
-		svc := ingest.NewService(repo, jobs.New(pool), ytdlp.New(cfg.Ingest.YTDLPPath, nil, logger))
+		svc := ingest.NewService(repo, jobs.New(pool), ytdlp.New(cfg.Ingest.YTDLPPath, nil, logger), policy)
 		media, err := svc.EnsureMedia(ctx, pool, args[1])
 		if err != nil {
 			return err
@@ -59,7 +60,7 @@ func mediaCmd(ctx context.Context, cfg config.Config, logger *slog.Logger, args 
 		if err != nil {
 			return err
 		}
-		svc := ingest.NewService(repo, jobs.New(pool), ytdlp.New(cfg.Ingest.YTDLPPath, nil, logger))
+		svc := ingest.NewService(repo, jobs.New(pool), ytdlp.New(cfg.Ingest.YTDLPPath, nil, logger), policy)
 		if err := svc.Retry(ctx, media); err != nil {
 			return err
 		}

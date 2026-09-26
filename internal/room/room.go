@@ -1442,7 +1442,7 @@ func (r *Room) QueueAddMany(ctx context.Context, actor access.Actor, urls []stri
 			continue
 		}
 		media, err := r.deps.Admit.EnsureMedia(ctx, tx, raw)
-		if errors.Is(err, errUnsupported) || errors.Is(err, errBlocked) {
+		if errors.Is(err, errUnsupported) || errors.Is(err, errBlocked) || errors.Is(err, errPrivate) || errors.Is(err, errUnknownHost) {
 			skipped++
 			continue
 		}
@@ -1674,6 +1674,10 @@ func admitMessage(err error) string {
 		return "this link is not supported"
 	case errors.Is(err, errBlocked):
 		return "this video has been blocked by an administrator"
+	case errors.Is(err, errPrivate):
+		return "links to private or local addresses are not allowed"
+	case errors.Is(err, errUnknownHost):
+		return "this site could not be found"
 	default:
 		return ""
 	}
