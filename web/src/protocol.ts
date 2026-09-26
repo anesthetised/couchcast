@@ -184,6 +184,7 @@ export interface ErrorMessage {
   type: "error";
   code: "forbidden" | "invalid" | "not_found" | "internal" | "rate_limited" | "duplicate";
   message: string;
+  ref?: number; // the failed command's ref
 }
 
 export type ServerMessage =
@@ -200,6 +201,9 @@ export type ServerMessage =
   | Reaction
   | Kicked
   | ErrorMessage;
+
+// Every command may carry a ref, echoed in an error it causes.
+export type ClientCommand = ClientMessage & { ref?: number };
 
 export type ClientMessage =
   | { type: "ping"; t0: number }

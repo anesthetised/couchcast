@@ -12,7 +12,7 @@ const sys = (id: number, body: string): ChatMessage => ({ id, body, system: true
 let room: RoomStore;
 const ws = () => FakeWebSocket.all.at(-1)!;
 const deliver = (m: ServerMessage) => ws().deliver(m);
-const sent = () => ws().sent.map((s) => JSON.parse(s) as Record<string, unknown>).filter((m) => m.type !== "ping");
+const sent = () => ws().sent.map((s) => JSON.parse(s) as Record<string, unknown>).filter((m) => m.type !== "ping").map(({ ref: _ref, ...m }) => m);
 
 function mount(messages: ChatMessage[], me: string | null = "alice", role: "owner" | "member" = "member") {
   const r = render(() => {

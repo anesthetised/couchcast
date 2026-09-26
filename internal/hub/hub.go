@@ -84,6 +84,9 @@ type conn struct {
 
 	out     chan any
 	limiter *rate.Limiter
+	// ref is the Ref of the command being dispatched, echoed in its
+	// errors; only the read goroutine touches it.
+	ref int64
 
 	// Close only signals: the write loop sends what is still queued (a
 	// kicked message), then the close frame with the reason. Closing
@@ -197,7 +200,7 @@ func (c *conn) readLoop(ctx context.Context) {
 }
 
 func (c *conn) sendError(code, msg string) {
-	c.Send(protocol.Error{Type: protocol.TypeError, Code: code, Message: msg})
+	c.Send(protocol.Error{Type: protocol.TypeError, Code: code, Message: msg, Ref: c.ref})
 }
 
 // freshActor re-resolves membership and bans for mutating commands.
@@ -224,7 +227,10 @@ func (c *conn) freshActor(ctx context.Context) (access.Actor, bool) {
 }
 
 func (c *conn) dispatch(ctx context.Context, data []byte) {
-	typ, msg, err := protocol.Decode(data)
+	env, msg, err := protocol.DecodeEnvelope(data)
+	c.ref = env.Ref
+	defer func() { c.ref = 0 }()
+	typ := env.Type
 	if err != nil {
 		c.sendError(protocol.CodeInvalid, err.Error())
 		return

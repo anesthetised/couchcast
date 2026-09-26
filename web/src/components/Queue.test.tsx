@@ -10,7 +10,7 @@ import { item, snapshot } from "~/test/fixtures";
 let room: RoomStore;
 const ws = () => FakeWebSocket.all.at(-1)!;
 const deliver = (m: ServerMessage) => ws().deliver(m);
-const sent = () => ws().sent.map((s) => JSON.parse(s) as Record<string, unknown>).filter((m) => m.type !== "ping");
+const sent = () => ws().sent.map((s) => JSON.parse(s) as Record<string, unknown>).filter((m) => m.type !== "ping").map(({ ref: _ref, ...m }) => m);
 
 function mount(queue: QueueEntry[], opts: { me?: string | null; role?: "owner" | "member"; settings?: Partial<Snapshot["room"]["settings"]>; played?: QueueEntry[] } = {}) {
   render(() => {

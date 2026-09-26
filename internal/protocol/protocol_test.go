@@ -37,3 +37,18 @@ func TestDecode(t *testing.T) {
 	assert.Equal(t, TypeQueueMove, typ)
 	assert.Nil(t, msg.(*QueueMove).AfterID)
 }
+
+func TestDecodeEnvelopeRef(t *testing.T) {
+	env, msg, err := DecodeEnvelope([]byte(`{"type":"seek","positionMs":1500,"ref":9}`))
+	require.NoError(t, err)
+	assert.Equal(t, Envelope{Type: TypeSeek, Ref: 9}, env)
+	assert.Equal(t, &Seek{PositionMs: 1500}, msg)
+
+	env, _, err = DecodeEnvelope([]byte(`{"type":"nope","ref":3}`))
+	require.Error(t, err)
+	assert.EqualValues(t, 3, env.Ref, "an unknown command still names itself")
+
+	env, _, err = DecodeEnvelope([]byte(`{"type":"pause"}`))
+	require.NoError(t, err)
+	assert.Zero(t, env.Ref, "ref is optional")
+}

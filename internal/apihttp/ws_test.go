@@ -388,8 +388,14 @@ func TestWebSocketCommands(t *testing.T) {
 	owner.send(ctx, map[string]any{"type": "chat.clear"})
 	guest.until(ctx, "chat.cleared")
 
-	// Unknown commands are refused without closing the connection.
-	assert.Equal(t, "invalid", owner.expectError(ctx, map[string]any{"type": "teleport"}))
+	// Unknown commands are refused without closing the connection; the
+	// error names the command by its ref.
+	owner.send(ctx, map[string]any{"type": "teleport", "ref": 42})
+	e := owner.until(ctx, "error")
+	assert.Equal(t, "invalid", e["code"])
+	assert.EqualValues(t, 42, e["ref"])
+	guest.send(ctx, map[string]any{"type": "chat.clear", "ref": 7})
+	assert.EqualValues(t, 7, guest.until(ctx, "error")["ref"])
 
 	// A promotion takes effect on the next command, without reconnecting.
 	require.Equal(t, http.StatusNoContent, owner.rest(ctx, http.MethodPut, "/api/v1/rooms/cmds/moderators/friend", ""))

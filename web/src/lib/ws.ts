@@ -1,5 +1,5 @@
 import { logEvent } from "~/lib/diagnostics";
-import type { ClientMessage, ServerMessage } from "~/protocol";
+import type { ClientCommand, ServerMessage } from "~/protocol";
 
 export type SocketStatus = "connecting" | "open" | "closed" | "kicked";
 
@@ -94,7 +94,7 @@ export class RoomSocket {
     this.onStatus(s);
   }
 
-  send(msg: ClientMessage): boolean {
+  send(msg: ClientCommand): boolean {
     if (this.ws?.readyState !== WebSocket.OPEN) return false;
     this.ws.send(JSON.stringify(msg));
     return true;

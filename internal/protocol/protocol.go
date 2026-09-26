@@ -50,6 +50,9 @@ const (
 // Envelope is the first pass of decoding: only the type.
 type Envelope struct {
 	Type string `json:"type"`
+	// Ref is an optional number the client picks per command; an error
+	// caused by the command echoes it, so the client knows what failed.
+	Ref int64 `json:"ref,omitempty"`
 }
 
 // Ping measures clock offset; T0 is the client's send time in unix ms.
@@ -149,9 +152,15 @@ type Report struct {
 
 // Decode parses a client message into its typed form.
 func Decode(data []byte) (string, any, error) {
+	env, msg, err := DecodeEnvelope(data)
+	return env.Type, msg, err
+}
+
+// DecodeEnvelope is Decode that also returns the envelope (with Ref).
+func DecodeEnvelope(data []byte) (Envelope, any, error) {
 	var env Envelope
 	if err := json.Unmarshal(data, &env); err != nil {
-		return "", nil, fmt.Errorf("protocol: %w", err)
+		return env, nil, fmt.Errorf("protocol: %w", err)
 	}
 
 	var msg any
@@ -189,15 +198,15 @@ func Decode(data []byte) (string, any, error) {
 	case TypeReport:
 		msg = &Report{}
 	default:
-		return env.Type, nil, fmt.Errorf("protocol: unknown message type %q", env.Type)
+		return env, nil, fmt.Errorf("protocol: unknown message type %q", env.Type)
 	}
 
 	if msg != nil {
 		if err := json.Unmarshal(data, msg); err != nil {
-			return env.Type, nil, fmt.Errorf("protocol: %s: %w", env.Type, err)
+			return env, nil, fmt.Errorf("protocol: %s: %w", env.Type, err)
 		}
 	}
-	return env.Type, msg, nil
+	return env, msg, nil
 }
 
 // --- server → client ---------------------------------------------------------
@@ -390,6 +399,7 @@ type Error struct {
 	Type    string `json:"type"`
 	Code    string `json:"code"`
 	Message string `json:"message"`
+	Ref     int64  `json:"ref,omitempty"` // the failed command's Ref
 }
 
 // Error codes.

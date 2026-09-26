@@ -170,7 +170,6 @@ const LiveRoom: Component<{ slug: string; name: string; visibility: string; desc
             </button>
           </div>
         </Show>
-        <Show when={store.lastError()}>{(e) => <p class="notice">{e()}</p>}</Show>
 
         <div
           class={`stage ${fs.active() ? "fullscreen" : ""} ${theater() ? "theater" : ""} ${fs.idle() ? "idle" : ""}`}

@@ -10,7 +10,9 @@ let dispose = () => {};
 let room: RoomStore;
 const ws = () => FakeWebSocket.all.at(-1)!;
 const deliver = (m: ServerMessage) => ws().deliver(m);
-const sent = () => ws().sent.map((s) => JSON.parse(s) as { type: string });
+// Commands carry refs; most assertions compare the rest.
+const raw = () => ws().sent.map((s) => JSON.parse(s) as { type: string; ref?: number });
+const sent = () => raw().map(({ ref: _ref, ...m }) => m);
 
 function open(queue: QueueEntry[] = [], messages: ChatMessage[] = []) {
   createRoot((d) => {
@@ -102,12 +104,33 @@ describe("room store", () => {
   it("turns a duplicate error into a question instead of a toast", () => {
     open();
     room.commands.add("https://youtu.be/dup", { next: true, title: "Dup" });
-    deliver({ type: "error", code: "duplicate", message: "already queued" });
+    const ref = raw().at(-1)!.ref;
+    expect(ref).toBeGreaterThan(0);
+    deliver({ type: "error", code: "duplicate", message: "already queued", ref });
     expect(room.pending()).toHaveLength(0);
     expect(room.duplicate()).toEqual({ url: "https://youtu.be/dup", title: "Dup", next: true, message: "already queued" });
     room.commands.add("https://youtu.be/dup", { force: true });
     expect(room.duplicate()).toBeNull();
     expect(sent().at(-1)).toEqual({ type: "queue.add", url: "https://youtu.be/dup", force: true });
+  });
+
+  it("settles only the command an error names", async () => {
+    const toast = await import("~/lib/toast");
+    open();
+    room.commands.add("https://youtu.be/a", { title: "A" });
+    const addRef = raw().at(-1)!.ref!;
+    room.commands.chat("too fast");
+    const chatRef = raw().at(-1)!.ref!;
+    expect(chatRef).not.toBe(addRef);
+
+    // A chat error leaves the pending add alone and shows as a toast.
+    deliver({ type: "error", code: "rate_limited", message: "slow mode: wait 3 s", ref: chatRef });
+    expect(room.pending().map((p) => p.title)).toEqual(["A"]);
+    expect(toast.toasts().at(-1)?.text).toBe("slow mode: wait 3 s");
+
+    // The add's own error settles it.
+    deliver({ type: "error", code: "invalid", message: "this link is not supported", ref: addRef });
+    expect(room.pending()).toEqual([]);
   });
 
   it("expires typing hints, ignoring our own", () => {

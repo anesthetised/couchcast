@@ -200,6 +200,9 @@ fails) and a production image build.
 - `internal/hub` owns WebSocket connections (`coder/websocket`): decodes
   `internal/protocol` messages, re-resolves the actor's role/ban on every
   mutating command, and fans broadcasts out through a bounded send buffer.
+  Commands may carry `ref` (a number the client picks); an `error` caused
+  by the command echoes it, and the room store settles the pending add
+  it belongs to instead of guessing.
 - Frontend sync lives in `web/src/lib`: `clock.ts` (ping/pong offset,
   median of samples), `sync.ts` (deadband 50 ms, `playbackRate` nudge up
   to 1 s, seek beyond), `player.ts` (Shaka + token request filter).

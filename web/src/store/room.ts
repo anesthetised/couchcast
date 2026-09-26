@@ -11,7 +11,7 @@ import { RoomSocket, type SocketStatus } from "~/lib/ws";
 import type { ChatMessage, ClientMessage, Playback, Snapshot } from "~/protocol";
 
 export type RoomEnd = { kind: "gone" } | { kind: "kicked"; reason: string };
-export type PendingAdd = { id: number; url: string; title?: string; next: boolean };
+export type PendingAdd = { id: number; ref: number; url: string; title?: string; next: boolean };
 // DuplicateAdd is a queue.add the server refused because the video is
 // already queued or played; the add form asks before forcing it.
 export type DuplicateAdd = { url: string; title?: string; next: boolean; message: string };
@@ -39,7 +39,6 @@ export function createRoomStore(slug: string) {
 
   const [state, setState] = createStore<RoomState>({ snapshot: null, playback: null, messages: [], me: null });
   const [status, setStatus] = createSignal<SocketStatus>("connecting");
-  const [lastError, setLastError] = createSignal<string | null>(null);
   // ended is set when the room is over for this client: kicked, banned or
   // the room no longer exists. The socket stops reconnecting.
   const [ended, setEnded] = createSignal<RoomEnd | null>(null);
@@ -147,11 +146,12 @@ export function createRoomStore(slug: string) {
         break;
       case "error": {
         logEvent("server", `${msg.code}: ${msg.message}`);
-        // Most errors here answer a command; a pending add is the likeliest.
-        const last = pending().at(-1);
-        setPending((p) => p.slice(0, -1));
-        if (msg.code === "duplicate" && last) {
-          setDuplicate({ url: last.url, title: last.title, next: last.next, message: msg.message });
+        // The ref names the failed command; a pending add it belongs to
+        // is settled, and a duplicate becomes a question.
+        const failed = msg.ref ? pending().find((p) => p.ref === msg.ref) : undefined;
+        if (failed) dropPending(failed.id);
+        if (msg.code === "duplicate" && failed) {
+          setDuplicate({ url: failed.url, title: failed.title, next: failed.next, message: msg.message });
           break;
         }
         toast(msg.message, "error");
@@ -216,7 +216,9 @@ export function createRoomStore(slug: string) {
     socket.close();
   });
 
-  const send = (msg: ClientMessage) => socket.send(msg);
+  // Commands carry a ref so an error can name the one that failed.
+  let refSeq = 0;
+  const send = (msg: ClientMessage, ref = ++refSeq) => socket.send({ ...msg, ref });
 
   return {
     state,
@@ -230,7 +232,6 @@ export function createRoomStore(slug: string) {
     dismissDuplicate: () => setDuplicate(null),
     typing,
     reactions,
-    lastError,
     clock,
     clockInfo,
     send,
@@ -246,10 +247,11 @@ export function createRoomStore(slug: string) {
       jump: (itemId: string) => send({ type: "jump", itemId }),
       add: (url: string, opts: { next?: boolean; title?: string; force?: boolean } = {}) => {
         const id = ++pendingSeq;
+        const ref = ++refSeq;
         setDuplicate(null);
-        setPending((p) => [...p, { id, url, title: opts.title, next: opts.next ?? false }]);
+        setPending((p) => [...p, { id, ref, url, title: opts.title, next: opts.next ?? false }]);
         window.setTimeout(() => dropPending(id), PENDING_TTL_MS);
-        return send({ type: "queue.add", url, next: opts.next || undefined, force: opts.force || undefined });
+        return send({ type: "queue.add", url, next: opts.next || undefined, force: opts.force || undefined }, ref);
       },
       replay: (itemId: string) => send({ type: "queue.replay", itemId }),
       clearPlayed: () => send({ type: "queue.clearPlayed" }),
