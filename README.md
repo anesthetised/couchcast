@@ -82,6 +82,26 @@ To update: `git pull`, then the same three commands; migrations are never
 applied on boot. `just prod-down` stops everything; data lives in the
 `pgdata`, `s3data` and `caddydata` volumes.
 
+### Backups
+
+`just backup` writes `backups/<UTC time>/` with a Postgres dump
+(`postgres.dump`) and an archive of the object storage volume
+(`s3data.tar.gz`); SeaweedFS is paused for the seconds the archive takes,
+so playback stalls briefly. `just restore backups/<time>` puts both back
+after a confirmation, stopping the web server and the worker meanwhile.
+
+Media is a cache that can be downloaded again; the database is what must
+not be lost. Run a backup from cron and copy the directory off the
+machine, for example nightly:
+
+```sh
+0 4 * * * cd /srv/couchcast && just backup && rsync -a --remove-source-files backups/ backup-host:couchcast/
+```
+
+A backup counts once it has been restored somewhere: bring the stack up
+under another project name (`COMPOSE_PROJECT_NAME=couchcast-check
+just prod-up`), run `just --yes restore <dir>` there, and look around.
+
 ## Administration
 
 Grant the first administrator from the shell:

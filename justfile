@@ -157,3 +157,43 @@ prod-migrate:
 [group('admin')]
 admin-grant username:
     {{compose}} run --rm web go run ./cmd/couchcast admin grant {{username}}
+
+# --- backups -----------------------------------------------------------------
+
+# The compose project; its volumes are <project>_pgdata and <project>_s3data.
+project := env("COMPOSE_PROJECT_NAME", "couchcast")
+
+# The SeaweedFS volume is paused while it is archived, so its files agree.
+#
+# Back up the database and object storage into backups/<UTC time>/.
+[group('ops')]
+backup:
+    #!/bin/sh
+    set -eu
+    dir="backups/$(date -u +%Y%m%dT%H%M%SZ)"
+    mkdir -p "$dir"
+    {{prod}} exec -T postgres pg_dump -U "${POSTGRES_USER:-couchcast}" -d "${POSTGRES_DB:-couchcast}" -Fc > "$dir/postgres.dump"
+    {{prod}} pause seaweedfs
+    trap '{{prod}} unpause seaweedfs' EXIT
+    docker run --rm -v "{{project}}_s3data:/data:ro" -v "$PWD/$dir:/backup" alpine:3.23 tar -czf /backup/s3data.tar.gz -C /data .
+    {{prod}} unpause seaweedfs
+    trap - EXIT
+    echo "backup written to $dir ($(du -sh "$dir" | cut -f1))"
+
+# Restore a backup made by `just backup`; replaces the current data.
+[confirm("Replace the database and object storage with this backup? Current data is lost.")]
+[group('ops')]
+restore dir:
+    #!/bin/sh
+    set -eu
+    test -f "{{dir}}/postgres.dump" || { echo "no postgres.dump in {{dir}}"; exit 1; }
+    {{prod}} stop web ingest
+    {{prod}} exec -T postgres pg_restore -U "${POSTGRES_USER:-couchcast}" -d "${POSTGRES_DB:-couchcast}" --clean --if-exists --no-owner < "{{dir}}/postgres.dump"
+    if [ -f "{{dir}}/s3data.tar.gz" ]; then
+        {{prod}} stop seaweedfs
+        docker run --rm -v "{{project}}_s3data:/data" -v "$PWD/{{dir}}:/backup:ro" alpine:3.23 \
+            sh -c 'find /data -mindepth 1 -delete && tar -xzf /backup/s3data.tar.gz -C /data'
+        {{prod}} start seaweedfs
+    fi
+    {{prod}} start web ingest
+    echo "restored from {{dir}}"

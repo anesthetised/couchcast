@@ -63,6 +63,11 @@ commands run from the repo root via `just` (see `justfile`):
   at 375 px. Failures
   leave traces and screenshots in `e2e/results/`, the HTML report in
   `e2e/report/`. Use it to verify signed-in flows.
+- `just backup` / `just restore <dir>` — Postgres dump plus an archive of
+  the SeaweedFS volume (paused meanwhile) in `backups/<time>/`; restore
+  asks first. `COMPOSE_PROJECT_NAME` picks the stack (volumes are
+  `<project>_pgdata`, `<project>_s3data`), which is how a restore is
+  tried without touching the real one.
 - `just build` — production image; `just prod-up` — run the base compose file;
   `just prod-https` — the same behind Caddy with automatic TLS
   (profile `https`, `deploy/Caddyfile`, needs `COUCHCAST_DOMAIN`; set

@@ -9,3 +9,4 @@
 /web/.pnpm-store/
 coverage.out
 /web/coverage/
+/backups/
