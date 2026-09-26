@@ -100,7 +100,8 @@ machine, for example nightly:
 0 4 * * * cd /srv/couchcast && just backup && rsync -a --remove-source-files backups/ backup-host:couchcast/
 ```
 
-A backup counts once it has been restored somewhere: bring the stack up
+`just backup-check` proves the recipes on a throwaway stack (CI runs it on
+every push); a real backup counts once it has been restored somewhere: bring the stack up
 under another project name (`COMPOSE_PROJECT_NAME=couchcast-check
 just prod-up`), run `just --yes restore <dir>` there, and look around.
 

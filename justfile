@@ -204,3 +204,31 @@ restore dir:
     fi
     {{prod}} start web ingest
     echo "restored from {{dir}}"
+
+# Prove backups by restoring one: in a throwaway compose project, write a
+# row and an object, back up, change both, restore, and compare.
+[group('ops')]
+backup-check:
+    #!/bin/sh
+    set -eu
+    export COMPOSE_PROJECT_NAME=couchcast-backup-check
+    dc="docker compose -f compose.yaml"
+    dir=""
+    cleanup() { $dc down -v >/dev/null 2>&1 || true; [ -n "$dir" ] && rm -rf "$dir"; rmdir backups 2>/dev/null || true; }
+    trap cleanup EXIT
+    sql() { $dc exec -T postgres psql -q -tA -U "${POSTGRES_USER:-couchcast}" -d "${POSTGRES_DB:-couchcast}" -c "$1"; }
+    put() { $dc exec -T seaweedfs sh -c "echo $2 > /tmp/f && curl -sf -F file=@/tmp/f http://127.0.0.1:8888/buckets/couchcast/$1 >/dev/null"; }
+    get() { $dc exec -T seaweedfs curl -sf "http://127.0.0.1:8888/buckets/couchcast/$1" || echo "(missing)"; }
+    $dc up -d --wait postgres seaweedfs >/dev/null 2>&1
+    sql "CREATE TABLE backup_check (v text); INSERT INTO backup_check VALUES ('kept')"
+    put keep.txt kept
+    dir=$(just backup | sed -n 's/^backup written to \([^ ]*\).*/\1/p')
+    sql "UPDATE backup_check SET v = 'changed'"
+    $dc exec -T seaweedfs curl -sf -X DELETE http://127.0.0.1:8888/buckets/couchcast/keep.txt >/dev/null
+    put new.txt new
+    just --yes restore "$dir" >/dev/null
+    $dc up -d --wait seaweedfs >/dev/null 2>&1
+    row=$(sql "SELECT v FROM backup_check"); keep=$(get keep.txt); new=$(get new.txt)
+    echo "row: $row, keep.txt: $keep, new.txt: $new"
+    [ "$row" = kept ] && [ "$keep" = kept ] && [ "$new" = "(missing)" ] || { echo "backup check failed"; exit 1; }
+    echo "backup check passed"

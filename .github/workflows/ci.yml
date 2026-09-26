@@ -189,6 +189,16 @@ jobs:
             e2e/results
           retention-days: 7
 
+  backup:
+    name: Backup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: extractions/setup-just@v4
+      # A backup counts once it has been restored.
+      - name: Back up, change, restore, compare
+        run: just backup-check
+
   image:
     name: Image
     runs-on: ubuntu-latest

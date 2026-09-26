@@ -77,7 +77,9 @@ commands run from the repo root via `just` (see `justfile`):
   the SeaweedFS volume (paused meanwhile) in `backups/<time>/`; restore
   asks first. `COMPOSE_PROJECT_NAME` picks the stack (volumes are
   `<project>_pgdata`, `<project>_s3data`), which is how a restore is
-  tried without touching the real one.
+  tried without touching the real one; `just backup-check` does exactly
+  that (row and object written, backed up, changed, restored, compared)
+  and runs in CI.
 - `just build` — production image; `just prod-up` — run the base compose file;
   `just prod-https` — the same behind Caddy with automatic TLS
   (profile `https`, `deploy/Caddyfile`, needs `COUCHCAST_DOMAIN`; set
