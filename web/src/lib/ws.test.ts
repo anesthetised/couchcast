@@ -90,6 +90,16 @@ describe("RoomSocket", () => {
     expect(FakeWebSocket.all).toHaveLength(1);
   });
 
+  it("reconnects when the server restarts (going away, not a kick)", async () => {
+    const s = new RoomSocket("r");
+    s.connect();
+    last().accept();
+    last().drop(1001, "server restarting");
+    expect(s.status).toBe("closed");
+    await vi.advanceTimersByTimeAsync(500);
+    expect(FakeWebSocket.all).toHaveLength(2);
+  });
+
   it("stays down after a kicked message and after close()", async () => {
     const s = new RoomSocket("r");
     s.connect();

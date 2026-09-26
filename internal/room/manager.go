@@ -238,12 +238,20 @@ func (m *Manager) tick(ctx context.Context) {
 	}
 }
 
+// ReasonShutdown closes viewers when the server stops; the hub sends it
+// as "going away" (1001), so clients reconnect instead of ending the
+// session as they do on a policy close (a kick).
+const ReasonShutdown = "server restarting"
+
 func (m *Manager) shutdownAll() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for id, r := range m.rooms {
+		// The HTTP server does not close hijacked WebSockets on shutdown;
+		// without this they would outlive the server and its database.
+		r.closeViewers(ReasonShutdown)
 		r.shutdown(ctx)
 		delete(m.rooms, id)
 	}

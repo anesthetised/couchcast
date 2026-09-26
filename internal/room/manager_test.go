@@ -177,12 +177,15 @@ func TestManagerRunUnloadsIdleRooms(t *testing.T) {
 	f.advance(2 * time.Minute)
 	require.Eventually(t, func() bool { return m.Loaded() == 0 }, 2*time.Second, 10*time.Millisecond)
 
-	// Shutdown persists and drops whatever is still loaded.
-	_, err = m.Get(ctx, f.room.ID())
+	// Shutdown disconnects viewers, persists and drops what is loaded.
+	r, err = m.Get(ctx, f.room.ID())
 	require.NoError(t, err)
+	viewer := &fakeConn{}
+	r.Join(ctx, viewer, f.guest)
 	cancel()
 	require.ErrorIs(t, <-done, context.Canceled)
 	assert.Equal(t, 0, m.Loaded())
+	assert.Equal(t, ReasonShutdown, viewer.closed)
 }
 
 func TestManagerUnloadStopsTheRoom(t *testing.T) {

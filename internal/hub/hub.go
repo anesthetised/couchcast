@@ -146,7 +146,11 @@ func (c *conn) writeLoop(ctx context.Context) {
 			return
 		case <-c.closed:
 			c.flush(ctx)
-			_ = c.ws.Close(websocket.StatusPolicyViolation, c.closeReason)
+			status := websocket.StatusPolicyViolation
+			if c.closeReason == room.ReasonShutdown {
+				status = websocket.StatusGoingAway // reconnect, the session goes on
+			}
+			_ = c.ws.Close(status, c.closeReason)
 			return
 		case msg := <-c.out:
 			if !c.write(ctx, msg) {

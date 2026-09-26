@@ -1968,6 +1968,16 @@ func (r *Room) shutdown(ctx context.Context) {
 	}
 }
 
+// closeViewers disconnects everyone with the reason.
+func (r *Room) closeViewers(reason string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for c := range r.viewers {
+		c.Close(reason)
+	}
+	r.viewers = map[Conn]*viewer{}
+}
+
 // closeLocked stops every timer and marks the room closed, so nothing
 // scheduled acts on it once the manager has let go of it.
 func (r *Room) closeLocked() {
