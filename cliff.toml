@@ -36,6 +36,11 @@ trim = true
 conventional_commits = true
 filter_unconventional = true
 split_commits = false
+# "@name" in a message would mention (and notify) a GitHub user of that
+# name and list them as a release contributor; as code it stays text.
+commit_preprocessors = [
+  { pattern = '(^|\s)@([A-Za-z0-9][A-Za-z0-9-]*)', replace = '${1}`@${2}`' },
+]
 commit_parsers = [
   { message = "^feat", group = "<!-- 0 -->Features" },
   { message = "^fix", group = "<!-- 1 -->Fixes" },

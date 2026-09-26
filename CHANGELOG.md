@@ -9,7 +9,7 @@ within the month. Images are published as `ghcr.io/anesthetised/couchcast`.
 
 - ops: Just release and deploys of published versions ([#117](https://github.com/anesthetised/couchcast/issues/117), [#118](https://github.com/anesthetised/couchcast/issues/118), [736b3a6](https://github.com/anesthetised/couchcast/commit/736b3a6be74cb85c80c602a36f4e11e09b557223))
 - Security headers from the server ([#114](https://github.com/anesthetised/couchcast/issues/114), [9fa16b1](https://github.com/anesthetised/couchcast/commit/9fa16b157264c84da51de4564a461abe37c25f68))
-- web: Accept @name in username fields ([#113](https://github.com/anesthetised/couchcast/issues/113), [cffb38b](https://github.com/anesthetised/couchcast/commit/cffb38b891524c9dc5f05eabc0842050c759efba))
+- web: Accept `@name` in username fields ([#113](https://github.com/anesthetised/couchcast/issues/113), [cffb38b](https://github.com/anesthetised/couchcast/commit/cffb38b891524c9dc5f05eabc0842050c759efba))
 - api: Budget link previews per address and at once ([#109](https://github.com/anesthetised/couchcast/issues/109), [50a426a](https://github.com/anesthetised/couchcast/commit/50a426a3b266a80682dff3d79e9f36f2a1a0594a))
 - ops: Backup and restore ([#99](https://github.com/anesthetised/couchcast/issues/99), [f15d07b](https://github.com/anesthetised/couchcast/commit/f15d07b5505c5274d334d13bfe4da2b14eef7034))
 - protocol: Command refs so errors name what failed ([#97](https://github.com/anesthetised/couchcast/issues/97), [f31f689](https://github.com/anesthetised/couchcast/commit/f31f6898dbe3a343609f07f3661ea84472c7eb5c))
