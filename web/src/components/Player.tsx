@@ -273,6 +273,11 @@ const Player: Component<Props> = (props) => {
         sync.suspended = true;
         setError(null);
         try {
+          // The effect that feeds the synchronizer runs after this one, so
+          // on the first load it would not know the room's position yet
+          // and every viewer would start at 0 and then seek.
+          const pb = props.room.state.playback;
+          if (pb) sync.update({ ...pb });
           const start = sync.targetMs() ?? 0;
           await player.load(target.manifest, target.token, start);
           setLoadedMediaId(target.id);

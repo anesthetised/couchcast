@@ -1,4 +1,4 @@
-import { createSignal, onCleanup } from "solid-js";
+import { batch, createSignal, onCleanup } from "solid-js";
 import { createStore, reconcile, unwrap } from "solid-js/store";
 
 import { ApiError } from "~/lib/api";
@@ -8,7 +8,7 @@ import { rooms } from "~/lib/rooms";
 import { toast } from "~/lib/toast";
 import type { RoomRole, Settings } from "~/lib/types";
 import { RoomSocket, type SocketStatus } from "~/lib/ws";
-import type { ChatMessage, ClientMessage, Playback, Snapshot } from "~/protocol";
+import type { ChatMessage, ClientMessage, Playback, ServerMessage, Snapshot } from "~/protocol";
 
 export type RoomEnd = { kind: "gone" } | { kind: "kicked"; reason: string };
 export type PendingAdd = { id: number; ref: number; url: string; title?: string; next: boolean };
@@ -94,7 +94,11 @@ export function createRoomStore(slug: string) {
     return true;
   };
 
-  socket.subscribe((msg) => {
+  // One message is one change: effects see its snapshot and playback
+  // together, never the snapshot with the previous clock.
+  socket.subscribe((msg) => batch(() => handle(msg)));
+
+  function handle(msg: ServerMessage) {
     switch (msg.type) {
       case "welcome":
         knownItems = new Set(msg.snapshot.queue.map((q) => q.id));
@@ -194,7 +198,7 @@ export function createRoomStore(slug: string) {
         if (cur) logEvent("media", `current ${cur.media.status}: ${cur.media.title || cur.media.sourceUrl}`, cur.media.error ? { error: cur.media.error } : undefined);
       }
     }
-  });
+  }
 
   // The session half of a bug report.
   onCleanup(
