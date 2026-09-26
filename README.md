@@ -48,10 +48,11 @@ accessibility scan). `just cover` prints Go coverage, as the badge.
 `just load` runs a load test against the dev stack; results and limits
 are in [docs/load.md](docs/load.md).
 
-Production uses the same compose file without the development override:
+Production uses the same compose file without the development override
+and a released image (see [Releases](#releases)):
 
 ```sh
-just build && just prod-migrate && just prod-up
+just deploy 2026.9.0   # a release; or build from source: just build && just prod-migrate && just prod-up
 ```
 
 ### Deploying with HTTPS
@@ -74,16 +75,39 @@ from couchcast itself, so they are the same with or without Caddy.
    # optional: COUCHCAST_VAPID_* from `docker run --rm <image> vapid`
    ```
 
-3. Build, migrate, start:
+3. Deploy a release (it checks out the release's tag, pulls its image,
+   applies migrations and starts everything behind Caddy):
 
    ```sh
-   just build && just prod-migrate && just prod-https
+   just deploy 2026.9.0
    just admin-grant <your-username>   # after registering
    ```
 
-To update: `git pull`, then the same three commands; migrations are never
-applied on boot. `just prod-down` stops everything; data lives in the
-`pgdata`, `s3data` and `caddydata` volumes.
+To update, `just deploy <newer version>`; migrations are never applied on
+boot. `just prod-down` stops everything; data lives in the `pgdata`,
+`s3data` and `caddydata` volumes.
+
+### Releases
+
+Versions are calendar based, `vYYYY.M.N` (N counts the releases within
+the month), and listed in [CHANGELOG.md](CHANGELOG.md). Each release
+publishes `ghcr.io/anesthetised/couchcast:<version>` for linux/amd64 and
+linux/arm64; `YYYY.M` and `latest` follow the newest one. A new GHCR
+package is private: make it public in its settings on GitHub, or run
+`docker login ghcr.io` on the server.
+
+- **Cut a release:** `just release` on an up-to-date main writes the
+  changelog, commits it and tags the next version; `git push origin main
+  <tag>` publishes it. The release workflow waits for CI on that commit
+  and publishes only if it passed.
+- **Deploy:** `just deploy <version>` checks out the tag, so the compose
+  files and migrations match the image, pulls it, migrates, starts (behind
+  Caddy when `COUCHCAST_DOMAIN` is set) and records `TAG` in `.env`.
+- **Roll back:** `just deploy <older version>` works while no migration
+  came in between. Otherwise it refuses, because the older server would
+  run against a newer schema: restore a backup taken before the upgrade
+  (`just restore`), then deploy the older version. Back up before an
+  upgrade that brings migrations.
 
 ### Backups
 

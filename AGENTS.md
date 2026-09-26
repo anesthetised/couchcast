@@ -94,6 +94,20 @@ commands run from the repo root via `just` (see `justfile`):
   tried without touching the real one; `just backup-check` does exactly
   that (row and object written, backed up, changed, restored, compared)
   and runs in CI.
+- `just release` — on a clean main equal to origin/main: next CalVer tag
+  `vYYYY.M.N`, CHANGELOG.md from `cliff.toml` (git-cliff in a container;
+  features, fixes, performance) in a `chore(release)` commit, annotated
+  tag; never pushes. Pushing the tag runs `.github/workflows/release.yml`:
+  checks the tag shape and that the commit is on main, waits for its CI
+  run and stops unless green, then pushes the multi-arch image
+  (`YYYY.M.N`, `YYYY.M`, `latest`, built with `VERSION`) and creates the
+  GitHub release with `git-cliff --latest` notes. The Dockerfile's build
+  stages run on `$BUILDPLATFORM` and cross-compile for `TARGETARCH`.
+- `just deploy <version>` — on the server: checks out the tag, refuses
+  when the database has a migration the release lacks (Atlas itself
+  accepts an older directory silently), pulls with `--policy missing`,
+  migrates, `up --wait` (web has a `/healthz` healthcheck), then writes
+  `TAG` to `.env`; on failure the checkout goes back and `.env` is kept.
 - `just build` — production image; `just prod-up` — run the base compose file;
   `just prod-https` — the same behind Caddy with automatic TLS
   (profile `https`, `deploy/Caddyfile`, needs `COUCHCAST_DOMAIN`; set

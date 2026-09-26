@@ -137,7 +137,79 @@ e2e *args:
 
 [group('build')]
 build tag=env("TAG", "dev"):
-    docker build --target runtime -t {{image}}:{{tag}} .
+    docker build --target runtime --build-arg VERSION={{tag}} -t {{image}}:{{tag}} .
+
+# git-cliff renders CHANGELOG.md and the release notes from cliff.toml.
+cliff := "orhunp/git-cliff:2.14.2"
+
+# vYYYY.M.N: N counts releases within the month. Nothing is pushed:
+# pushing the tag makes .github/workflows/release.yml publish the image
+# and the GitHub release once CI has passed on that commit.
+#
+# Tag the next release with its CHANGELOG.md in a release commit.
+[group('build')]
+release:
+    #!/bin/sh
+    set -eu
+    [ "$(git rev-parse --abbrev-ref HEAD)" = main ] || { echo "releases are cut from main"; exit 1; }
+    [ -z "$(git status --porcelain)" ] || { echo "the working tree has changes; commit or stash them first"; exit 1; }
+    git fetch -q --tags origin main
+    [ "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)" ] || { echo "main differs from origin/main; push or pull first"; exit 1; }
+    year=$(date -u +%Y); month=$(date -u +%m); month=${month#0}
+    n=0
+    while git rev-parse -q --verify "refs/tags/v$year.$month.$n" >/dev/null; do n=$((n + 1)); done
+    version="v$year.$month.$n"
+    docker run --rm -v "$PWD:/app" -w /app {{cliff}} --tag "$version" -o CHANGELOG.md 2>/dev/null
+    git add CHANGELOG.md
+    git commit -q -m "chore(release): $version"
+    git tag -a "$version" -m "couchcast $version"
+    echo "tagged $version; publish it with: git push origin main $version"
+
+# Checks out the release's tag (so compose files and migrations match the
+# image), pulls the image, migrates, starts (behind Caddy when
+# COUCHCAST_DOMAIN is set) and records TAG in .env for later compose
+# commands. On failure the checkout goes back and .env keeps the old
+# version; after migrations started, fix and deploy again.
+#
+# Deploy a published release on the server.
+[group('build')]
+deploy version:
+    #!/bin/sh
+    set -eu
+    version="{{version}}"; version="${version#v}"
+    [ -z "$(git status --porcelain --untracked-files=no)" ] || { echo "the checkout has local changes; deploy needs a clean one"; exit 1; }
+    git fetch -q --tags origin
+    git rev-parse -q --verify "refs/tags/v$version" >/dev/null || { echo "no release v$version"; exit 1; }
+    previous=$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)
+    running="${TAG:-}"
+    changed=0
+    trap 'git checkout -q "$previous"; if [ $changed = 1 ]; then echo "deploy of $version failed; .env still says ${running:-no version}, but the database and containers may be on $version: fix and deploy again"; else echo "deploy of $version stopped; nothing was changed"; fi' EXIT
+    git checkout -q "v$version"
+    # Atlas accepts an older migration directory without complaint, so an
+    # older release would run against a newer schema: refuse that.
+    {{prod}} up -d --wait postgres >/dev/null 2>&1
+    psql() { {{prod}} exec -T postgres psql -tA -U "${POSTGRES_USER:-couchcast}" -d "${POSTGRES_DB:-couchcast}" -c "$1"; }
+    applied=""
+    if [ "$(psql "SELECT to_regclass('atlas_schema_revisions.atlas_schema_revisions') IS NOT NULL")" = t ]; then
+        applied=$(psql "SELECT max(version) FROM atlas_schema_revisions.atlas_schema_revisions")
+    fi
+    if [ -n "$applied" ] && ! ls db/migrations/"${applied}"_*.sql >/dev/null 2>&1; then
+        echo "the database already has migration $applied, which $version does not know: its server would run"
+        echo "against a newer schema. Restore a backup from before that migration (just restore), or deploy a newer release."
+        exit 1
+    fi
+    export TAG="$version"
+    # A release tag never changes, so an image already here is reused: a
+    # rollback works even when the registry does not answer.
+    {{prod}} pull --policy missing web ingest
+    changed=1
+    {{prod}} run --rm atlas migrate apply --env local
+    if [ -n "${COUCHCAST_DOMAIN:-}" ]; then profile="--profile https"; else profile=""; fi
+    {{prod}} $profile up -d --wait
+    trap - EXIT
+    touch .env
+    if grep -q '^TAG=' .env; then sed -i.bak "s/^TAG=.*/TAG=$version/" .env && rm .env.bak; else echo "TAG=$version" >> .env; fi
+    echo "couchcast $version is running"
 
 [group('build')]
 prod-up:

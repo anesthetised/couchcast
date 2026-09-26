@@ -93,6 +93,12 @@ services:
     ports:
       # Behind Caddy publish it on loopback only: WEB_PORT=127.0.0.1:8080
       - "${WEB_PORT:-8080}:8080"
+    # /healthz checks the database too; `up --wait` (just deploy) waits for it.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
     depends_on:
       postgres:
         condition: service_healthy
