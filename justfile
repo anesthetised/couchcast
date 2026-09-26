@@ -158,6 +158,12 @@ prod-migrate:
 admin-grant username:
     {{compose}} run --rm web go run ./cmd/couchcast admin grant {{username}}
 
+# Load test against the running dev stack (`just dev`); see docs/load.md.
+# Flags: -viewers 300 -stuck 10 -seeks 60 -every 200ms.
+[group('code')]
+load *args:
+    {{compose}} run --rm web go run ./tools/loadtest {{args}}
+
 # --- backups -----------------------------------------------------------------
 
 # The compose project; its volumes are <project>_pgdata and <project>_s3data.

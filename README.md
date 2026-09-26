@@ -45,6 +45,8 @@ and SeaweedFS), `just test-web` (Vitest unit tests for the web app),
 `just lint`, `just check` (TypeScript) and `just e2e` (Playwright in the
 browser against a separate `couchcast_e2e` database, including an axe
 accessibility scan). `just cover` prints Go coverage, as the badge.
+`just load` runs a load test against the dev stack; results and limits
+are in [docs/load.md](docs/load.md).
 
 Production uses the same compose file without the development override:
 

@@ -68,6 +68,11 @@ commands run from the repo root via `just` (see `justfile`):
   at 375 px. Failures
   leave traces and screenshots in `e2e/results/`, the HTML report in
   `e2e/report/`. Use it to verify signed-in flows.
+- `just load [flags]` — `tools/loadtest` against the running dev stack:
+  a crowd of WebSocket viewers in one room, playback latency, dropping
+  viewers that stop reading, heap; `-storm` makes everyone buffer at
+  once. Results and limits live in `docs/load.md`; rerun after touching
+  the hub or room broadcasts.
 - `just backup` / `just restore <dir>` — Postgres dump plus an archive of
   the SeaweedFS volume (paused meanwhile) in `backups/<time>/`; restore
   asks first. `COMPOSE_PROJECT_NAME` picks the stack (volumes are
@@ -217,6 +222,9 @@ fails) and a production image build.
 - `internal/hub` owns WebSocket connections (`coder/websocket`): decodes
   `internal/protocol` messages, re-resolves the actor's role/ban on every
   mutating command, and fans broadcasts out through a bounded send buffer.
+  Presence changes (joins, leaves, buffering, lag) are coalesced into
+  one snapshot per `room.Deps.PresenceEvery` (250 ms from NewManager, 0
+  in unit tests = immediate); anything else broadcasts at once.
   Commands may carry `ref` (a number the client picks); an `error` caused
   by the command echoes it, and the room store settles the pending add
   it belongs to instead of guessing.
