@@ -1,10 +1,10 @@
 import { expect, test } from "@playwright/test";
 
-import { logIn, PASSWORD, signUp, uniq } from "../support/app";
+import { logIn, logOut, PASSWORD, signUp, uniq } from "../support/app";
 
 test("register refuses a taken name and explains bad input", async ({ page }) => {
   const name = await signUp(page, "taken");
-  await page.getByRole("button", { name: "Log out" }).click();
+  await logOut(page);
   await expect(page.getByRole("link", { name: "Log in" }).first()).toBeVisible();
 
   await page.goto("/register");
@@ -22,24 +22,24 @@ test("register refuses a taken name and explains bad input", async ({ page }) =>
   await expect(page).toHaveURL(/\/register$/);
 });
 
-test("log in, wrong password, log out, and come back to where you were", async ({ page }) => {
+test("log in, wrong password, log out, and come back to where you were @cross", async ({ page }) => {
   const name = await signUp(page, "returning");
-  await page.getByRole("button", { name: "Log out" }).click();
+  await logOut(page);
 
   // A page that needs an account sends you to log in and back.
   await page.goto("/me");
   await expect(page).toHaveURL(/\/login\?next=(%2F|\/)me$/);
   await page.getByLabel("Username").fill(name);
   await page.getByLabel("Password").fill("not-the-password");
-  await page.getByRole("button", { name: "Log in", exact: true }).click();
+  await page.getByLabel("Password").press("Enter");
   await expect(page.locator("form .error")).toHaveText("invalid username or password");
   await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Log in", exact: true }).click();
+  await page.getByLabel("Password").press("Enter");
   await expect(page).toHaveURL(/\/me$/);
   await expect(page.getByRole("heading", { name })).toBeVisible();
 
   // Logging out ends the session for this browser.
-  await page.getByRole("button", { name: "Log out" }).click();
+  await logOut(page);
   await page.goto("/me");
   await expect(page).toHaveURL(/\/login/);
 });

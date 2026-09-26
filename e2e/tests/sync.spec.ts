@@ -9,6 +9,11 @@ async function shownSeconds(page: Page): Promise<number> {
   return m! * 60 + s!;
 }
 
+// Starting a player takes a while when several browsers load the dev
+// server at once (WebKit most of all); the checks after that are quick.
+const STARTUP = 30_000;
+test.describe.configure({ timeout: 90_000 });
+
 const playButton = (p: Page) => p.locator(".controls .transport button.icon").first();
 
 // gap is how far apart two players are, in whole seconds.
@@ -26,7 +31,7 @@ async function settled(page: Page): Promise<number> {
   return shownSeconds(page);
 }
 
-test("viewers follow the host: play, pause, seek and speed", async ({ browser }) => {
+test("viewers follow the host: play, pause, seek and speed @cross @media", async ({ browser }) => {
   const hostCtx = await browser.newContext();
   const guestCtx = await browser.newContext();
   const host = await hostCtx.newPage();
@@ -39,7 +44,7 @@ test("viewers follow the host: play, pause, seek and speed", async ({ browser })
   await guest.goto(`/r/${slug}`);
 
   // The clip really plays for both, on the same clock.
-  await expect.poll(() => shownSeconds(guest), { timeout: 15_000 }).toBeGreaterThanOrEqual(2);
+  await expect.poll(() => shownSeconds(guest), { timeout: STARTUP }).toBeGreaterThanOrEqual(2);
   await expect.poll(() => gap(host, guest)).toBeLessThanOrEqual(1);
 
   // Pause: the guest stops where the host stopped.
@@ -72,7 +77,7 @@ test("viewers follow the host: play, pause, seek and speed", async ({ browser })
   await guestCtx.close();
 });
 
-test("a late joiner starts at the room's position", async ({ browser }) => {
+test("a late joiner starts at the room's position @cross @media", async ({ browser }) => {
   const hostCtx = await browser.newContext();
   const lateCtx = await browser.newContext();
   const host = await hostCtx.newPage();
@@ -80,10 +85,10 @@ test("a late joiner starts at the room's position", async ({ browser }) => {
   await signUp(host, "early");
   const slug = await createRoom(host, { firstUrl: PLAYABLE_URL });
   await host.goto(`/r/${slug}`);
-  await expect.poll(() => shownSeconds(host), { timeout: 15_000 }).toBeGreaterThanOrEqual(5);
+  await expect.poll(() => shownSeconds(host), { timeout: STARTUP }).toBeGreaterThanOrEqual(5);
 
   await late.goto(`/r/${slug}`); // anonymous
-  await expect.poll(() => shownSeconds(late), { timeout: 15_000 }).toBeGreaterThanOrEqual(5);
+  await expect.poll(() => shownSeconds(late), { timeout: STARTUP }).toBeGreaterThanOrEqual(5);
   await expect.poll(() => gap(host, late)).toBeLessThanOrEqual(1);
 
   await hostCtx.close();

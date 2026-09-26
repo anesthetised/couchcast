@@ -23,5 +23,25 @@ export default defineConfig({
       // interacted with the page would allow.
       use: { ...devices["Desktop Chrome"], launchOptions: { args: ["--autoplay-policy=no-user-gesture-required"] } },
     },
+    // The key flows (tagged @cross) also run in Firefox and WebKit.
+    {
+      name: "firefox",
+      grep: /@cross/,
+      use: { ...devices["Desktop Firefox"], launchOptions: { firefoxUserPrefs: {
+            "media.autoplay.default": 0,
+            "media.autoplay.blocking_policy": 0,
+            // Firefox's own popups over password fields (the insecure-http
+            // warning, password generation, saved logins) sometimes take the
+            // click meant for Register; a test profile needs none of them.
+            "security.insecure_field_warning.contextual.enabled": false,
+            "signon.rememberSignons": false,
+            "signon.generation.enabled": false,
+            "signon.autofillForms": false,
+          } } },
+    },
+    // Playback (@media) is left out in WebKit: Playwright's WebKitGTK decodes
+    // VP9 in software inside the container and now and then never starts or
+    // converges, which says little about Safari. Check Safari by hand.
+    { name: "webkit", grep: /@cross/, grepInvert: /@media/, use: { ...devices["Desktop Safari"] } },
   ],
 });

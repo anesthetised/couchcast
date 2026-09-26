@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 import { createRoom, signUp } from "../support/app";
 
-test("a friend joins a private room by invite link", async ({ browser }) => {
+test("a friend joins a private room by invite link @cross", async ({ browser }) => {
   const ownerCtx = await browser.newContext();
   const friendCtx = await browser.newContext();
   const owner = await ownerCtx.newPage();

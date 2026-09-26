@@ -57,7 +57,12 @@ commands run from the repo root via `just` (see `justfile`):
   (run by the recipe inside e2e-web) renders with ffmpeg, packages and
   uploads once, for tests that need the player to play (`sync.spec.ts`).
   Chromium runs with autoplay allowed; compare player times with
-  `expect.poll`, the display ticks every 250 ms. `a11y.spec.ts` runs axe
+  `expect.poll`, the display ticks every 250 ms. Tests tagged `@cross`
+  also run in Firefox and WebKit; `@media` (real playback) is left out
+  of WebKit, whose Playwright build decodes VP9 in software and is not
+  Safari — check Safari by hand. The Firefox profile turns off its
+  password UI, and helpers submit forms with Enter: a click can land on
+  the browser's own popup. `a11y.spec.ts` runs axe
   (WCAG 2.1 A/AA, serious and critical findings fail) over the main
   pages and the room's dialogs, and checks that nothing scrolls sideways
   at 375 px. Failures

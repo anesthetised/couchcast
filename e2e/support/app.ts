@@ -14,8 +14,10 @@ export async function signUp(page: Page, prefix = "user"): Promise<string> {
   const name = uniq(prefix);
   await page.goto("/register");
   await page.getByLabel("Username").fill(name);
+  // Enter submits the form as a keyboard user would; in Firefox a click can
+  // land on the browser's own password UI instead.
   await page.getByLabel("Password").fill(PASSWORD);
-  await page.getByRole("button", { name: "Register" }).click();
+  await page.getByLabel("Password").press("Enter");
   await expect(page.locator(".usermenu .username")).toContainText(name);
   return name;
 }
@@ -25,8 +27,15 @@ export async function logIn(page: Page, name: string, password = PASSWORD) {
   await page.goto("/login");
   await page.getByLabel("Username").fill(name);
   await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Log in", exact: true }).click();
+  await page.getByLabel("Password").press("Enter");
   await expect(page.locator(".usermenu .username")).toContainText(name);
+}
+
+// logOut clicks Log out and waits until the app shows the visitor signed
+// out; navigating right after the click can abort the request.
+export async function logOut(page: Page) {
+  await page.getByRole("button", { name: "Log out" }).click();
+  await expect(page.locator(".usermenu .username")).toHaveCount(0);
 }
 
 // createRoom goes through the API with the page's session: most tests

@@ -14,7 +14,7 @@ test("create a room from the form and land in it", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Friday movies" })).toBeVisible();
 });
 
-test("chat: send, reply, pin, emoji", async ({ page }) => {
+test("chat: send, reply, pin, emoji @cross", async ({ page }) => {
   await signUp(page, "chatty");
   const slug = await createRoom(page);
   await page.goto(`/r/${slug}`);
@@ -43,7 +43,7 @@ test("chat: send, reply, pin, emoji", async ({ page }) => {
   await expect(input).toHaveValue("popcorn time 🍿 ");
 });
 
-test("chat: edit one's own message, others see (edited)", async ({ browser }) => {
+test("chat: edit one's own message, others see (edited) @cross", async ({ browser }) => {
   const hostCtx = await browser.newContext();
   const guestCtx = await browser.newContext();
   const host = await hostCtx.newPage();
