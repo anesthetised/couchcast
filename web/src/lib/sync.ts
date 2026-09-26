@@ -13,6 +13,14 @@ export interface SyncDebug {
 const DEADBAND = 50; // below this, leave the video alone
 const SEEK_AT = 1000; // above this, seek instead of nudging
 const NUDGE = 0.05; // playbackRate adjustment while converging
+// A seek lands this far ahead of the target, since the seek itself takes
+// time; it follows how long the last seek took (slow decoders, WebKit
+// without hardware VP9) within these bounds.
+const MIN_LEAD = 150;
+const MAX_LEAD = 3000;
+// A seek the element has not finished after this long is stuck (WebKit
+// sometimes never completes one); seeking again gets it moving.
+const STUCK_AFTER = 3000;
 
 // Synchronizer keeps a <video> on the server clock. It never talks to the
 // server: playback state arrives from the room store, and the local video
@@ -21,6 +29,9 @@ export class Synchronizer {
   private timer: number | null = null;
   private playback: Playback | null = null;
   private seeking = false;
+  private seekStartedAt: number | null = null;
+  private seekLead = MIN_LEAD;
+  private elementSeekingSince: number | null = null;
   onDebug: (d: SyncDebug) => void = () => {};
   private debug(d: SyncDebug) {
     logSync(d);
@@ -51,8 +62,27 @@ export class Synchronizer {
   }
 
   private onSeeked = () => {
+    if (this.seekStartedAt !== null) {
+      this.seekLead = Math.min(MAX_LEAD, Math.max(MIN_LEAD, performance.now() - this.seekStartedAt));
+      this.seekStartedAt = null;
+    }
     this.seeking = false;
   };
+
+  // busy is true while a seek is in flight: ours, or the element's own.
+  // Seeking over an unfinished seek restarts it, and a decoder slower than
+  // our guard (WebKit without hardware VP9) then never plays at all; a
+  // seek that has hung for STUCK_AFTER is given up on instead.
+  private busy(): boolean {
+    if (this.seeking) return true;
+    if (!this.video.seeking) {
+      this.elementSeekingSince = null;
+      return false;
+    }
+    const now = performance.now();
+    this.elementSeekingSince ??= now;
+    return now - this.elementSeekingSince < STUCK_AFTER;
+  }
 
   update(p: Playback) {
     this.playback = p;
@@ -80,7 +110,7 @@ export class Synchronizer {
     if (!p.playing) {
       if (!v.paused) v.pause();
       v.playbackRate = base;
-      if (Math.abs(drift) > 200 && !this.seeking) {
+      if (Math.abs(drift) > 200 && !this.busy()) {
         this.seekTo(target);
         this.debug({ targetMs: target, driftMs: drift, rate: 1, action: "seek" });
         return;
@@ -94,12 +124,12 @@ export class Synchronizer {
       this.debug({ targetMs: target, driftMs: drift, rate: v.playbackRate, action: "play" });
     }
 
-    if (this.seeking) return;
+    if (this.busy()) return;
 
     // Nudges are relative to the room's speed, so 1.5× stays 1.5×.
     if (Math.abs(drift) > SEEK_AT) {
-      // Land slightly ahead: the seek itself takes time.
-      this.seekTo(target + 150);
+      // Land ahead by what a seek costs here.
+      this.seekTo(target + this.seekLead * base);
       v.playbackRate = base;
       this.debug({ targetMs: target, driftMs: drift, rate: base, action: "seek" });
     } else if (Math.abs(drift) > DEADBAND) {
@@ -137,6 +167,7 @@ export class Synchronizer {
 
   private seekTo(ms: number) {
     this.seeking = true;
+    this.seekStartedAt = performance.now();
     this.video.currentTime = Math.max(0, ms / 1000);
     // Guard against browsers that never fire seeked for tiny moves.
     window.setTimeout(() => {

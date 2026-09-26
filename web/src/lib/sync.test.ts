@@ -6,9 +6,12 @@ import type { Playback } from "~/protocol";
 
 // A <video> stand-in with the fields the synchronizer reads and writes.
 function fakeVideo() {
+  const listeners = new Map<string, () => void>();
   return {
+    listeners,
     currentTime: 0,
     paused: true,
+    seeking: false,
     playbackRate: 1,
     readyState: 4,
     play: vi.fn(function (this: { paused: boolean }) {
@@ -18,8 +21,8 @@ function fakeVideo() {
     pause: vi.fn(function (this: { paused: boolean }) {
       this.paused = true;
     }),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
+    addEventListener: vi.fn((type: string, fn: () => void) => listeners.set(type, fn)),
+    removeEventListener: vi.fn((type: string) => listeners.delete(type)),
   };
 }
 
@@ -84,6 +87,50 @@ describe("Synchronizer", () => {
     s.update(playing(5_000, 10_000));
     expect(video.currentTime).toBeCloseTo(5.15);
     expect(log.at(-1)!.action).toBe("seek");
+  });
+
+  it("never seeks over a seek the element has not finished", () => {
+    const { video, s } = setup();
+    s.start();
+    video.paused = false;
+    video.currentTime = 1;
+    s.update(playing(5_000, 10_000));
+    const landed = video.currentTime;
+    expect(landed).toBeGreaterThan(5);
+
+    // WebKit decoding VP9 in software: still seeking after our guard ran out.
+    const now = vi.spyOn(performance, "now").mockReturnValue(0);
+    video.seeking = true;
+    video.currentTime = 1;
+    vi.advanceTimersByTime(2_000);
+    s.update(playing(5_000, 10_000));
+    now.mockReturnValue(2_000);
+    s.update(playing(5_000, 10_000));
+    expect(video.currentTime).toBe(1);
+
+    // A seek that hangs longer is given up on: seeking again unsticks it.
+    now.mockReturnValue(3_500);
+    s.update(playing(5_000, 10_000));
+    expect(video.currentTime).toBeGreaterThan(5);
+    s.stop();
+  });
+
+  it("lands further ahead after a slow seek", () => {
+    const now = vi.spyOn(performance, "now").mockReturnValue(0);
+    const { video, s } = setup();
+    s.start();
+    video.paused = false;
+    video.currentTime = 1;
+    s.update(playing(5_000, 10_000));
+    expect(video.currentTime).toBeCloseTo(5.15); // the default lead
+
+    // The seek took 1.2 s; the next one aims 1.2 s ahead.
+    now.mockReturnValue(1_200);
+    video.listeners.get("seeked")!();
+    video.currentTime = 1;
+    s.update(playing(5_000, 10_000));
+    expect(video.currentTime).toBeCloseTo(6.2);
+    s.stop();
   });
 
   it("starts a paused video when the room plays, and pauses it when the room pauses", () => {
