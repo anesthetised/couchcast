@@ -161,6 +161,7 @@ func New(deps Deps) *Server {
 	r.Use(requestLogger(deps.Logger))
 	r.Use(middleware.Recoverer)
 	r.Use(deps.Metrics.HTTPMiddleware)
+	r.Use(securityHeaders)
 
 	r.Get("/healthz", s.handleHealthz)
 	r.Method(http.MethodGet, "/metrics", deps.Metrics.Handler())

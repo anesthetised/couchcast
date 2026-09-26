@@ -21,12 +21,9 @@
 		}
 	}
 
-	header {
-		Strict-Transport-Security "max-age=31536000"
-		X-Content-Type-Options "nosniff"
-		Referrer-Policy "strict-origin-when-cross-origin"
-		-Server
-	}
+	# couchcast sets the security headers itself (CSP, HSTS over HTTPS,
+	# framing, referrer, permissions), so they hold without Caddy too.
+	header -Server
 
 	# WebSockets (/api/v1/rooms/*/ws) and Range requests for media pass
 	# through reverse_proxy unchanged.

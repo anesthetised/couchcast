@@ -59,7 +59,8 @@ just build && just prod-migrate && just prod-up
 Phones need HTTPS for notifications and for installing the app, and
 cookies are `Secure` by default. The `https` compose profile puts
 [Caddy](https://caddyserver.com) in front of the web server and gets the
-certificate automatically.
+certificate automatically. Security headers (CSP, HSTS, framing) come
+from couchcast itself, so they are the same with or without Caddy.
 
 1. Point a DNS name at the server and open ports 80 and 443.
 2. In `.env` (start from `.env.example`) set at least:

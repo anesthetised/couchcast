@@ -55,6 +55,11 @@ commands run from the repo root via `just` (see `justfile`):
   `couchcast_e2e` database and the `couchcast-e2e` bucket, with their own
   server and Vite instance
   (compose profile `e2e`, `compose.e2e.yaml`); never touches dev data.
+  `E2E_BUNDLE=1` builds the web bundle into `web/dist` and points the
+  browsers at the Go server instead of Vite, so the suite runs against
+  what production serves, with its security headers (`csp.spec.ts`
+  fails on any Content-Security-Policy violation and skips under Vite);
+  the recipe empties `web/dist` again afterwards.
   Tests sign up their own users (`support/app.ts`), create rooms through
   the API and use `sql()` for what no UI does (the admin role).
   `readyVideo()` inserts a ready media row without files (enough for queue
@@ -98,7 +103,7 @@ against Postgres, the TypeScript check, the Vitest suite and the build, Atlas mi
 the Playwright suite through `just e2e` (the report is uploaded when it
 fails) and a production image build. The E2E job builds the dev image
 with a GitHub Actions layer cache and sets `E2E_PREBUILT` so the recipe
-skips its own build; `GO_MOD_CACHE` / `GO_BUILD_CACHE` point the Go
+skips its own build, and `E2E_BUNDLE` to test the built bundle; `GO_MOD_CACHE` / `GO_BUILD_CACHE` point the Go
 caches at directories `actions/cache` keeps (named volumes otherwise).
 
 ## Architecture
@@ -139,6 +144,15 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
   (download: bytes from the selected formats; packaging: ffmpeg
   `-progress` out_time against the duration), shown in the queue and on
   the preparing overlay.
+- `apihttp.securityHeaders` sets the browser hardening headers on every
+  response, with or without a proxy in front: a Content-Security-Policy
+  (scripts only from the bundle, media `self` + `blob:` for MediaSource,
+  images also `https:` for video-site thumbnails, `frame-ancestors
+  'none'`), `X-Frame-Options`, `nosniff`, `Referrer-Policy`,
+  `Permissions-Policy` (camera, microphone, geolocation… off),
+  `Cross-Origin-Opener-Policy`, and HSTS when the request came over HTTPS
+  (`isHTTPS`: TLS or `X-Forwarded-Proto`). A new external resource needs
+  its source added there; `csp.spec.ts` catches what was forgotten.
 - `internal/netguard` keeps fetches of user-supplied links out of the
   private network: `IsPublicIP` (loopback, RFC 1918, CGNAT, link-local,
   unique-local, multicast, 0/8, reserved, IPv4-mapped/NAT64/6to4 forms),

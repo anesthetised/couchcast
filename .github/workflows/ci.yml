@@ -171,11 +171,14 @@ jobs:
           restore-keys: |
             e2e-go-${{ hashFiles('go.sum') }}-
             e2e-go-
-      # Same stack as locally: Postgres, SeaweedFS, the Go server and Vite in
-      # the compose e2e profile, Playwright in its own container.
+      # Same stack as locally: Postgres, SeaweedFS and the Go server in the
+      # compose e2e profile, Playwright in its own container. E2E_BUNDLE
+      # tests the built bundle as production serves it, security headers
+      # included, rather than the Vite dev server.
       - name: Playwright
         env:
           E2E_PREBUILT: "1"
+          E2E_BUNDLE: "1"
           GO_MOD_CACHE: ${{ runner.temp }}/gomod
           GO_BUILD_CACHE: ${{ runner.temp }}/gobuild
         run: mkdir -p "$GO_MOD_CACHE" "$GO_BUILD_CACHE" && just e2e

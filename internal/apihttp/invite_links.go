@@ -107,7 +107,7 @@ func (s *Server) handleCreateInviteLink(w http.ResponseWriter, r *http.Request) 
 // joinURL builds the public link from the request's origin.
 func (s *Server) joinURL(r *http.Request, token string) string {
 	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+	if isHTTPS(r) {
 		scheme = "https"
 	}
 	return scheme + "://" + r.Host + "/join/" + token

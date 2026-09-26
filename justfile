@@ -122,13 +122,16 @@ test-web *args:
 e2e *args:
     @# CI builds the dev image beforehand with a layer cache.
     @if [ -z "${E2E_PREBUILT:-}" ]; then {{compose}} build web; fi
+    @# E2E_BUNDLE=1 tests the built bundle as the Go server serves it (with
+    @# its security headers) instead of the Vite dev server.
+    @if [ -n "${E2E_BUNDLE:-}" ]; then just pnpm install --frozen-lockfile && just pnpm build --emptyOutDir false; fi
     {{compose}} up -d --wait postgres seaweedfs
     {{e2e}} stop e2e-web e2e-frontend
     {{compose}} exec -T postgres psql -q -U ${POSTGRES_USER:-couchcast} -d postgres -c 'DROP DATABASE IF EXISTS couchcast_e2e WITH (FORCE)' -c 'CREATE DATABASE couchcast_e2e'
     {{compose}} run --rm -e COUCHCAST_DATABASE_URL={{e2e_db}} atlas migrate apply --env local
     {{e2e}} up -d --wait e2e-web e2e-frontend
     {{e2e}} exec -T e2e-web go run ./e2e/seed
-    {{e2e}} run --rm e2e sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm exec playwright test {{args}}"; status=$?; {{e2e}} rm -sf e2e-web e2e-frontend; exit $status
+    {{e2e}} run --rm ${E2E_BUNDLE:+-e BASE_URL=http://e2e-web:8080} e2e sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm exec playwright test {{args}}"; status=$?; {{e2e}} rm -sf e2e-web e2e-frontend; if [ -n "${E2E_BUNDLE:-}" ]; then find web/dist -mindepth 1 ! -name .gitkeep -delete; fi; exit $status
 
 # --- build & production ----------------------------------------------------
 

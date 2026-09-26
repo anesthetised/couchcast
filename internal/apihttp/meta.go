@@ -114,7 +114,7 @@ func (m *metaInjector) build(r *http.Request, slug string) string {
 	}
 
 	scheme := "http"
-	if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+	if isHTTPS(r) {
 		scheme = "https"
 	}
 	url := scheme + "://" + r.Host + "/r/" + slug
