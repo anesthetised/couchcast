@@ -143,8 +143,9 @@ fails) and a production image build.
   skip the lookup. `COUCHCAST_ALLOW_PRIVATE_SOURCES=true` turns it all off
   for LAN self-hosters. Residual risk: yt-dlp resolves DNS and follows
   redirects itself, so the admission check is not airtight against DNS
-  rebinding or a public page that redirects inward; deployments should keep
-  the ingest worker off networks it should not reach.
+  rebinding or a public page that redirects inward; the compose networks
+  (see the top of this file) keep the worker away from everything but
+  Postgres, object storage and the internet.
 - `internal/source` abstracts extractors; `source/ytdlp` shells out to
   yt-dlp (fixture in `testdata/`). `source.SelectFormats` picks one codec
   family and the best format per ladder height — never transcode.

@@ -149,8 +149,9 @@ deploy/          files mounted into infrastructure containers
   queue files from your own LAN, set `COUCHCAST_ALLOW_PRIVATE_SOURCES=true`
   on both `serve` and `ingest` — only on an instance where everyone who can
   add videos is trusted. yt-dlp resolves names and follows redirects on its
-  own, so the check is not airtight: keep the ingest worker off networks it
-  has no business reaching (it needs only PostgreSQL, S3 and the internet).
+  own, so the check is not airtight: the compose file therefore gives the
+  ingest worker networks of its own with only PostgreSQL, S3 and the
+  internet; keep it that way on other setups.
 
 A room that is playing stays loaded, keeps advancing through its queue and
 is resumed after a server restart. By default it pauses two minutes after
