@@ -11,6 +11,13 @@ from YouTube and other sources, and watch them in sync. The backend is Go
 (SeaweedFS in compose; the web server and the ingest worker create the
 bucket on start). One binary provides three commands: `serve` (web
 server), `ingest` (download/package worker) and `admin` (CLI).
+Compose splits the services over networks by who talks to whom:
+`default` (web, Caddy, Vite, the e2e browser), `data` (web, migrations
+and e2e with Postgres and SeaweedFS), `ingest-data` (the ingest worker
+with the same two) and `ingest-egress` (the worker's way out). The worker
+fetches links from anywhere, so it cannot reach the web server, the
+proxy or anything else; a new service joins only the networks it needs.
+SeaweedFS sits on two networks and binds `0.0.0.0` for that.
 
 Video is delivered as DASH (packaged by ffmpeg without transcoding) and
 played by Shaka Player; playback synchronisation runs over WebSocket with

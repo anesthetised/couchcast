@@ -4,6 +4,7 @@
 
 services:
   e2e-web:
+    networks: [default, data]
     image: couchcast-dev
     profiles: [e2e]
     working_dir: /src
@@ -58,6 +59,7 @@ services:
         condition: service_healthy
 
   e2e:
+    networks: [default, data]
     image: mcr.microsoft.com/playwright:v1.63.0-noble
     profiles: [e2e]
     working_dir: /src/e2e
