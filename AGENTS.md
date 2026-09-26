@@ -40,7 +40,8 @@ commands run from the repo root via `just` (see `justfile`):
   snapshots; `--coverage` writes `web/coverage/`. Pages and flows that
   need the server belong in `e2e/`.
 - `just e2e [args]` — Playwright browser tests (`e2e/`) against a fresh
-  `couchcast_e2e` database with their own server and Vite instance
+  `couchcast_e2e` database and the `couchcast-e2e` bucket, with their own
+  server and Vite instance
   (compose profile `e2e`, `compose.e2e.yaml`); never touches dev data.
   Tests sign up their own users (`support/app.ts`), create rooms through
   the API and use `sql()` for what no UI does (the admin role).

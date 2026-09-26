@@ -1,4 +1,4 @@
-# End-to-end test stack (`just e2e`): its own database, web server and
+# End-to-end test stack (`just e2e`): its own database and bucket, web server and
 # Vite instance, so a run never touches the development data, plus the
 # Playwright runner. Applied on top of compose.yaml and compose.dev.yaml.
 
@@ -12,7 +12,8 @@ services:
       COUCHCAST_LOG_LEVEL: warn
       COUCHCAST_DATABASE_URL: postgres://${POSTGRES_USER:-couchcast}:${POSTGRES_PASSWORD:-couchcast}@postgres:5432/couchcast_e2e?sslmode=disable
       COUCHCAST_S3_ENDPOINT: seaweedfs:9000
-      COUCHCAST_S3_BUCKET: ${S3_BUCKET:-couchcast}
+      # Its own bucket, like its own database: e2e never touches dev media.
+      COUCHCAST_S3_BUCKET: couchcast-e2e
       COUCHCAST_S3_ACCESS_KEY: ${S3_ACCESS_KEY:-couchcast}
       COUCHCAST_S3_SECRET_KEY: ${S3_SECRET_KEY:-couchcast-dev-secret}
       COUCHCAST_S3_USE_SSL: "false"

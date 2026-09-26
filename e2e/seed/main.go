@@ -2,8 +2,8 @@
 // share: a 20 s clip rendered by ffmpeg, packaged like any ingest result,
 // uploaded to object storage and registered in the e2e database as a
 // ready YouTube media row. `just e2e` runs it inside the e2e-web service,
-// whose environment points at the e2e database and the dev bucket; the
-// objects are reused across runs.
+// whose environment points at the e2e database and bucket; the objects
+// are reused across runs.
 package main
 
 import (
