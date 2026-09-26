@@ -383,7 +383,9 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
   corrections relative to the report, the frame, raw JSON, Copy JSON and
   Resolve with a note.
 - `GET /api/v1/users?q=` (signed in) is username autocomplete; the
-  `UsernamePicker` component wraps it wherever usernames are typed.
+  `UsernamePicker` component wraps it wherever usernames are typed and
+  accepts a leading `@` as in chat mentions (two characters after it
+  start the lookup).
 - Web Push (optional, `COUCHCAST_VAPID_*`, `couchcast vapid` prints a
   pair): `internal/webpush` is RFC 8291/8292 on the standard library
   (tested against the RFC's worked example) and only posts to known push

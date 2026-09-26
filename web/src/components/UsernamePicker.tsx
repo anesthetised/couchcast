@@ -10,8 +10,12 @@ type Props = {
 };
 
 // UsernamePicker is a chip input with prefix autocomplete against
-// GET /api/v1/users. Enter, comma or a click adds a chip; Backspace on an
-// empty field removes the last one.
+// GET /api/v1/users. A leading "@" is accepted as in chat mentions. Enter,
+// comma or a click adds a chip; Backspace on an empty field removes the
+// last one.
+// bare strips the "@" people type out of habit from chat mentions.
+const bare = (raw: string) => raw.trim().replace(/^@+/, "");
+
 const UsernamePicker: Component<Props> = (props) => {
   const [input, setInput] = createSignal("");
   const [suggestions, setSuggestions] = createSignal<string[]>([]);
@@ -23,7 +27,7 @@ const UsernamePicker: Component<Props> = (props) => {
   const has = (name: string) => props.value.some((v) => v.toLowerCase() === name.toLowerCase());
 
   const add = (raw: string) => {
-    const name = raw.trim().replace(/,$/, "");
+    const name = bare(raw.replace(/,$/, ""));
     if (!name || has(name)) {
       setInput("");
       return;
@@ -36,16 +40,17 @@ const UsernamePicker: Component<Props> = (props) => {
 
   const remove = (name: string) => props.onChange(props.value.filter((v) => v !== name));
 
-  const lookup = (q: string) => {
+  const lookup = (raw: string) => {
     if (timer !== null) window.clearTimeout(timer);
-    if (q.trim().length < 2) {
+    const q = bare(raw);
+    if (q.length < 2) {
       setSuggestions([]);
       return;
     }
     const mine = ++seq;
     timer = window.setTimeout(async () => {
       try {
-        const names = await api<string[]>(`/api/v1/users?q=${encodeURIComponent(q.trim())}`);
+        const names = await api<string[]>(`/api/v1/users?q=${encodeURIComponent(q)}`);
         if (mine !== seq) return;
         const excluded = new Set((props.exclude ?? []).map((n) => n.toLowerCase()));
         setSuggestions(names.filter((n) => !has(n) && !excluded.has(n.toLowerCase())));
