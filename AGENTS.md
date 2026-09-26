@@ -39,7 +39,12 @@ commands run from the repo root via `just` (see `justfile`):
   share `COUCHCAST_TEST_DATABASE_URL`, hence serial; skipped when unset;
   object storage tests use throwaway buckets on the SeaweedFS named by
   `COUCHCAST_TEST_S3_ENDPOINT`, also skipped when unset)
-- `just cover` — Go coverage across packages (`-coverpkg`), as the badge
+- `just cover` — Go coverage of the product (`cmd`, `internal`, `web`;
+  not the dev programs under `tools/` and `e2e/`), counting code any
+  package's tests reach (`-coverpkg`), as the badge. `cmd/couchcast`
+  tests run the real commands in-process (`run(ctx, args)` with env):
+  `admin`, `ingest` against a stub yt-dlp, and `serve` stopped and
+  restarted with a room playing
 - `just lint` — golangci-lint; `just check` — TypeScript type check
 - `just test-web [args]` — Vitest unit tests (`web/src/**/*.test.ts[x]`,
   jsdom): `lib/`, the room store and components. Tests drive the real
@@ -319,6 +324,9 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
   the end of the session. Reasons: `banned` (room or site ban, the `OnBan`
   and `OnUserBanned` hooks), `removed from room` (`OnRemove`, a member
   taken out of a private room), `room deleted`, `left`, `session ended`.
+  On shutdown the manager closes viewers with `room.ReasonShutdown`, which
+  the hub sends as 1001 (going away): clients reconnect, while 1008 would
+  end their session; the HTTP server alone leaves hijacked sockets open.
   The hub's `Close` only signals: its write loop sends what is queued
   (the `kicked` message), then the close frame, so a room never blocks
   on a slow client while holding its lock.

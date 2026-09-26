@@ -60,7 +60,7 @@ jobs:
           COUCHCAST_TEST_S3_ACCESS_KEY: couchcast
           COUCHCAST_TEST_S3_SECRET_KEY: couchcast-dev-secret
         # Packages run serially: integration tests share one database.
-        run: go test -p 1 -race -coverpkg=./... -coverprofile=coverage.out ./...
+        run: go test -p 1 -race -coverpkg=./cmd/...,./internal/...,./web -coverprofile=coverage.out ./...
       - name: Coverage
         run: go tool cover -func=coverage.out | tail -1
       # The README badge reads coverage.json from the `badges` branch via

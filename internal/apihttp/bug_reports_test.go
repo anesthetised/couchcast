@@ -74,6 +74,22 @@ func TestBugReports(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, bad(map[string]any{"description": strings.Repeat("x", 2001)}))
 	assert.Equal(t, http.StatusRequestEntityTooLarge, bad(map[string]any{"client": map[string]any{"pad": strings.Repeat("x", 70<<10)}}))
 	assert.Equal(t, http.StatusForbidden, bad(map[string]any{"roomSlug": "secret"}), "a private room the reporter cannot view")
+	assert.Equal(t, http.StatusNotFound, bad(map[string]any{"roomSlug": "nowhere"}))
+	assert.Equal(t, http.StatusBadRequest, bad(map[string]any{"frame": "%%% not base64"}))
+	huge := append([]byte{0xFF, 0xD8, 0xFF}, make([]byte, bugFrameMaxBytes)...)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, bad(map[string]any{"frame": base64.StdEncoding.EncodeToString(huge)}))
+	assert.Equal(t, http.StatusBadRequest, bad(map[string]any{"description": "  ", "client": map[string]any{}, "frame": ""}), "nothing to go on")
+	// A video deleted meanwhile keeps the report and drops the link (sent
+	// by someone else: the rest spends alice's hourly budget).
+	carol := newEnv()
+	carol.register("carol")
+	gone := carol.do(http.MethodPost, "/api/v1/bug-reports", map[string]any{"category": "other", "description": "the video vanished", "mediaId": uuid.New()})
+	require.Equal(t, http.StatusCreated, gone.Code, gone.Body.String())
+	stored, err := repo.GetBugReport(ctx, uuid.MustParse(decodeBody[map[string]string](t, gone)["id"]))
+	require.NoError(t, err)
+	assert.Nil(t, stored.MediaID)
+	_, err = repo.Pool().Exec(ctx, `DELETE FROM bug_reports WHERE id = $1`, stored.ID) // the rest counts reports
+	require.NoError(t, err)
 
 	// A good report stores both halves and the frame.
 	rec := alice.do(http.MethodPost, "/api/v1/bug-reports", good)

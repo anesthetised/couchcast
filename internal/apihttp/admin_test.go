@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -154,6 +155,20 @@ func TestAdminAPI(t *testing.T) {
 	assert.Empty(t, decodeBody[auditPage](t, admin.do(http.MethodGet, "/api/v1/admin/audit?actor=alice", nil)).Entries)
 	assert.NotEmpty(t, decodeBody[auditPage](t, admin.do(http.MethodGet, "/api/v1/admin/audit?actor=boss", nil)).Entries)
 	assert.Empty(t, decodeBody[auditPage](t, admin.do(http.MethodGet, "/api/v1/admin/audit?actor=nobody", nil)).Entries)
+	assert.Equal(t, http.StatusBadRequest, admin.do(http.MethodGet, "/api/v1/admin/audit?room=nope", nil).Code)
+	assert.Equal(t, http.StatusBadRequest, admin.do(http.MethodGet, "/api/v1/admin/audit?before=-1", nil).Code)
+	assert.Empty(t, decodeBody[auditPage](t, admin.do(http.MethodGet, "/api/v1/admin/audit?room="+uuid.New().String(), nil)).Entries)
+
+	// A long log pages backwards: 100 entries, then the rest.
+	_, err = repo.Pool().Exec(ctx, `INSERT INTO audit_log (actor_id, action, target_type, target_id) SELECT $1, 'bulk.test', 'thing', g::text FROM generate_series(1, 120) g`, boss.ID)
+	require.NoError(t, err)
+	first := decodeBody[auditPage](t, admin.do(http.MethodGet, "/api/v1/admin/audit?action=bulk.", nil))
+	require.Len(t, first.Entries, 100)
+	require.NotZero(t, first.NextBefore)
+	rest := decodeBody[auditPage](t, admin.do(http.MethodGet, "/api/v1/admin/audit?action=bulk.&before="+strconv.FormatInt(first.NextBefore, 10), nil))
+	assert.Len(t, rest.Entries, 20)
+	assert.Zero(t, rest.NextBefore)
+	assert.NotNil(t, rest.Entries[0].Meta, "empty meta is an object, not null")
 
 	// Storage: a ready item shows up with its size; eviction refuses a
 	// queued item, drops an unqueued one and the stale sweep takes what is

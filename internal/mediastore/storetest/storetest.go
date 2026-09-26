@@ -17,20 +17,37 @@ import (
 	"github.com/anesthetised/couchcast/internal/mediastore"
 )
 
-// Config returns the connection settings with a fresh bucket name; the
-// test is skipped when no server is configured.
+// Config returns the connection settings with a fresh bucket name, and
+// empties and removes that bucket when the test ends if anything created
+// it (the test or the code under test). The test is skipped when no
+// server is configured.
 func Config(t *testing.T) config.S3Config {
 	t.Helper()
 	endpoint := os.Getenv("COUCHCAST_TEST_S3_ENDPOINT")
 	if endpoint == "" {
 		t.Skip("COUCHCAST_TEST_S3_ENDPOINT not set")
 	}
-	return config.S3Config{
+	cfg := config.S3Config{
 		Endpoint:  endpoint,
 		Bucket:    "test-" + strings.ReplaceAll(uuid.New().String(), "-", "")[:20],
 		AccessKey: os.Getenv("COUCHCAST_TEST_S3_ACCESS_KEY"),
 		SecretKey: os.Getenv("COUCHCAST_TEST_S3_SECRET_KEY"),
 	}
+	t.Cleanup(func() {
+		ctx := context.Background()
+		client, err := minio.New(cfg.Endpoint, &minio.Options{Creds: credentials.NewStaticV4(cfg.AccessKey, cfg.SecretKey, "")})
+		if err != nil {
+			return
+		}
+		if ok, err := client.BucketExists(ctx, cfg.Bucket); err != nil || !ok {
+			return
+		}
+		if s, err := mediastore.New(cfg); err == nil {
+			_ = s.DeletePrefix(ctx, "")
+		}
+		_ = client.RemoveBucket(ctx, cfg.Bucket)
+	})
+	return cfg
 }
 
 // New connects a store to a fresh bucket that is emptied and removed when
@@ -50,10 +67,6 @@ func New(t *testing.T) (*mediastore.Store, func(prefix string) []string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		_ = s.DeletePrefix(ctx, "")
-		_ = client.RemoveBucket(ctx, cfg.Bucket)
-	})
 	list := func(prefix string) []string {
 		var out []string
 		for obj := range client.ListObjects(ctx, cfg.Bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
