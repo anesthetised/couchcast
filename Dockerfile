@@ -13,9 +13,13 @@ ARG YTDLP_VERSION=2026.08.19
 ARG AIR_VERSION=v1.67.4
 ARG GOLANGCI_LINT_VERSION=v2.13.2
 
+# The build stages run on the build platform and produce files for the
+# target one (TARGETARCH), so multi-arch images need no emulated compilers;
+# only the runtime stage runs on the target platform.
+
 # --- yt-dlp -----------------------------------------------------------------
 # Static musl build so the same binary works in alpine-based runtime and dev.
-FROM alpine:${ALPINE_VERSION} AS ytdlp
+FROM --platform=$BUILDPLATFORM alpine:${ALPINE_VERSION} AS ytdlp
 ARG TARGETARCH
 ARG YTDLP_VERSION
 RUN apk add --no-cache curl \
@@ -29,7 +33,7 @@ RUN apk add --no-cache curl \
     && chmod +x /usr/local/bin/yt-dlp
 
 # --- frontend ---------------------------------------------------------------
-FROM node:${NODE_VERSION}-alpine AS web-build
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-alpine AS web-build
 WORKDIR /src/web
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 RUN corepack enable
@@ -41,16 +45,18 @@ ARG VERSION=dev
 RUN APP_VERSION=${VERSION} pnpm build
 
 # --- backend ----------------------------------------------------------------
-FROM golang:${GO_VERSION}-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS builder
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 COPY --from=web-build /src/web/dist ./web/dist
 ARG VERSION=dev
+ARG TARGETOS
+ARG TARGETARCH
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -trimpath \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
       -ldflags "-s -w -X main.version=${VERSION}" \
       -o /out/couchcast ./cmd/couchcast
 
