@@ -223,6 +223,11 @@ fails) and a production image build.
 - `internal/hub` owns WebSocket connections (`coder/websocket`): decodes
   `internal/protocol` messages, re-resolves the actor's role/ban on every
   mutating command, and fans broadcasts out through a bounded send buffer.
+  Playback commands never fail on persisting the clock: the room in
+  memory is authoritative, so `savePlaybackLocked` logs, marks the room
+  `unsaved` and `Tick` retries (an unsaved room is not unloaded; bug
+  reports show `unsaved`). Queue changes that need the database still
+  return its error.
   Presence changes (joins, leaves, buffering, lag) are coalesced into
   one snapshot per `room.Deps.PresenceEvery` (250 ms from NewManager, 0
   in unit tests = immediate); anything else broadcasts at once.

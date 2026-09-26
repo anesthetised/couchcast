@@ -193,6 +193,9 @@ type Room struct {
 
 	// presenceTimer is a pending coalesced presence broadcast.
 	presenceTimer *time.Timer
+
+	// unsaved is set when persisting the clock failed; Tick retries.
+	unsaved bool
 }
 
 // load builds a Room from the database.
@@ -415,9 +418,7 @@ func (r *Room) pauseIfEmpty() {
 	r.setPlaybackLocked(false, r.positionLocked(r.now()))
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := r.persistLocked(ctx); err != nil {
-		r.deps.Logger.Warn("persist empty pause", "room", r.info.Slug, "error", err)
-	}
+	r.savePlaybackLocked(ctx)
 	r.logLocked(ctx, "paused: everyone left")
 }
 
@@ -537,9 +538,7 @@ func (r *Room) SetRate(ctx context.Context, actor access.Actor, rate float64) er
 	pos := r.positionLocked(r.now())
 	r.rate = rate
 	r.setPlaybackLocked(r.playing, pos)
-	if err := r.persistLocked(ctx); err != nil {
-		return err
-	}
+	r.savePlaybackLocked(ctx)
 	r.logLocked(ctx, fmt.Sprintf("%s set speed to %g×", actor.User.Username, rate))
 	r.broadcastPlaybackLocked()
 	return nil
@@ -604,12 +603,29 @@ func (r *Room) nextLocked(ctx context.Context) error {
 			r.current, r.rate = &id, 1
 			r.setPlaybackLocked(false, 0)
 			r.logLocked(ctx, "queue restarted from the top, paused until someone is back")
-			return r.persistLocked(ctx)
+			r.savePlaybackLocked(ctx)
+			return nil
 		}
 		r.logLocked(ctx, "queue restarted from the top")
 	}
 	r.setCurrentLocked(next)
-	return r.persistLocked(ctx)
+	r.savePlaybackLocked(ctx)
+	return nil
+}
+
+// savePlaybackLocked persists the room's clock after a command. A failure
+// (Postgres briefly unreachable) must not fail the command: the room in
+// memory is authoritative and has already told everyone, so it is logged
+// and the room is marked unsaved for Tick to retry.
+func (r *Room) savePlaybackLocked(ctx context.Context) {
+	if err := r.persistLocked(ctx); err != nil {
+		if !r.unsaved {
+			r.deps.Logger.Warn("persist playback, will retry", "room", r.info.Slug, "error", err)
+		}
+		r.unsaved = true
+		return
+	}
+	r.unsaved = false
 }
 
 func (r *Room) persistLocked(ctx context.Context) error {
@@ -944,6 +960,7 @@ type DebugState struct {
 	Settings  entity.Settings   `json:"settings"`
 	Queue     []DebugItem       `json:"queue"` // the first few items
 	Played    int               `json:"played"`
+	Unsaved   bool              `json:"unsaved,omitempty"` // the clock is waiting to be persisted
 }
 
 // DebugItem is a queue entry as seen by the room.
@@ -961,7 +978,7 @@ func (r *Room) Debug() DebugState {
 	defer r.mu.Unlock()
 	d := DebugState{
 		Playback: r.playbackLocked(), ServerMs: r.now().UnixMilli(), Viewers: len(r.viewers),
-		Buffering: []string{}, Settings: r.info.Settings, Played: len(r.played),
+		Buffering: []string{}, Settings: r.info.Settings, Played: len(r.played), Unsaved: r.unsaved,
 	}
 	d.Playback.Type = ""
 	for _, v := range r.viewers {
@@ -1114,9 +1131,7 @@ func (r *Room) startWaiting() {
 	r.waitTimer = time.AfterFunc(r.patience(maxWait), r.stopWaiting)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := r.persistLocked(ctx); err != nil {
-		r.deps.Logger.Warn("persist wait pause", "room", r.info.Slug, "error", err)
-	}
+	r.savePlaybackLocked(ctx)
 	r.logLocked(ctx, "waiting for "+strings.Join(stuck, ", "))
 	r.broadcastLocked()
 }
@@ -1158,9 +1173,7 @@ func (r *Room) endWaitLocked(resume bool) {
 		r.setPlaybackLocked(true, r.positionMs)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := r.persistLocked(ctx); err != nil {
-			r.deps.Logger.Warn("persist wait resume", "room", r.info.Slug, "error", err)
-		}
+		r.savePlaybackLocked(ctx)
 	}
 	r.broadcastLocked()
 }
@@ -1219,9 +1232,7 @@ func (r *Room) play(ctx context.Context, actor access.Actor, countdown bool) err
 	}
 	r.cancelCountdownLocked()
 	r.setPlaybackLocked(true, pos)
-	if err := r.persistLocked(ctx); err != nil {
-		return err
-	}
+	r.savePlaybackLocked(ctx)
 	r.broadcastPlaybackLocked()
 	return nil
 }
@@ -1249,9 +1260,7 @@ func (r *Room) endCountdown() {
 	r.setPlaybackLocked(true, pos)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if err := r.persistLocked(ctx); err != nil {
-		r.deps.Logger.Warn("persist countdown start", "room", r.info.Slug, "error", err)
-	}
+	r.savePlaybackLocked(ctx)
 	r.broadcastLocked()
 }
 
@@ -1283,9 +1292,7 @@ func (r *Room) Pause(ctx context.Context, actor access.Actor) error {
 		return nil
 	}
 	r.setPlaybackLocked(false, r.positionLocked(r.now()))
-	if err := r.persistLocked(ctx); err != nil {
-		return err
-	}
+	r.savePlaybackLocked(ctx)
 	r.broadcastPlaybackLocked()
 	return nil
 }
@@ -1308,9 +1315,7 @@ func (r *Room) Seek(ctx context.Context, actor access.Actor, positionMs int64) e
 		positionMs = m.DurationMs
 	}
 	r.setPlaybackLocked(r.playing && m.IsReady(), positionMs)
-	if err := r.persistLocked(ctx); err != nil {
-		return err
-	}
+	r.savePlaybackLocked(ctx)
 	r.broadcastPlaybackLocked()
 	return nil
 }
@@ -1351,9 +1356,7 @@ func (r *Room) Jump(ctx context.Context, actor access.Actor, itemID uuid.UUID) e
 		}
 	}
 	r.setCurrentLocked(target)
-	if err := r.persistLocked(ctx); err != nil {
-		return err
-	}
+	r.savePlaybackLocked(ctx)
 	r.logLocked(ctx, actor.User.Username+" jumped to "+mediaLabel(r.media[target.MediaID]))
 	r.broadcastLocked()
 	return nil
@@ -1423,9 +1426,7 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, 
 
 	if r.current == nil {
 		r.setCurrentLocked(item)
-		if err := r.persistLocked(ctx); err != nil {
-			return err
-		}
+		r.savePlaybackLocked(ctx)
 	}
 	r.broadcastLocked()
 	return nil
@@ -1552,9 +1553,7 @@ func (r *Room) QueueAddMany(ctx context.Context, actor access.Actor, urls []stri
 	}
 	if r.current == nil {
 		r.setCurrentLocked(added[0])
-		if err := r.persistLocked(ctx); err != nil {
-			return err
-		}
+		r.savePlaybackLocked(ctx)
 	}
 	r.broadcastLocked()
 	return nil
@@ -1682,9 +1681,7 @@ func (r *Room) QueueReplay(ctx context.Context, actor access.Actor, itemID uuid.
 	}
 	if r.current == nil {
 		r.setCurrentLocked(item)
-		if err := r.persistLocked(ctx); err != nil {
-			return err
-		}
+		r.savePlaybackLocked(ctx)
 	}
 	r.broadcastLocked()
 	return nil
@@ -1857,9 +1854,7 @@ func (r *Room) MediaUpdated(m *entity.Media) {
 		r.setPlaybackLocked(true, 0)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := r.persistLocked(ctx); err != nil {
-			r.deps.Logger.Error("persist playback", "room", r.info.Slug, "error", err)
-		}
+		r.savePlaybackLocked(ctx)
 	}
 	r.broadcastLocked()
 }
@@ -1878,9 +1873,7 @@ func (r *Room) ReloadQueue(ctx context.Context) error {
 			next = r.queue[0]
 		}
 		r.setCurrentLocked(next)
-		if err := r.persistLocked(ctx); err != nil {
-			return err
-		}
+		r.savePlaybackLocked(ctx)
 	}
 	r.broadcastLocked()
 	return nil
@@ -1936,9 +1929,7 @@ func (r *Room) EndSession(ctx context.Context, actor access.Actor) error {
 		}
 	}
 	r.setCurrentLocked(nil)
-	if err := r.persistLocked(ctx); err != nil {
-		return err
-	}
+	r.savePlaybackLocked(ctx)
 	r.logLocked(ctx, actor.User.Username+" ended the session")
 	for c := range r.viewers {
 		delete(r.viewers, c)
@@ -1956,12 +1947,15 @@ func (r *Room) Tick(ctx context.Context, idleAfter time.Duration) (idle bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := r.now()
-	if r.playing && now.Sub(r.lastPersist) >= r.deps.PersistEvery {
-		if err := r.persistLocked(ctx); err != nil {
-			r.deps.Logger.Warn("persist playback", "room", r.info.Slug, "error", err)
+	if r.unsaved || (r.playing && now.Sub(r.lastPersist) >= r.deps.PersistEvery) {
+		wasUnsaved := r.unsaved
+		r.savePlaybackLocked(ctx)
+		if wasUnsaved && !r.unsaved {
+			r.deps.Logger.Info("persist playback recovered", "room", r.info.Slug)
 		}
 	}
-	return !r.playing && len(r.viewers) == 0 && now.Sub(r.lastActive) > idleAfter
+	// An unsaved room stays loaded: dropping it would lose the state.
+	return !r.unsaved && !r.playing && len(r.viewers) == 0 && now.Sub(r.lastActive) > idleAfter
 }
 
 // shutdown stops timers and persists state before the room is unloaded.

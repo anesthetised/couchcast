@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -982,4 +983,61 @@ func TestPresenceBroadcastsAreCoalesced(t *testing.T) {
 	}
 	assert.Equal(t, 0, buffering, "anonymous viewers are counted, not listed")
 	assert.Equal(t, 20, watcher.lastSnapshot().Guests)
+}
+
+// blinkingStore fails UpdateRoomPlayback while down is set, like Postgres
+// restarting under a live room.
+type blinkingStore struct {
+	Store
+	down atomic.Bool
+}
+
+func (s *blinkingStore) UpdateRoomPlayback(ctx context.Context, id uuid.UUID, p entity.PlaybackState) error {
+	if s.down.Load() {
+		return errors.New("connection refused")
+	}
+	return s.Store.UpdateRoomPlayback(ctx, id, p)
+}
+
+func TestPlaybackSurvivesADatabaseBlip(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	store := &blinkingStore{Store: f.deps.Store}
+	f.room.deps.Store = store
+	f.ready("https://a", 600_000)
+	conn := &fakeConn{}
+	f.room.Join(ctx, conn, f.owner)
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false, false))
+	require.True(t, f.room.Playback().Playing)
+
+	// The database goes away: pause and seek still work and reach viewers.
+	store.down.Store(true)
+	require.NoError(t, f.room.Pause(ctx, f.owner))
+	require.NoError(t, f.room.Seek(ctx, f.owner, 42_000))
+	pb := f.room.Playback()
+	assert.False(t, pb.Playing)
+	assert.EqualValues(t, 42_000, pb.PositionMs)
+	var last protocol.Playback
+	for _, m := range conn.msgs {
+		if p, ok := m.(protocol.Playback); ok {
+			last = p
+		}
+	}
+	assert.EqualValues(t, 42_000, last.PositionMs, "viewers got the seek")
+
+	// Idle and unsaved: the room is not unloaded while the save is pending.
+	f.room.Leave(conn)
+	f.advance(time.Hour)
+	assert.False(t, f.room.Tick(ctx, time.Minute))
+	saved, err := f.repo.GetRoomByID(ctx, f.room.ID())
+	require.NoError(t, err)
+	assert.True(t, saved.Playing, "nothing reached the database yet")
+
+	// It comes back: the next tick writes the room's real state.
+	store.down.Store(false)
+	assert.True(t, f.room.Tick(ctx, time.Minute), "saved, so idle again")
+	saved, err = f.repo.GetRoomByID(ctx, f.room.ID())
+	require.NoError(t, err)
+	assert.False(t, saved.Playing)
+	assert.EqualValues(t, 42_000, saved.PositionMs)
 }
