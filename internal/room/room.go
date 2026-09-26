@@ -84,6 +84,11 @@ type Deps struct {
 	// RejoinGrace is how long after leaving a return still counts as the
 	// same visit (no "left"/"joined" lines). Zero means the default.
 	RejoinGrace time.Duration
+	// PresenceEvery coalesces presence broadcasts (joins, leaves,
+	// buffering, lag): at most one snapshot per interval, so a crowd that
+	// buffers at once costs a few snapshots instead of one per viewer.
+	// Zero sends each at once (tests); NewManager sets the default.
+	PresenceEvery time.Duration
 	// QueueAddLimiter budgets queue.add per user across rooms. Nil disables.
 	QueueAddLimiter *ratelimit.Limiter
 	// Notifier reaches users who are not in the room (Web Push). Nil
@@ -185,6 +190,9 @@ type Room struct {
 	// closed is set when the manager drops the room; a timer that fired
 	// just before then finds it and does nothing.
 	closed bool
+
+	// presenceTimer is a pending coalesced presence broadcast.
+	presenceTimer *time.Timer
 }
 
 // load builds a Room from the database.
@@ -718,10 +726,37 @@ func (r *Room) personalizeLocked(base protocol.Snapshot, v *viewer, voted map[uu
 
 // broadcastLocked sends the current snapshot to every viewer.
 func (r *Room) broadcastLocked() {
+	// A full snapshot carries the latest presence too.
+	if r.presenceTimer != nil {
+		r.presenceTimer.Stop()
+		r.presenceTimer = nil
+	}
 	base := r.snapshotLocked()
 	for _, v := range r.viewers {
 		v.conn.Send(r.personalizeLocked(base, v, r.votesFor(v)))
 	}
+}
+
+// presenceChangedLocked broadcasts a presence change, coalesced over
+// Deps.PresenceEvery: in a big room N viewers changing at once would
+// otherwise send N full snapshots to N viewers and overflow them all.
+func (r *Room) presenceChangedLocked() {
+	if r.deps.PresenceEvery <= 0 {
+		r.broadcastLocked()
+		return
+	}
+	if r.presenceTimer == nil {
+		r.presenceTimer = time.AfterFunc(r.deps.PresenceEvery, r.flushPresence)
+	}
+}
+
+func (r *Room) flushPresence() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed || r.presenceTimer == nil {
+		return
+	}
+	r.broadcastLocked()
 }
 
 // broadcastPlaybackLocked sends only the clock: cheaper and jitter-free.
@@ -790,11 +825,15 @@ func (r *Room) Join(ctx context.Context, conn Conn, actor access.Actor) {
 	}
 	conn.Send(welcome)
 
-	// Others learn about the new presence; everyone, including the
-	// newcomer, gets the log line after the welcome.
-	for c, other := range r.viewers {
-		if c != conn {
-			other.conn.Send(r.personalizeLocked(base, other, r.votesFor(other)))
+	// Others learn about the new presence (coalesced); everyone, including
+	// the newcomer, gets the log line after the welcome.
+	if r.deps.PresenceEvery > 0 {
+		r.presenceChangedLocked()
+	} else {
+		for c, other := range r.viewers {
+			if c != conn {
+				other.conn.Send(r.personalizeLocked(base, other, r.votesFor(other)))
+			}
 		}
 	}
 	if first {
@@ -859,7 +898,7 @@ func (r *Room) Leave(conn Conn) {
 		id, name := v.user.ID, v.user.Username
 		r.leftTimers[id] = time.AfterFunc(r.rejoinGrace(), func() { r.onLeft(id, name) })
 	}
-	r.broadcastLocked()
+	r.presenceChangedLocked()
 }
 
 // UpdateRole refreshes the role shown for a connection.
@@ -970,7 +1009,7 @@ func (r *Room) Report(conn Conn, state string, positionMs int64) {
 	}
 	buffering := state == "buffering"
 	if changed && v.buffering == buffering {
-		r.broadcastLocked()
+		r.presenceChangedLocked()
 	}
 	if v.buffering != buffering {
 		v.buffering = buffering
@@ -978,7 +1017,7 @@ func (r *Room) Report(conn Conn, state string, positionMs int64) {
 			v.ignored = false
 		}
 		r.checkBufferingLocked()
-		r.broadcastLocked()
+		r.presenceChangedLocked()
 	}
 }
 
@@ -1939,7 +1978,7 @@ func (r *Room) shutdown(ctx context.Context) {
 // scheduled acts on it once the manager has let go of it.
 func (r *Room) closeLocked() {
 	r.closed = true
-	for _, t := range []*time.Timer{r.advance, r.emptyTimer, r.bufferTimer, r.waitTimer, r.countdownTimer} {
+	for _, t := range []*time.Timer{r.advance, r.emptyTimer, r.bufferTimer, r.waitTimer, r.countdownTimer, r.presenceTimer} {
 		if t != nil {
 			t.Stop()
 		}

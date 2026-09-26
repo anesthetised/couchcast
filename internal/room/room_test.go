@@ -42,6 +42,12 @@ func (c *fakeConn) Close(reason string) {
 	c.closed = reason
 }
 
+func (c *fakeConn) count() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.msgs)
+}
+
 func (c *fakeConn) last() any {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -942,4 +948,38 @@ func TestQueueAddAdmissionErrors(t *testing.T) {
 	require.Error(t, err)
 	assert.False(t, errors.As(err, &re), "internal errors reach the hub's log")
 	assert.Empty(t, conn.lastSnapshot().Queue)
+}
+
+func TestPresenceBroadcastsAreCoalesced(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	f.room.deps.PresenceEvery = 50 * time.Millisecond
+	f.ready("https://a", 600_000)
+	require.NoError(t, f.room.QueueAdd(ctx, f.owner, "https://a", false, false))
+
+	watcher := &fakeConn{}
+	f.room.Join(ctx, watcher, f.owner)
+	crowd := make([]*fakeConn, 20)
+	for i := range crowd {
+		crowd[i] = &fakeConn{}
+		f.room.Join(ctx, crowd[i], access.Actor{})
+	}
+	time.Sleep(100 * time.Millisecond)
+	before := watcher.count()
+
+	// Everyone buffers at once: the watcher gets one snapshot, not twenty.
+	for _, c := range crowd {
+		f.room.Report(c, "buffering", 0)
+	}
+	require.Eventually(t, func() bool { return watcher.count() > before }, time.Second, 5*time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
+	assert.LessOrEqual(t, watcher.count()-before, 2)
+	buffering := 0
+	for _, m := range watcher.lastSnapshot().Members {
+		if m.Buffering {
+			buffering++
+		}
+	}
+	assert.Equal(t, 0, buffering, "anonymous viewers are counted, not listed")
+	assert.Equal(t, 20, watcher.lastSnapshot().Guests)
 }

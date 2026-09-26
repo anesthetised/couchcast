@@ -38,6 +38,9 @@ func NewManager(deps Deps) *Manager {
 	if deps.Logger == nil {
 		deps.Logger = slog.Default()
 	}
+	if deps.PresenceEvery == 0 {
+		deps.PresenceEvery = 250 * time.Millisecond
+	}
 	return &Manager{deps: deps, rooms: map[uuid.UUID]*Room{}, IdleAfter: 10 * time.Minute}
 }
 
