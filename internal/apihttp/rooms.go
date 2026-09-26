@@ -758,8 +758,8 @@ func (s *Server) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		s.audit(r, "member.remove", "user", target.ID.String(), rc.room, map[string]any{"username": target.Username, "role": role})
-		if s.deps.OnBan != nil && !rc.room.IsPublic() {
-			s.deps.OnBan(rc.room.ID, target.ID)
+		if s.deps.OnRemove != nil && !rc.room.IsPublic() {
+			s.deps.OnRemove(rc.room.ID, target.ID)
 		}
 	}
 	w.WriteHeader(http.StatusNoContent)

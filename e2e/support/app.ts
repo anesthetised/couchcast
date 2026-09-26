@@ -20,6 +20,15 @@ export async function signUp(page: Page, prefix = "user"): Promise<string> {
   return name;
 }
 
+// logIn signs an existing user in through the form.
+export async function logIn(page: Page, name: string, password = PASSWORD) {
+  await page.goto("/login");
+  await page.getByLabel("Username").fill(name);
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Log in", exact: true }).click();
+  await expect(page.locator(".usermenu .username")).toContainText(name);
+}
+
 // createRoom goes through the API with the page's session: most tests
 // are about what happens inside a room, not about the form.
 export async function createRoom(
@@ -32,6 +41,17 @@ export async function createRoom(
   });
   expect(res.status(), await res.text()).toBe(201);
   return slug;
+}
+
+// joinAsMember makes the page's user a member of the room through an
+// invite link the owner's page creates.
+export async function joinAsMember(owner: Page, member: Page, slug: string) {
+  const res = await owner.request.post(`/api/v1/rooms/${slug}/invite-links`, { data: { expiresIn: "1d", maxUses: 1 } });
+  expect(res.status(), await res.text()).toBe(201);
+  const { url } = (await res.json()) as { url: string };
+  await member.goto(new URL(url).pathname);
+  await member.getByRole("button", { name: /Join/ }).click();
+  await expect(member).toHaveURL(new RegExp(`/r/${slug}$`));
 }
 
 // sql runs a statement against the e2e database, for what no UI does
@@ -59,6 +79,11 @@ export async function readyVideo(title = "E2E video", durationMs = 600_000): Pro
   );
   return url;
 }
+
+// PLAYABLE_URL is the one clip with real media files (see e2e/seed),
+// for tests that need the player to actually play.
+export const PLAYABLE_URL = "https://www.youtube.com/watch?v=e2ePlayable";
+export const PLAYABLE_TITLE = "Playable clip";
 
 export async function makeAdmin(username: string) {
   await sql("UPDATE users SET role = 'admin' WHERE username = $1", [username]);

@@ -60,3 +60,15 @@ func TestClientIP(t *testing.T) {
 	assert.Equal(t, "192.0.2.1", ClientIP(false)(r))
 	assert.Equal(t, "203.0.113.9", ClientIP(true)(r))
 }
+
+func TestRunStops(t *testing.T) {
+	l := New(60, 1)
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		l.Run(stop)
+		close(done)
+	}()
+	close(stop)
+	<-done
+}

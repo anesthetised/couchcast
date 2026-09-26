@@ -95,7 +95,7 @@ func (r *Repo) SearchUsernames(ctx context.Context, prefix string, limit int) ([
 	const q = `
 		SELECT username FROM users
 		WHERE banned_at IS NULL AND lower(username) LIKE lower($1) || '%' ESCAPE '\'
-		ORDER BY username
+		ORDER BY lower(username), username
 		LIMIT $2
 	`
 	rows, err := r.pool.Query(ctx, q, escapeLike(prefix), limit)

@@ -2,6 +2,7 @@ package room
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -74,6 +75,10 @@ func (f *fakeAdmit) EnsureMedia(ctx context.Context, q repository.Querier, rawUR
 	switch rawURL {
 	case "unsupported":
 		return nil, errUnsupported
+	case "blocked":
+		return nil, errBlocked
+	case "broken":
+		return nil, errors.New("database is down")
 	case "http://10.0.0.1/":
 		return nil, fmt.Errorf("%w: 10.0.0.1", errPrivate)
 	case "https://nowhere.example/":
@@ -918,4 +923,23 @@ func TestCountdown(t *testing.T) {
 	require.NoError(t, f.room.Play(ctx, f.owner))
 	assert.NotZero(t, conn.lastSnapshot().CountdownMs)
 	require.Eventually(t, func() bool { return f.room.Playback().Playing }, time.Second, 5*time.Millisecond)
+}
+
+func TestQueueAddAdmissionErrors(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	conn := &fakeConn{}
+	f.room.Join(ctx, conn, f.owner)
+
+	var re *Error
+	require.ErrorAs(t, f.room.QueueAdd(ctx, f.owner, "unsupported", false, false), &re)
+	assert.Equal(t, "this link is not supported", re.Message)
+	require.ErrorAs(t, f.room.QueueAdd(ctx, f.owner, "blocked", false, false), &re)
+	assert.Equal(t, "this video has been blocked by an administrator", re.Message)
+
+	// Anything else is an internal failure, not the viewer's mistake.
+	err := f.room.QueueAdd(ctx, f.owner, "broken", false, false)
+	require.Error(t, err)
+	assert.False(t, errors.As(err, &re), "internal errors reach the hub's log")
+	assert.Empty(t, conn.lastSnapshot().Queue)
 }

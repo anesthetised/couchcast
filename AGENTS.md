@@ -43,7 +43,16 @@ commands run from the repo root via `just` (see `justfile`):
   `couchcast_e2e` database with their own server and Vite instance
   (compose profile `e2e`, `compose.e2e.yaml`); never touches dev data.
   Tests sign up their own users (`support/app.ts`), create rooms through
-  the API and use `sql()` for what no UI does (the admin role). Failures
+  the API and use `sql()` for what no UI does (the admin role).
+  `readyVideo()` inserts a ready media row without files (enough for queue
+  and room behaviour); `PLAYABLE_URL` is one real clip that `e2e/seed`
+  (run by the recipe inside e2e-web) renders with ffmpeg, packages and
+  uploads once, for tests that need the player to play (`sync.spec.ts`).
+  Chromium runs with autoplay allowed; compare player times with
+  `expect.poll`, the display ticks every 250 ms. `a11y.spec.ts` runs axe
+  (WCAG 2.1 A/AA, serious and critical findings fail) over the main
+  pages and the room's dialogs, and checks that nothing scrolls sideways
+  at 375 px. Failures
   leave traces and screenshots in `e2e/results/`, the HTML report in
   `e2e/report/`. Use it to verify signed-in flows.
 - `just build` — production image; `just prod-up` — run the base compose file;
@@ -209,7 +218,9 @@ fails) and a production image build.
   shows a tap-to-play gate that resumes inside the gesture.
 - Site administration: `couchcast admin grant|revoke <username>` sets the
   role; `/api/v1/admin/*` (behind `auth.RequireAdmin`) serves the `/admin`
-  SPA route. Deleting media there also blocklists its `source_key` so it
+  SPA route, whose open tab is `?tab=` (stats when absent). Ban and
+  delete ask for a reason; cancelling the prompt cancels the action.
+  Deleting media there also blocklists its `source_key` so it
   cannot be re-added, and loaded rooms reload their queues via
   `Manager.MediaDeleted`. A site ban revokes sessions and kicks the user
   from every loaded room.
@@ -264,7 +275,12 @@ fails) and a production image build.
   makes the former owner a moderator). `session.end` (moderators) pauses,
   moves the queue to the history and closes every connection with reason
   `session ended`; the web client treats any 1008 close with a reason as
-  the end of the session (kick, ban, room deleted, left).
+  the end of the session. Reasons: `banned` (room or site ban, the `OnBan`
+  and `OnUserBanned` hooks), `removed from room` (`OnRemove`, a member
+  taken out of a private room), `room deleted`, `left`, `session ended`.
+  The hub's `Close` only signals: its write loop sends what is queued
+  (the `kicked` message), then the close frame, so a room never blocks
+  on a slow client while holding its lock.
 - The SPA handler injects Open Graph tags (`internal/apihttp/meta.go`)
   into index.html for `/r/{slug}` of public rooms — name, description or
   "Playing … · N watching", the current thumbnail — cached 30 s per slug;

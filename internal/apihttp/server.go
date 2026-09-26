@@ -103,8 +103,11 @@ type Deps struct {
 	WS WebSocketServer
 
 	// Hooks let the live room layer react to REST changes. All optional.
-	OnBan   func(roomID, userID uuid.UUID)
-	OnLeave func(roomID, userID uuid.UUID)
+	// OnBan and OnRemove disconnect the user; the client shows the
+	// matching reason ("banned", "removed from room").
+	OnBan    func(roomID, userID uuid.UUID)
+	OnRemove func(roomID, userID uuid.UUID)
+	OnLeave  func(roomID, userID uuid.UUID)
 	// OnMute lets the live room refresh the user's rights and log the line.
 	OnMute         func(roomID, userID uuid.UUID, line string)
 	OnRoomChanged  func(roomID uuid.UUID)

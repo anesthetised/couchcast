@@ -48,7 +48,7 @@ const AuthForm: Component<Props> = (props) => {
           maxLength={32}
           pattern="[A-Za-z0-9_]{3,32}"
           value={username()}
-          onInput={(e) => setUsername(e.currentTarget.value)}
+          onInput={(e) => (setUsername(e.currentTarget.value), setError(null))}
         />
       </label>
 
@@ -61,7 +61,7 @@ const AuthForm: Component<Props> = (props) => {
           minLength={8}
           maxLength={128}
           value={password()}
-          onInput={(e) => setPassword(e.currentTarget.value)}
+          onInput={(e) => (setPassword(e.currentTarget.value), setError(null))}
         />
       </label>
 

@@ -536,7 +536,7 @@ const Player: Component<Props> = (props) => {
         </Show>
 
         <Show when={buffering() && !blocked() && current()?.media.status === "ready"}>
-          <div class="video-overlay spinner" aria-label="Buffering">
+          <div class="video-overlay spinner" role="status" aria-label="Buffering">
             <span class="ring" />
           </div>
         </Show>

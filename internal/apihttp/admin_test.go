@@ -85,6 +85,12 @@ func TestAdminAPI(t *testing.T) {
 	assert.Equal(t, 1, stats.OpenReports)
 	assert.Equal(t, 3, stats.RoomsLoaded)
 
+	// Dismissing closes the open reports without touching the media.
+	assert.Equal(t, http.StatusNotFound, admin.do(http.MethodPost, "/api/v1/admin/reports/nope/dismiss", nil).Code)
+	assert.Equal(t, http.StatusNoContent, admin.do(http.MethodPost, "/api/v1/admin/reports/"+media.ID.String()+"/dismiss", nil).Code)
+	assert.Empty(t, decodeBody[[]reportedMediaResponse](t, admin.do(http.MethodGet, "/api/v1/admin/reports", nil)))
+	assert.Zero(t, decodeBody[statsResponse](t, admin.do(http.MethodGet, "/api/v1/admin/stats", nil)).OpenReports)
+
 	// Deleting the media blocks the source, removes objects and queue rows.
 	assert.Equal(t, http.StatusNoContent, admin.do(http.MethodDelete, "/api/v1/admin/media/"+media.ID.String(), banRequest{Reason: "dmca"}).Code)
 	assert.Equal(t, []string{"media/" + media.ID.String() + "/"}, deleter.prefixes)
@@ -115,6 +121,8 @@ func TestAdminAPI(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, user.do(http.MethodGet, "/api/v1/auth/me", nil).Code, "sessions revoked")
 	assert.Equal(t, http.StatusForbidden, user.do(http.MethodPost, "/api/v1/auth/login", credentials{Username: "alice", Password: "password-123"}).Code)
 	assert.Equal(t, http.StatusNoContent, admin.do(http.MethodPost, "/api/v1/admin/users/"+alice.ID.String()+"/unban", nil).Code)
+	assert.Equal(t, http.StatusNotFound, admin.do(http.MethodPost, "/api/v1/admin/users/"+uuid.New().String()+"/unban", nil).Code)
+	assert.Equal(t, http.StatusNotFound, admin.do(http.MethodPost, "/api/v1/admin/users/nope/unban", nil).Code)
 	rec = user.do(http.MethodPost, "/api/v1/auth/login", credentials{Username: "alice", Password: "password-123"})
 	assert.Equal(t, http.StatusOK, rec.Code)
 
@@ -136,7 +144,7 @@ func TestAdminAPI(t *testing.T) {
 		actions[a.Action] = true
 		assert.Equal(t, "boss", a.Actor)
 	}
-	for _, want := range []string{"media.delete", "source.unblock", "source.block", "user.ban", "user.unban", "room.delete"} {
+	for _, want := range []string{"media.delete", "source.unblock", "source.block", "user.ban", "user.unban", "room.delete", "reports.dismiss"} {
 		assert.True(t, actions[want], want)
 	}
 	assert.Zero(t, audit.NextBefore, "one page")

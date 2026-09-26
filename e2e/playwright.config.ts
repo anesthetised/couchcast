@@ -16,5 +16,12 @@ export default defineConfig({
     screenshot: "only-on-failure",
   },
   outputDir: "results",
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      // Rooms start playback without a click, as a viewer who already
+      // interacted with the page would allow.
+      use: { ...devices["Desktop Chrome"], launchOptions: { args: ["--autoplay-policy=no-user-gesture-required"] } },
+    },
+  ],
 });

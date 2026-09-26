@@ -40,10 +40,11 @@ Open http://localhost:5173. The SeaweedFS filer UI (stored
 files) is at http://localhost:8888; S3 itself is on :9000 with
 `S3_ACCESS_KEY` / `S3_SECRET_KEY` from `.env`.
 
-Tests: `just test` (Go, against a test database), `just test-web`
-(Vitest unit tests for the web app), `just lint`, `just check`
-(TypeScript) and `just e2e` (Playwright in the browser against a separate
-`couchcast_e2e` database).
+Tests: `just test` (Go with the race detector, against a test database
+and SeaweedFS), `just test-web` (Vitest unit tests for the web app),
+`just lint`, `just check` (TypeScript) and `just e2e` (Playwright in the
+browser against a separate `couchcast_e2e` database, including an axe
+accessibility scan). `just cover` prints Go coverage, as the badge.
 
 Production uses the same compose file without the development override:
 

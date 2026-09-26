@@ -116,6 +116,12 @@ func TestBugReports(t *testing.T) {
 	assert.Equal(t, 2, server.Media.Job.Attempts)
 	assert.Equal(t, "first try timed out", server.Media.Job.LastError)
 
+	one := admin.do(http.MethodGet, "/api/v1/admin/bug-reports/"+id, nil)
+	require.Equal(t, http.StatusOK, one.Code)
+	assert.Equal(t, got.Description, decodeBody[bugReportResponse](t, one).Description)
+	assert.Equal(t, http.StatusNotFound, admin.do(http.MethodGet, "/api/v1/admin/bug-reports/"+uuid.New().String(), nil).Code)
+	assert.Equal(t, http.StatusNotFound, admin.do(http.MethodGet, "/api/v1/admin/bug-reports/nope", nil).Code)
+
 	frameRec := admin.do(http.MethodGet, "/api/v1/admin/bug-reports/"+id+"/frame", nil)
 	require.Equal(t, http.StatusOK, frameRec.Code)
 	assert.Equal(t, "image/jpeg", frameRec.Header().Get("Content-Type"))

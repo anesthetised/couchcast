@@ -1343,7 +1343,10 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, 
 
 	media, err := r.deps.Admit.EnsureMedia(ctx, tx, rawURL)
 	if err != nil {
-		return &Error{Code: protocol.CodeInvalid, Message: admitMessage(err)}
+		if msg := admitMessage(err); msg != "" {
+			return &Error{Code: protocol.CodeInvalid, Message: msg}
+		}
+		return err // internal: logged by the hub, "internal error" to the client
 	}
 	if !force {
 		if err := r.duplicateLocked(media.ID); err != nil {
@@ -1663,10 +1666,10 @@ func (r *Room) QueueClearPlayed(ctx context.Context, actor access.Actor) error {
 	return nil
 }
 
+// admitMessage explains an admission refusal to the viewer; "" for
+// anything else, which is an internal failure.
 func admitMessage(err error) string {
 	switch {
-	case err == nil:
-		return ""
 	case errors.Is(err, errUnsupported):
 		return "this link is not supported"
 	case errors.Is(err, errBlocked):
@@ -1676,7 +1679,7 @@ func admitMessage(err error) string {
 	case errors.Is(err, errUnknownHost):
 		return "this site could not be found"
 	default:
-		return "could not add this link"
+		return ""
 	}
 }
 

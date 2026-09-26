@@ -72,3 +72,31 @@ func TestEditMessage(t *testing.T) {
 	_, err = repo.EditMessage(ctx, room.ID, m.ID, owner.ID, "gone", time.Hour)
 	require.ErrorIs(t, err, ErrNotFound)
 }
+
+func TestTouchMediaAccessOnlyMovesForward(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+	m, _, err := repo.CreateMedia(ctx, repo.Pool(), "url:https://a", "https://a")
+	require.NoError(t, err)
+	later := time.Now().Add(time.Hour).Truncate(time.Microsecond)
+	require.NoError(t, repo.TouchMediaAccess(ctx, m.ID, later))
+	require.NoError(t, repo.TouchMediaAccess(ctx, m.ID, later.Add(-30*time.Minute)))
+	got, err := repo.GetMedia(ctx, m.ID)
+	require.NoError(t, err)
+	assert.True(t, got.LastAccessedAt.Equal(later))
+}
+
+func TestPurgeBugReports(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+	u, err := repo.CreateUser(ctx, "reporter", "h")
+	require.NoError(t, err)
+	b, err := repo.CreateBugReport(ctx, &entity.BugReport{UserID: &u.ID, Category: entity.BugCategory("other"), Description: "x", Client: []byte(`{}`), Server: []byte(`{}`)}, nil)
+	require.NoError(t, err)
+	n, err := repo.PurgeBugReports(ctx, b.CreatedAt)
+	require.NoError(t, err)
+	assert.Zero(t, n, "only older reports go")
+	n, err = repo.PurgeBugReports(ctx, time.Now().Add(time.Minute))
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, n)
+}
