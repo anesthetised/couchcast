@@ -63,9 +63,10 @@ commands run from the repo root via `just` (see `justfile`):
   Safari — check Safari by hand. The Firefox profile turns off its
   password UI, and helpers submit forms with Enter: a click can land on
   the browser's own popup. `a11y.spec.ts` runs axe
-  (WCAG 2.1 A/AA, serious and critical findings fail) over the main
-  pages and the room's dialogs, and checks that nothing scrolls sideways
-  at 375 px. Failures
+  (WCAG 2.1 A/AA plus best practices; moderate and worse fail) over the main
+  pages and the room's dialogs, checks that nothing scrolls sideways
+  at 375 px, that the skip link reaches `<main>`, and that with reduced
+  motion nothing moves (fades are allowed). Failures
   leave traces and screenshots in `e2e/results/`, the HTML report in
   `e2e/report/`. Use it to verify signed-in flows.
 - `just load [flags]` — `tools/loadtest` against the running dev stack:

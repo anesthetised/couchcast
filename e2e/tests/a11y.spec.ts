@@ -26,13 +26,13 @@ async function settle(page: Page, path: string) {
 }
 
 async function violations(page: Page) {
-  const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"]).analyze();
+  const result = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "best-practice"]).analyze();
   return result.violations
-    .filter((v) => v.impact === "serious" || v.impact === "critical")
+    .filter((v) => v.impact === "serious" || v.impact === "critical" || v.impact === "moderate")
     .map((v) => `${v.id} (${v.impact}): ${v.help}\n    ${v.nodes.slice(0, 3).map((n) => `${n.target.join(" ")} — ${(n.failureSummary ?? "").split("\n").slice(1, 2).join(" ").trim()}`).join("\n    ")}`);
 }
 
-test("the main pages have no serious accessibility problems", async ({ page }) => {
+test("the main pages have no accessibility problems (moderate and up)", async ({ page }) => {
   test.setTimeout(120_000); // eleven pages, each scanned
   const found: string[] = [];
   for (const path of await pages(page)) {
@@ -47,7 +47,7 @@ test("the main pages have no serious accessibility problems", async ({ page }) =
   expect(found, found.join("\n")).toEqual([]);
 });
 
-test("the room's dialogs have no serious accessibility problems", async ({ page }) => {
+test("the room's dialogs have no accessibility problems (moderate and up)", async ({ page }) => {
   await signUp(page, "dialogs");
   const slug = await createRoom(page, { firstUrl: await readyVideo("Dialog video") });
   await settle(page, `/r/${slug}`);
@@ -71,6 +71,47 @@ test("the room's dialogs have no serious accessibility problems", async ({ page 
   for (const v of await violations(page)) found.push(`video report: ${v}`);
 
   expect(found, found.join("\n")).toEqual([]);
+});
+
+test("keyboard users can skip the header", async ({ page }) => {
+  // A page without autofocus, freshly loaded (the room focuses its add
+  // field when the queue is empty).
+  await signUp(page, "keys");
+  await settle(page, "/me");
+  await page.keyboard.press("Tab");
+  const skip = page.getByRole("link", { name: "Skip to content" });
+  await expect(skip).toBeFocused();
+  await expect(skip).toBeInViewport();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("main#main")).toBeFocused();
+  // The next stop is inside the page, not the header.
+  await page.keyboard.press("Tab");
+  expect(await page.evaluate(() => document.activeElement?.closest("main") !== null)).toBe(true);
+});
+
+test.describe("with reduced motion", () => {
+  test.use({ reducedMotion: "reduce" });
+
+  test("nothing animates, and reactions still show", async ({ page }) => {
+    await signUp(page, "still");
+    const slug = await createRoom(page, { firstUrl: await readyVideo("Calm video") });
+    await settle(page, `/r/${slug}`);
+    await expect(page.locator(".queue-item.current")).toContainText("Calm video"); // joined
+    await page.evaluate(async (room) => {
+      const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/api/v1/rooms/${room}/ws`);
+      await new Promise((r) => ws.addEventListener("open", r, { once: true }));
+      ws.send(JSON.stringify({ type: "react", emoji: "🔥" }));
+    }, slug);
+    await expect(page.locator(".reaction").first()).toBeVisible();
+    // Fades are fine; nothing may move (no transform keyframes running).
+    const moving = await page.evaluate(() =>
+      document
+        .getAnimations()
+        .filter((a) => a.playState === "running")
+        .filter((a) => (a.effect as KeyframeEffect | null)?.getKeyframes().some((k) => "transform" in k)).length,
+    );
+    expect(moving).toBe(0);
+  });
 });
 
 test.describe("at phone width", () => {

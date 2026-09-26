@@ -24,7 +24,7 @@ const UserMenu: Component = () => {
   };
 
   return (
-    <nav class="usermenu">
+    <nav class="usermenu" aria-label="Account">
       <Show when={installAvailable()}>
         <button type="button" class="link install" onClick={() => void promptInstall()} title="Install couchcast as an app">
           Install app

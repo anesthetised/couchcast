@@ -41,9 +41,15 @@ const Admin: Component = () => {
   };
 
   return (
-    <Show when={auth.user()?.role === "admin"} fallback={<section class="card error">Administrator role required.</section>}>
+    <Show when={auth.user()?.role === "admin"} fallback={
+        <section class="card error">
+          <h1>Administration</h1>
+          <p>Administrator role required.</p>
+        </section>
+      }>
       <div class="stack">
-        <nav class="tabs">
+        <h1>Administration</h1>
+        <nav class="tabs" aria-label="Admin sections">
           <For each={tabs}>
             {(t) => (
               <button type="button" class={`tab ${tab() === t.id ? "active" : ""}`} aria-pressed={tab() === t.id} onClick={() => setTab(t.id)}>

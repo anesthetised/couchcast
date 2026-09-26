@@ -124,6 +124,28 @@ code {
   box-shadow: var(--ring);
 }
 
+/* Hidden until a keyboard user reaches it, then above the header. */
+.skip-link {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 100;
+  padding: 0.5rem 0.9rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
+  transform: translateY(-200%);
+}
+
+.skip-link:focus {
+  transform: none;
+}
+
+main:focus {
+  outline: none;
+}
+
 ::selection {
   background: var(--accent-soft);
 }
@@ -2780,8 +2802,9 @@ button.timecode {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* No movement, but a fade is not motion: it beats the global "none". */
   .reaction {
-    animation: fade-out 2.5s ease-out forwards;
+    animation: fade-out 2.5s ease-out forwards !important;
   }
   @keyframes fade-out {
     0% {

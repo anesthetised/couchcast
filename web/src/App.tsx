@@ -19,13 +19,28 @@ const Admin = lazy(() => import("~/routes/Admin"));
 // Layout shared by every page.
 const Layout: Component<RouteSectionProps> = (props) => (
   <>
+    {/* Keyboard users jump past the header straight to the page. The
+        router would treat #main as a route, so the jump is done here. */}
+    <a
+      class="skip-link"
+      href="#main"
+      rel="external"
+      onClick={(e) => {
+        e.preventDefault();
+        document.getElementById("main")?.focus();
+      }}
+    >
+      Skip to content
+    </a>
     <header class="topbar">
       <a href="/" class="brand">
         couchcast
       </a>
       <UserMenu />
     </header>
-    <main class="page wide">{props.children}</main>
+    <main id="main" class="page wide" tabindex="-1">
+      {props.children}
+    </main>
     <Toasts />
   </>
 );
