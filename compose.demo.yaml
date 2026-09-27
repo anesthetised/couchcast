@@ -1,0 +1,21 @@
+# README media (`just demo-media`): the production stack in a throwaway
+# compose project, plus a Playwright runner that stages a room and films
+# it. Applied on top of compose.yaml.
+
+services:
+  demo:
+    image: mcr.microsoft.com/playwright:v1.63.0-noble
+    profiles: [demo]
+    networks: [default]
+    working_dir: /src/e2e
+    ipc: host
+    environment:
+      BASE_URL: http://web:8080
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+      DEMO_EXPLORE: ${DEMO_EXPLORE:-}
+    volumes:
+      - ./e2e:/src/e2e
+      - demomodules:/src/e2e/node_modules
+
+volumes:
+  demomodules:

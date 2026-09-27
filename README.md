@@ -7,6 +7,8 @@ the same frame.
 [![CI](https://github.com/anesthetised/couchcast/actions/workflows/ci.yml/badge.svg)](https://github.com/anesthetised/couchcast/actions/workflows/ci.yml)
 [![Go coverage](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/anesthetised/couchcast/badges/coverage.json)](https://github.com/anesthetised/couchcast/actions/workflows/ci.yml)
 
+![A room: the shared player, the queue with the next videos downloading, and the chat](docs/media/room.jpg)
+
 ## How it works
 
 - **Ingest** — a separate worker process downloads the selected renditions
@@ -24,6 +26,14 @@ the same frame.
 
 No WebRTC: the video is prerecorded, so synchronised DASH playback is
 simpler, cheaper and more robust than real-time media transport.
+
+The host above, a guest below: the guest's player follows pause, seek and
+play, and chat reaches everyone.
+
+![Two viewers on the same frame through pause, seek and play](docs/media/sync.gif)
+
+<sub>Shown: *Sintel* and *Big Buck Bunny* © Blender Foundation, CC BY 3.0.
+`just demo-media` films both images again from a throwaway stack.</sub>
 
 ## Running
 

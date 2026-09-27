@@ -235,6 +235,41 @@ prod-migrate:
 admin-grant username:
     {{compose}} run --rm web go run ./cmd/couchcast admin grant {{username}}
 
+# Stages a movie night in a throwaway production stack (compose project
+# couchcast-demo, removed afterwards) and films it with Playwright
+# (e2e/demo/readme.spec.ts). Needs internet: the ingest worker downloads
+# an open movie from YouTube. DEMO_EXPLORE=1 instead saves candidate
+# frames to e2e/demo-results for picking the scene.
+#
+# Refresh the README screenshot and GIF in docs/media.
+[group('code')]
+demo-media:
+    #!/bin/sh
+    set -eu
+    export COMPOSE_PROJECT_NAME=couchcast-demo TAG=demo WEB_PORT=127.0.0.1: \
+        COUCHCAST_MEDIA_TOKEN_SECRET=demo-only-media-token-secret-0123456789abcdef \
+        COUCHCAST_SECURE_COOKIES=false COUCHCAST_AUTH_RATE_PER_MINUTE=1000
+    dc="docker compose -f compose.yaml -f compose.demo.yaml"
+    out=e2e/demo-results
+    trap '$dc --profile demo down -v >/dev/null 2>&1 || true; docker rmi {{image}}:demo >/dev/null 2>&1 || true' EXIT
+    rm -rf "$out"
+    just build demo
+    $dc up -d --wait postgres seaweedfs
+    $dc run --rm atlas migrate apply --env local
+    $dc up -d --wait web ingest
+    $dc run --rm demo sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm exec playwright test -c demo.config.ts"
+    [ -z "${DEMO_EXPLORE:-}" ] || { echo "candidate frames in $out"; exit 0; }
+    # The host's window above the guest's, cut to the same wall-clock span.
+    set -- $(cat "$out/clip.txt") # host, guest, host start, guest start, seconds
+    docker run --rm -v "$PWD/$out:/w" -w /w --entrypoint ffmpeg {{image}}:demo -loglevel error -y \
+        -ss "$3" -t "$5" -i "$1" -ss "$4" -t "$5" -i "$2" -filter_complex \
+        "[0]fps=10,scale=720:-2:flags=lanczos,pad=iw:ih+6:0:0:color=0x2a2f3a[a];[1]fps=10,scale=720:-2:flags=lanczos[b];[a][b]vstack=inputs=2,split[x][y];[x]palettegen=max_colors=128:stats_mode=diff[p];[y][p]paletteuse=dither=bayer:bayer_scale=4:diff_mode=rectangle" \
+        sync.gif
+    mkdir -p docs/media
+    cp "$out/room.jpg" "$out/sync.gif" docs/media/
+    rm -rf "$out"
+    echo "docs/media: $(du -sh docs/media/room.jpg docs/media/sync.gif | awk '{print $2" "$1}' | tr '\n' ' ')"
+
 # Load test against the running dev stack (`just dev`); see docs/load.md.
 # Flags: -viewers 300 -stuck 10 -seeks 60 -every 200ms.
 [group('code')]

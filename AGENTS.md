@@ -108,6 +108,12 @@ commands run from the repo root via `just` (see `justfile`):
   accepts an older directory silently), pulls with `--policy missing`,
   migrates, `up --wait` (web has a `/healthz` healthcheck), then writes
   `TAG` to `.env`; on failure the checkout goes back and `.env` is kept.
+- `just demo-media` — refreshes `docs/media/room.jpg` and `sync.gif` for the
+  README: a throwaway production stack (`compose.demo.yaml`, project
+  `couchcast-demo`, removed afterwards) where `e2e/demo/readme.spec.ts`
+  stages a movie night (Sintel from YouTube, needs internet) and films it;
+  ffmpeg stacks the two recordings into the GIF. Rerun it after visible UI
+  changes. `DEMO_EXPLORE=1` saves candidate frames for picking a scene.
 - `just build` — production image; `just prod-up` — run the base compose file;
   `just prod-https` — the same behind Caddy with automatic TLS
   (profile `https`, `deploy/Caddyfile`, needs `COUCHCAST_DOMAIN`; set
