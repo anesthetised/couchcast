@@ -9,8 +9,8 @@ header = """
 
 couchcast uses calendar versions: `vYYYY.M.N`, where N counts the releases
 within the month. Images are published as `ghcr.io/anesthetised/couchcast`.
-
 """
+# Untrimmed: each release ends with a blank line before the next one.
 body = """
 {% if version %}\
 ## [{{ version }}](https://github.com/anesthetised/couchcast/releases/tag/{{ version }}) — {{ timestamp | date(format="%Y-%m-%d") }}
@@ -30,7 +30,7 @@ body = """
 {%- endfor %}
 {% endfor %}
 """
-trim = true
+trim = false
 
 [git]
 conventional_commits = true
