@@ -295,6 +295,15 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
   Presence changes (joins, leaves, buffering, lag) are coalesced into
   one snapshot per `room.Deps.PresenceEvery` (250 ms from NewManager, 0
   in unit tests = immediate); anything else broadcasts at once.
+  Room locks cover memory, not waiting: each user's queue votes live in
+  `Room.votes` (read with the queue, kept current by `QueueVote`), so a
+  personalised broadcast makes no query per viewer; `queue.add` and
+  `queue.addMany` run `Admitter.Admit` (blocklist, DNS check) before
+  taking the room lock and only `Create` (rows in the transaction)
+  under it, re-checking the room afterwards; `Manager.Get` loads a room
+  outside the manager lock with one shared load per room (waiters give
+  up with their own context), and nothing takes a room lock under the
+  manager lock (`Manager.loaded`, `holding`).
   Commands may carry `ref` (a number the client picks); an `error` caused
   by the command echoes it, and the room store settles the pending add
   it belongs to instead of guessing.

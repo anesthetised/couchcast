@@ -18,6 +18,7 @@ import (
 
 	"github.com/anesthetised/couchcast/internal/access"
 	"github.com/anesthetised/couchcast/internal/entity"
+	"github.com/anesthetised/couchcast/internal/ingest"
 	"github.com/anesthetised/couchcast/internal/mediastore"
 	"github.com/anesthetised/couchcast/internal/protocol"
 	"github.com/anesthetised/couchcast/internal/repository"
@@ -76,22 +77,41 @@ func (c *fakeConn) lastSnapshot() protocol.Snapshot {
 type fakeAdmit struct {
 	repo    *repository.Repo
 	retried []uuid.UUID
+	// slow, when set, holds Admit for "https://slow/" until it is closed
+	// (a slow DNS lookup); admitting signals that Admit was entered.
+	slow      chan struct{}
+	admitting chan struct{}
 }
 
-func (f *fakeAdmit) EnsureMedia(ctx context.Context, q repository.Querier, rawURL string) (*entity.Media, error) {
+func (f *fakeAdmit) Admit(ctx context.Context, rawURL string) (ingest.Admission, error) {
 	switch rawURL {
 	case "unsupported":
-		return nil, errUnsupported
+		return ingest.Admission{}, errUnsupported
 	case "blocked":
-		return nil, errBlocked
+		return ingest.Admission{}, errBlocked
 	case "broken":
-		return nil, errors.New("database is down")
+		return ingest.Admission{}, errors.New("database is down")
 	case "http://10.0.0.1/":
-		return nil, fmt.Errorf("%w: 10.0.0.1", errPrivate)
+		return ingest.Admission{}, fmt.Errorf("%w: 10.0.0.1", errPrivate)
 	case "https://nowhere.example/":
-		return nil, fmt.Errorf("%w: lookup nowhere.example: no such host", errUnknownHost)
+		return ingest.Admission{}, fmt.Errorf("%w: lookup nowhere.example: no such host", errUnknownHost)
+	case "https://slow/":
+		if f.admitting != nil {
+			f.admitting <- struct{}{}
+		}
+		if f.slow != nil {
+			select {
+			case <-f.slow:
+			case <-ctx.Done():
+				return ingest.Admission{}, ctx.Err()
+			}
+		}
 	}
-	m, _, err := f.repo.CreateMedia(ctx, q, "url:"+rawURL, rawURL)
+	return ingest.Admission{Key: "url:" + rawURL, URL: rawURL}, nil
+}
+
+func (f *fakeAdmit) Create(ctx context.Context, q repository.Querier, a ingest.Admission) (*entity.Media, error) {
+	m, _, err := f.repo.CreateMedia(ctx, q, a.Key, a.URL)
 	return m, err
 }
 

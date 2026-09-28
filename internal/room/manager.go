@@ -22,6 +22,9 @@ type Manager struct {
 
 	mu    sync.Mutex
 	rooms map[uuid.UUID]*Room
+	// loading holds the rooms being read from the database, so concurrent
+	// first requests wait for one load instead of starting their own.
+	loading map[uuid.UUID]*roomLoad
 
 	// IdleAfter is how long an empty room stays in memory.
 	IdleAfter time.Duration
@@ -44,7 +47,15 @@ func NewManager(deps Deps) *Manager {
 	if deps.PresenceEvery == 0 {
 		deps.PresenceEvery = 250 * time.Millisecond
 	}
-	return &Manager{deps: deps, rooms: map[uuid.UUID]*Room{}, IdleAfter: 10 * time.Minute, ReconcileEvery: 30 * time.Second}
+	return &Manager{deps: deps, rooms: map[uuid.UUID]*Room{}, loading: map[uuid.UUID]*roomLoad{},
+		IdleAfter: 10 * time.Minute, ReconcileEvery: 30 * time.Second}
+}
+
+// roomLoad is one load in flight; done closes when room or err is set.
+type roomLoad struct {
+	done chan struct{}
+	room *Room
+	err  error
 }
 
 // Warm loads every room that was playing when the server last ran, so
@@ -66,18 +77,44 @@ func (m *Manager) Warm(ctx context.Context) error {
 }
 
 // Get returns the live room, loading it from the database on first use.
+// The load runs without the manager lock, so a slow database only delays
+// the callers that wait for this room; concurrent first requests share
+// one load and get the same instance.
 func (m *Manager) Get(ctx context.Context, id uuid.UUID) (*Room, error) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	if r, ok := m.rooms[id]; ok {
+		m.mu.Unlock()
 		return r, nil
 	}
-	r, err := load(ctx, m.deps, id)
-	if err != nil {
-		return nil, err
+	l, waiting := m.loading[id]
+	if !waiting {
+		l = &roomLoad{done: make(chan struct{})}
+		m.loading[id] = l
 	}
-	m.rooms[id] = r
-	return r, nil
+	m.mu.Unlock()
+
+	if waiting {
+		select {
+		case <-l.done:
+			return l.room, l.err
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+
+	// Waiters share the result, so the first caller going away must not
+	// cancel the load for them.
+	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	l.room, l.err = load(lctx, m.deps, id)
+	cancel()
+	m.mu.Lock()
+	delete(m.loading, id)
+	if l.err == nil {
+		m.rooms[id] = l.room
+	}
+	m.mu.Unlock()
+	close(l.done)
+	return l.room, l.err
 }
 
 // Peek returns the room only if it is already loaded.
@@ -162,18 +199,7 @@ func (m *Manager) KickEverywhere(userID uuid.UUID, reason string) {
 
 // MediaDeleted makes loaded rooms drop queue items of a removed media.
 func (m *Manager) MediaDeleted(ctx context.Context, mediaID uuid.UUID) {
-	m.mu.Lock()
-	var targets []*Room
-	for _, r := range m.rooms {
-		r.mu.Lock()
-		_, has := r.media[mediaID]
-		r.mu.Unlock()
-		if has {
-			targets = append(targets, r)
-		}
-	}
-	m.mu.Unlock()
-	for _, r := range targets {
+	for _, r := range m.holding(mediaID) {
 		if err := r.ReloadQueue(ctx); err != nil {
 			m.deps.Logger.Warn("reload queue", "room", r.Slug(), "error", err)
 		}
@@ -321,12 +347,12 @@ func (m *Manager) ListenProgress(ctx context.Context, pool *pgxpool.Pool) error 
 	}, func() { m.reconcileMedia(ctx) })
 }
 
-// mediaChanged reloads the media row and pushes it to every loaded room
-// that has it queued.
-func (m *Manager) mediaChanged(ctx context.Context, mediaID uuid.UUID) {
-	m.mu.Lock()
+// holding returns the loaded rooms that hold the media. Room locks are
+// taken one at a time and never under the manager lock, so one busy room
+// cannot hold up the manager.
+func (m *Manager) holding(mediaID uuid.UUID) []*Room {
 	var targets []*Room
-	for _, r := range m.rooms {
+	for _, r := range m.loaded() {
 		r.mu.Lock()
 		_, has := r.media[mediaID]
 		r.mu.Unlock()
@@ -334,7 +360,13 @@ func (m *Manager) mediaChanged(ctx context.Context, mediaID uuid.UUID) {
 			targets = append(targets, r)
 		}
 	}
-	m.mu.Unlock()
+	return targets
+}
+
+// mediaChanged reloads the media row and pushes it to every loaded room
+// that has it queued.
+func (m *Manager) mediaChanged(ctx context.Context, mediaID uuid.UUID) {
+	targets := m.holding(mediaID)
 	if len(targets) == 0 {
 		return
 	}

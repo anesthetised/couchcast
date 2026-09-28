@@ -125,27 +125,39 @@ func (s *Service) Key(rawURL string) (string, error) {
 	return key, nil
 }
 
-// EnsureMedia returns the media row for the URL, creating it and enqueuing
-// an ingest job when it is new. Pass a transaction as q to make the media
-// row and the caller's own rows (queue items) atomic.
-func (s *Service) EnsureMedia(ctx context.Context, q repository.Querier, rawURL string) (*entity.Media, error) {
+// Admission is a link that passed Admit: supported, not blocklisted and,
+// unless private sources are allowed, not pointing into the private
+// network.
+type Admission struct {
+	Key string
+	URL string
+}
+
+// Admit checks a link without writing anything. It may resolve the host,
+// which can take a while: callers holding a lock run it first and Create
+// under the lock.
+func (s *Service) Admit(ctx context.Context, rawURL string) (Admission, error) {
 	key, err := s.Key(rawURL)
 	if err != nil {
-		return nil, err
+		return Admission{}, err
 	}
-
 	blocked, err := s.repo.IsSourceBlocked(ctx, key)
 	if err != nil {
-		return nil, err
+		return Admission{}, err
 	}
 	if blocked {
-		return nil, ErrBlocked
+		return Admission{}, ErrBlocked
 	}
 	if err := s.policy.check(ctx, key, rawURL); err != nil {
-		return nil, err
+		return Admission{}, err
 	}
+	return Admission{Key: key, URL: rawURL}, nil
+}
 
-	media, created, err := s.repo.CreateMedia(ctx, q, key, rawURL)
+// Create returns the media row of an admitted link, creating it on q and
+// enqueueing its ingest when the source is new; only database writes.
+func (s *Service) Create(ctx context.Context, q repository.Querier, a Admission) (*entity.Media, error) {
+	media, created, err := s.repo.CreateMedia(ctx, q, a.Key, a.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -154,8 +166,16 @@ func (s *Service) EnsureMedia(ctx context.Context, q repository.Querier, rawURL 
 			return nil, err
 		}
 	}
-
 	return media, nil
+}
+
+// EnsureMedia is Admit followed by Create.
+func (s *Service) EnsureMedia(ctx context.Context, q repository.Querier, rawURL string) (*entity.Media, error) {
+	a, err := s.Admit(ctx, rawURL)
+	if err != nil {
+		return nil, err
+	}
+	return s.Create(ctx, q, a)
 }
 
 // Preview is what the add form shows before a URL is queued.

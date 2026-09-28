@@ -168,25 +168,26 @@ func (r *Repo) ToggleQueueVote(ctx context.Context, itemID, userID uuid.UUID) (b
 	return true, nil
 }
 
-// ListQueueVotesByUser returns the item ids the user has voted for in a room.
-func (r *Repo) ListQueueVotesByUser(ctx context.Context, roomID, userID uuid.UUID) ([]uuid.UUID, error) {
+// ListQueueVotes returns, per user, the queue items they voted for in a
+// room: the live room loads it once and keeps it current itself.
+func (r *Repo) ListQueueVotes(ctx context.Context, roomID uuid.UUID) (map[uuid.UUID][]uuid.UUID, error) {
 	const q = `
-		SELECT v.item_id FROM queue_votes v JOIN queue_items i ON i.id = v.item_id
-		WHERE i.room_id = $1 AND v.user_id = $2
+		SELECT v.user_id, v.item_id FROM queue_votes v JOIN queue_items i ON i.id = v.item_id
+		WHERE i.room_id = $1
 	`
-	rows, err := r.pool.Query(ctx, q, roomID, userID)
+	rows, err := r.pool.Query(ctx, q, roomID)
 	if err != nil {
 		return nil, wrapErr(err)
 	}
 	defer rows.Close()
 
-	var out []uuid.UUID
+	out := map[uuid.UUID][]uuid.UUID{}
 	for rows.Next() {
-		var id uuid.UUID
-		if err := rows.Scan(&id); err != nil {
+		var user, item uuid.UUID
+		if err := rows.Scan(&user, &item); err != nil {
 			return nil, err
 		}
-		out = append(out, id)
+		out[user] = append(out[user], item)
 	}
 	return out, rows.Err()
 }

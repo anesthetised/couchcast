@@ -123,10 +123,19 @@ func (r *Room) QueueVote(ctx context.Context, actor access.Actor, itemID uuid.UU
 	if err != nil {
 		return err
 	}
+	mine := r.votes[actor.User.ID]
 	if on {
 		item.Votes++
-	} else if item.Votes > 0 {
-		item.Votes--
+		if mine == nil {
+			mine = map[uuid.UUID]bool{}
+			r.votes[actor.User.ID] = mine
+		}
+		mine[itemID] = true
+	} else {
+		if item.Votes > 0 {
+			item.Votes--
+		}
+		delete(mine, itemID)
 	}
 	if err := r.reorderByVotesLocked(ctx); err != nil {
 		return err

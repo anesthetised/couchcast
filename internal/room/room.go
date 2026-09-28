@@ -23,6 +23,7 @@ import (
 
 	"github.com/anesthetised/couchcast/internal/access"
 	"github.com/anesthetised/couchcast/internal/entity"
+	"github.com/anesthetised/couchcast/internal/ingest"
 	"github.com/anesthetised/couchcast/internal/mediastore"
 	"github.com/anesthetised/couchcast/internal/notify"
 	"github.com/anesthetised/couchcast/internal/protocol"
@@ -51,14 +52,17 @@ type Store interface {
 	UpdateRoomPlayback(ctx context.Context, roomID uuid.UUID, p entity.PlaybackState) error
 	SetRoomSchedule(ctx context.Context, roomID uuid.UUID, at *time.Time) error
 	ToggleQueueVote(ctx context.Context, itemID, userID uuid.UUID) (bool, error)
-	ListQueueVotesByUser(ctx context.Context, roomID, userID uuid.UUID) ([]uuid.UUID, error)
+	ListQueueVotes(ctx context.Context, roomID uuid.UUID) (map[uuid.UUID][]uuid.UUID, error)
 	UpdateRoomSettings(ctx context.Context, id uuid.UUID, settings entity.Settings) error
 	ListPlayingRoomIDs(ctx context.Context) ([]uuid.UUID, error)
 }
 
-// Admitter turns URLs into media rows (ingest.Service).
+// Admitter turns URLs into media rows (ingest.Service): Admit checks a
+// link (and may resolve its host, so the room calls it without its lock),
+// Create writes the row inside the room's transaction.
 type Admitter interface {
-	EnsureMedia(ctx context.Context, q repository.Querier, rawURL string) (*entity.Media, error)
+	Admit(ctx context.Context, rawURL string) (ingest.Admission, error)
+	Create(ctx context.Context, q repository.Querier, a ingest.Admission) (*entity.Media, error)
 	Retry(ctx context.Context, media *entity.Media) error
 }
 
@@ -154,8 +158,11 @@ type Room struct {
 	rate       float64 // playback speed, 1 = normal
 	seq        uint64
 
-	viewers     map[Conn]*viewer
-	skipVotes   map[uuid.UUID]struct{}
+	viewers   map[Conn]*viewer
+	skipVotes map[uuid.UUID]struct{}
+	// votes holds each user's queue votes (user → item), loaded with the
+	// queue and kept current by QueueVote, so broadcasts never query.
+	votes       map[uuid.UUID]map[uuid.UUID]bool
 	chatLimits  map[uuid.UUID]*rate.Limiter
 	reactLimits map[uuid.UUID]*rate.Limiter
 	lastChatAt  map[uuid.UUID]time.Time // for slow mode
@@ -289,7 +296,19 @@ func (r *Room) reloadQueue(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	votes, err := r.deps.Store.ListQueueVotes(ctx, r.info.ID)
+	if err != nil {
+		return err
+	}
 
+	r.votes = make(map[uuid.UUID]map[uuid.UUID]bool, len(votes))
+	for user, items := range votes {
+		set := make(map[uuid.UUID]bool, len(items))
+		for _, id := range items {
+			set[id] = true
+		}
+		r.votes[user] = set
+	}
 	r.queue = r.queue[:0]
 	for i := range items {
 		r.queue = append(r.queue, &items[i])
@@ -783,23 +802,13 @@ func (r *Room) broadcastPlaybackLocked() {
 	}
 }
 
-// votesFor returns the viewer's queue votes. Votes are read from the
-// database lazily: they change rarely and only matter in vote mode.
+// votesFor returns the viewer's queue votes, from memory: a broadcast to
+// every viewer must not cost a query each (#121).
 func (r *Room) votesFor(v *viewer) map[uuid.UUID]bool {
 	if v.user == nil || !r.info.Settings.VoteMode {
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	ids, err := r.deps.Store.ListQueueVotesByUser(ctx, r.info.ID, v.user.ID)
-	if err != nil {
-		return nil
-	}
-	out := make(map[uuid.UUID]bool, len(ids))
-	for _, id := range ids {
-		out[id] = true
-	}
-	return out
+	return r.votes[v.user.ID]
 }
 
 // --- viewers -----------------------------------------------------------------
@@ -1366,15 +1375,30 @@ func (r *Room) Jump(ctx context.Context, actor access.Actor, itemID uuid.UUID) e
 // after the current item when next is set (manual mode only).
 func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, next, force bool) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
-	if err := r.requireLocked(actor, access.AddToQueue); err != nil {
+	err := r.canAddLocked(actor, 1)
+	if err == nil && r.deps.QueueAddLimiter != nil && actor.User != nil && !r.deps.QueueAddLimiter.Allow(actor.User.ID.String()) {
+		err = &Error{Code: protocol.CodeRateLimit, Message: "you are adding videos too quickly"}
+	}
+	r.mu.Unlock()
+	if err != nil {
 		return err
 	}
-	if len(r.queue) >= 200 {
-		return invalid("queue is full")
+
+	// Admission may resolve the link's host: the room lock is not held,
+	// so playback and chat never wait for DNS.
+	adm, err := r.deps.Admit.Admit(ctx, rawURL)
+	if err != nil {
+		if msg := admitMessage(err); msg != "" {
+			return &Error{Code: protocol.CodeInvalid, Message: msg}
+		}
+		return err // internal: logged by the hub, "internal error" to the client
 	}
-	if r.deps.QueueAddLimiter != nil && actor.User != nil && !r.deps.QueueAddLimiter.Allow(actor.User.ID.String()) {
-		return &Error{Code: protocol.CodeRateLimit, Message: "you are adding videos too quickly"}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	// The room may have changed meanwhile: check again.
+	if err := r.canAddLocked(actor, 1); err != nil {
+		return err
 	}
 
 	tx, err := r.deps.Store.Pool().Begin(ctx)
@@ -1383,12 +1407,9 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, 
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
 
-	media, err := r.deps.Admit.EnsureMedia(ctx, tx, rawURL)
+	media, err := r.deps.Admit.Create(ctx, tx, adm)
 	if err != nil {
-		if msg := admitMessage(err); msg != "" {
-			return &Error{Code: protocol.CodeInvalid, Message: msg}
-		}
-		return err // internal: logged by the hub, "internal error" to the client
+		return err
 	}
 	if !force {
 		if err := r.duplicateLocked(media.ID); err != nil {
@@ -1432,6 +1453,20 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, 
 	return nil
 }
 
+// canAddLocked checks that the actor may add n more items to the room now.
+func (r *Room) canAddLocked(actor access.Actor, n int) error {
+	if r.closed {
+		return notFound("room")
+	}
+	if err := r.requireLocked(actor, access.AddToQueue); err != nil {
+		return err
+	}
+	if len(r.queue)+n > 200 {
+		return invalid("queue is full")
+	}
+	return nil
+}
+
 // maxAddMany bounds one bulk add (ingest.PlaylistLimit on the import side).
 const maxAddMany = 50
 
@@ -1441,16 +1476,39 @@ const maxAddMany = 50
 // add budget is charged once. With next (manual mode, something playing)
 // the batch lands right after the current item.
 func (r *Room) QueueAddMany(ctx context.Context, actor access.Actor, urls []string, next bool) error {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if err := r.requireLocked(actor, access.AddToQueue); err != nil {
-		return err
-	}
 	if len(urls) == 0 || len(urls) > maxAddMany {
 		return invalid(fmt.Sprintf("send between 1 and %d links", maxAddMany))
 	}
-	if r.deps.QueueAddLimiter != nil && actor.User != nil && !r.deps.QueueAddLimiter.Allow(actor.User.ID.String()) {
-		return &Error{Code: protocol.CodeRateLimit, Message: "you are adding videos too quickly"}
+	r.mu.Lock()
+	err := r.canAddLocked(actor, 0)
+	if err == nil && r.deps.QueueAddLimiter != nil && actor.User != nil && !r.deps.QueueAddLimiter.Allow(actor.User.ID.String()) {
+		err = &Error{Code: protocol.CodeRateLimit, Message: "you are adding videos too quickly"}
+	}
+	r.mu.Unlock()
+	if err != nil {
+		return err
+	}
+
+	// Admission first, without the room lock (it may resolve every host);
+	// links that fail it are skipped like duplicates.
+	admitted := make([]ingest.Admission, 0, len(urls))
+	skipped := 0
+	for _, raw := range urls {
+		a, err := r.deps.Admit.Admit(ctx, raw)
+		if errors.Is(err, errUnsupported) || errors.Is(err, errBlocked) || errors.Is(err, errPrivate) || errors.Is(err, errUnknownHost) {
+			skipped++
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		admitted = append(admitted, a)
+	}
+
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if err := r.canAddLocked(actor, 0); err != nil {
+		return err
 	}
 
 	seen := map[uuid.UUID]bool{}
@@ -1472,20 +1530,15 @@ func (r *Room) QueueAddMany(ctx context.Context, actor access.Actor, urls []stri
 		addedBy = &actor.User.ID
 	}
 	var (
-		added   []*entity.QueueItem
-		medias  []*entity.Media
-		skipped int
+		added  []*entity.QueueItem
+		medias []*entity.Media
 	)
-	for _, raw := range urls {
+	for _, a := range admitted {
 		if len(r.queue)+len(added) >= 200 {
 			skipped++
 			continue
 		}
-		media, err := r.deps.Admit.EnsureMedia(ctx, tx, raw)
-		if errors.Is(err, errUnsupported) || errors.Is(err, errBlocked) || errors.Is(err, errPrivate) || errors.Is(err, errUnknownHost) {
-			skipped++
-			continue
-		}
+		media, err := r.deps.Admit.Create(ctx, tx, a)
 		if err != nil {
 			return err
 		}
