@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -105,23 +106,79 @@ func (w *Worker) drain(ctx context.Context, slot int) {
 			}
 			return
 		}
+		w.run(ctx, job, slot)
+	}
+}
 
-		log := w.logger.With("job", job.ID, "kind", job.Kind, "attempt", job.Attempts, "slot", slot)
-		log.Info("job started")
-		start := time.Now()
+// run executes one attempt while keeping its lease, then records the
+// outcome unless the attempt lost the job meanwhile.
+func (w *Worker) run(ctx context.Context, job *Job, slot int) {
+	log := w.logger.With("job", job.ID, "kind", job.Kind, "attempt", job.Attempts, "slot", slot)
+	log.Info("job started")
+	start := time.Now()
 
-		if err := w.handler(ctx, job); err != nil {
-			retry, ferr := w.queue.Fail(context.WithoutCancel(ctx), job, err)
-			if ferr != nil {
-				log.Error("record job failure", "error", ferr)
+	hctx, cancel := context.WithCancelCause(ctx)
+	kept := make(chan struct{})
+	go func() {
+		defer close(kept)
+		w.keepLease(hctx, job, cancel, log)
+	}()
+	err := w.handler(hctx, job)
+	lost := errors.Is(context.Cause(hctx), ErrLeaseLost)
+	cancel(nil)
+	<-kept
+
+	// Another attempt may own the job now: its outcome is not ours to write.
+	if lost {
+		log.Warn("job lost its lease; the result is dropped", "error", err, "duration", time.Since(start))
+		return
+	}
+	if err != nil {
+		retry, ferr := w.queue.Fail(context.WithoutCancel(ctx), job, err)
+		if ferr != nil {
+			log.Error("record job failure", "error", ferr)
+		}
+		log.Warn("job failed", "error", err, "retry", retry, "duration", time.Since(start))
+		return
+	}
+	if err := w.queue.Complete(context.WithoutCancel(ctx), job); err != nil {
+		log.Error("complete job", "error", err)
+	}
+	log.Info("job done", "duration", time.Since(start))
+}
+
+// keepLease renews the attempt's lease every fifth of its length until ctx
+// ends. It cancels the handler with ErrLeaseLost when the job was taken
+// away, or when no renewal succeeded for three fifths of the lease (the
+// database is unreachable): stopping then leaves a margin before recovery
+// could hand the job to another attempt.
+func (w *Worker) keepLease(ctx context.Context, job *Job, cancel context.CancelCauseFunc, log *slog.Logger) {
+	lease := w.queue.Lease
+	t := time.NewTicker(lease / 5)
+	defer t.Stop()
+	renewed := time.Now()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		err := w.queue.Renew(ctx, job)
+		switch {
+		case err == nil:
+			renewed = time.Now()
+		case errors.Is(err, ErrLeaseLost):
+			log.Warn("job lease lost")
+			cancel(ErrLeaseLost)
+			return
+		case ctx.Err() != nil:
+			return
+		default:
+			log.Warn("renew job lease", "error", err)
+			if time.Since(renewed) >= lease*3/5 {
+				cancel(ErrLeaseLost)
+				return
 			}
-			log.Warn("job failed", "error", err, "retry", retry, "duration", time.Since(start))
-			continue
 		}
-
-		if err := w.queue.Complete(context.WithoutCancel(ctx), job.ID); err != nil {
-			log.Error("complete job", "error", err)
-		}
-		log.Info("job done", "duration", time.Since(start))
 	}
 }

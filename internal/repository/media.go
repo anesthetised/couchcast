@@ -182,8 +182,65 @@ func (r *Repo) SetMediaReady(ctx context.Context, id uuid.UUID, renditions []ent
 
 // SetMediaFailed records the failure reason.
 func (r *Repo) SetMediaFailed(ctx context.Context, id uuid.UUID, reason string) error {
-	const q = `UPDATE media SET status = 'failed', error = $2, updated_at = now() WHERE id = $1`
-	return r.exec(ctx, q, id, reason)
+	return r.FailMedia(ctx, r.pool, id, reason)
+}
+
+// FailMedia is SetMediaFailed on q (a transaction, for fenced writes).
+func (r *Repo) FailMedia(ctx context.Context, q Querier, id uuid.UUID, reason string) error {
+	const fail = `UPDATE media SET status = 'failed', error = $2, updated_at = now() WHERE id = $1`
+	return execOn(ctx, q, fail, id, reason)
+}
+
+// PublishedMedia is what a finished ingest records about its output.
+type PublishedMedia struct {
+	Renditions   []entity.Rendition
+	SizeBytes    int64
+	S3Prefix     string
+	Subtitles    []entity.Subtitle
+	Storyboard   *entity.Storyboard // nil: none
+	ThumbnailURL string             // our copy of the poster; empty keeps the source's
+}
+
+// PublishMedia records a finished ingest and marks the media ready in one
+// statement on q, so the result appears at once and, run inside
+// jobs.Queue.Fenced, only for the attempt that owns the job.
+func (r *Repo) PublishMedia(ctx context.Context, q Querier, id uuid.UUID, p PublishedMedia) error {
+	renditions, err := json.Marshal(p.Renditions)
+	if err != nil {
+		return err
+	}
+	if p.Subtitles == nil {
+		p.Subtitles = []entity.Subtitle{}
+	}
+	subtitles, err := json.Marshal(p.Subtitles)
+	if err != nil {
+		return err
+	}
+	var storyboard []byte
+	if p.Storyboard != nil {
+		if storyboard, err = json.Marshal(p.Storyboard); err != nil {
+			return err
+		}
+	}
+	const publish = `
+		UPDATE media SET status = 'ready', progress = 1, error = NULL, renditions = $2, size_bytes = $3,
+		       s3_prefix = $4, subtitles = $5, storyboard = $6, thumbnail_url = coalesce(nullif($7, ''), thumbnail_url),
+		       updated_at = now(), last_accessed_at = now()
+		WHERE id = $1
+	`
+	return execOn(ctx, q, publish, id, renditions, p.SizeBytes, p.S3Prefix, subtitles, storyboard, p.ThumbnailURL)
+}
+
+// execOn runs a single-row write on q; ErrNotFound when nothing matched.
+func execOn(ctx context.Context, q Querier, sql string, args ...any) error {
+	tag, err := q.Exec(ctx, sql, args...)
+	if err != nil {
+		return wrapErr(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // TouchMediaAccess bumps last_accessed_at; the eviction janitor reads it.

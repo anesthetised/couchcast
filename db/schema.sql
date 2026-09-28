@@ -345,6 +345,9 @@ CREATE TABLE jobs (
     run_at       timestamptz NOT NULL DEFAULT now(),
     locked_at    timestamptz,
     locked_by    text,
+    -- The running attempt's token: renewals, completion and publication
+    -- must present it, so an attempt whose lock expired cannot act.
+    lease        uuid,
     last_error   text,
     created_at   timestamptz NOT NULL DEFAULT now(),
     updated_at   timestamptz NOT NULL DEFAULT now(),

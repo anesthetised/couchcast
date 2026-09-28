@@ -1,7 +1,13 @@
 // Package jobs is a small PostgreSQL-backed job queue: claims use
 // FOR UPDATE SKIP LOCKED, workers are woken by LISTEN/NOTIFY with a polling
 // fallback, failures retry with exponential backoff, and locks held by dead
-// workers are recovered after a timeout.
+// workers are recovered once their lease runs out.
+//
+// Every claim is an attempt with its own lease token. The worker renews
+// the lease while the handler runs; renewal, completion, failure and
+// Fenced writes only take effect for the attempt that still holds the
+// lease, so an attempt whose lock expired (and whose job was handed to
+// another attempt) can no longer finish, fail or publish anything.
 package jobs
 
 import (
@@ -40,6 +46,7 @@ type Job struct {
 	RunAt       time.Time
 	LockedAt    *time.Time
 	LockedBy    string
+	Lease       uuid.UUID // this attempt's token, set by Claim
 	LastError   string
 	CreatedAt   time.Time
 }
@@ -47,15 +54,19 @@ type Job struct {
 // ErrNoJobs is returned by Claim when nothing is runnable.
 var ErrNoJobs = errors.New("jobs: no runnable job")
 
+// ErrLeaseLost means the attempt no longer owns its job: the lease
+// expired and the job was recovered, possibly by another attempt.
+var ErrLeaseLost = errors.New("jobs: lease lost")
+
 // Channel is the NOTIFY channel used to wake workers.
 const Channel = "jobs"
 
 // DefaultMaxAttempts applies when Enqueue is given 0.
 const DefaultMaxAttempts = 3
 
-// StaleAfter is how long a running job may hold its lock before it is
-// assumed dead and returned to pending.
-const StaleAfter = 30 * time.Minute
+// DefaultLease is how long a claim holds a job without renewal before it
+// is assumed dead and recovered. Workers renew every fifth of it.
+const DefaultLease = 5 * time.Minute
 
 // Querier is satisfied by *pgxpool.Pool and pgx.Tx.
 type Querier interface {
@@ -67,18 +78,21 @@ type Querier interface {
 type Queue struct {
 	pool *pgxpool.Pool
 	now  func() time.Time
+
+	// Lease is how long a claim lasts without renewal (DefaultLease).
+	Lease time.Duration
 }
 
 // New creates a queue over the pool.
 func New(pool *pgxpool.Pool) *Queue {
-	return &Queue{pool: pool, now: time.Now}
+	return &Queue{pool: pool, now: time.Now, Lease: DefaultLease}
 }
 
-const jobColumns = `id, kind, payload, status, attempts, max_attempts, run_at, locked_at, coalesce(locked_by, ''), coalesce(last_error, ''), created_at`
+const jobColumns = `id, kind, payload, status, attempts, max_attempts, run_at, locked_at, coalesce(locked_by, ''), coalesce(lease, '00000000-0000-0000-0000-000000000000'), coalesce(last_error, ''), created_at`
 
 func scanJob(row pgx.Row) (*Job, error) {
 	var j Job
-	err := row.Scan(&j.ID, &j.Kind, &j.Payload, &j.Status, &j.Attempts, &j.MaxAttempts, &j.RunAt, &j.LockedAt, &j.LockedBy, &j.LastError, &j.CreatedAt)
+	err := row.Scan(&j.ID, &j.Kind, &j.Payload, &j.Status, &j.Attempts, &j.MaxAttempts, &j.RunAt, &j.LockedAt, &j.LockedBy, &j.Lease, &j.LastError, &j.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -114,10 +128,11 @@ func (q *Queue) Enqueue(ctx context.Context, tx Querier, kind string, payload an
 	return id, nil
 }
 
-// Claim atomically takes the oldest runnable job of the given kinds.
+// Claim atomically takes the oldest runnable job of the given kinds and
+// starts a new attempt with a fresh lease.
 func (q *Queue) Claim(ctx context.Context, worker string, kinds []string) (*Job, error) {
 	const claim = `
-		UPDATE jobs SET status = 'running', locked_at = $3, locked_by = $2, attempts = attempts + 1, updated_at = $3
+		UPDATE jobs SET status = 'running', locked_at = $3, locked_by = $2, lease = $4, attempts = attempts + 1, updated_at = $3
 		WHERE id = (
 			SELECT id FROM jobs
 			WHERE status = 'pending' AND run_at <= $3 AND kind = ANY($1)
@@ -127,7 +142,7 @@ func (q *Queue) Claim(ctx context.Context, worker string, kinds []string) (*Job,
 		)
 		RETURNING ` + jobColumns
 
-	j, err := scanJob(q.pool.QueryRow(ctx, claim, kinds, worker, q.now()))
+	j, err := scanJob(q.pool.QueryRow(ctx, claim, kinds, worker, q.now(), uuid.New()))
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNoJobs
 	}
@@ -137,16 +152,59 @@ func (q *Queue) Claim(ctx context.Context, worker string, kinds []string) (*Job,
 	return j, nil
 }
 
-// Complete marks the job done.
-func (q *Queue) Complete(ctx context.Context, id uuid.UUID) error {
-	const done = `UPDATE jobs SET status = 'done', locked_at = NULL, locked_by = NULL, updated_at = $2 WHERE id = $1`
-	_, err := q.pool.Exec(ctx, done, id, q.now())
-	return err
+// owned is the predicate every write of an attempt carries: the job is
+// still running under this attempt's lease.
+const owned = `id = $1 AND lease = $2 AND status = 'running'`
+
+// held turns a write's result into ErrLeaseLost when it matched nothing.
+func held(tag pgconn.CommandTag, err error) error {
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrLeaseLost
+	}
+	return nil
+}
+
+// Renew extends the attempt's lease; ErrLeaseLost when it no longer owns
+// the job.
+func (q *Queue) Renew(ctx context.Context, j *Job) error {
+	const renew = `UPDATE jobs SET locked_at = $3, updated_at = $3 WHERE ` + owned
+	return held(q.pool.Exec(ctx, renew, j.ID, j.Lease, q.now()))
+}
+
+// Fenced runs fn in a transaction that holds the job's row lock, renewed,
+// and only if the attempt still owns the job (ErrLeaseLost otherwise).
+// Writes that make an attempt's result visible belong here: recovery
+// cannot hand the job to another attempt while fn runs, and a stale
+// attempt's fn never runs.
+func (q *Queue) Fenced(ctx context.Context, j *Job, fn func(tx pgx.Tx) error) error {
+	tx, err := q.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
+	const lock = `UPDATE jobs SET locked_at = $3, updated_at = $3 WHERE ` + owned
+	if err := held(tx.Exec(ctx, lock, j.ID, j.Lease, q.now())); err != nil {
+		return err
+	}
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// Complete marks the job done; ErrLeaseLost if the attempt lost it.
+func (q *Queue) Complete(ctx context.Context, j *Job) error {
+	const done = `UPDATE jobs SET status = 'done', locked_at = NULL, locked_by = NULL, lease = NULL, updated_at = $3 WHERE ` + owned
+	return held(q.pool.Exec(ctx, done, j.ID, j.Lease, q.now()))
 }
 
 // Fail records the error and either schedules a retry with exponential
 // backoff or, when attempts are exhausted or the error is permanent, marks
-// the job failed. It returns whether a retry was scheduled.
+// the job failed. It returns whether a retry was scheduled, and
+// ErrLeaseLost if the attempt no longer owns the job.
 func (q *Queue) Fail(ctx context.Context, j *Job, cause error) (bool, error) {
 	msg := cause.Error()
 	if len(msg) > 2000 {
@@ -155,15 +213,13 @@ func (q *Queue) Fail(ctx context.Context, j *Job, cause error) (bool, error) {
 
 	retry := j.Attempts < j.MaxAttempts && !IsPermanent(cause)
 	if !retry {
-		const failed = `UPDATE jobs SET status = 'failed', locked_at = NULL, locked_by = NULL, last_error = $2, updated_at = $3 WHERE id = $1`
-		_, err := q.pool.Exec(ctx, failed, j.ID, msg, q.now())
-		return false, err
+		const failed = `UPDATE jobs SET status = 'failed', locked_at = NULL, locked_by = NULL, lease = NULL, last_error = $3, updated_at = $4 WHERE ` + owned
+		return false, held(q.pool.Exec(ctx, failed, j.ID, j.Lease, msg, q.now()))
 	}
 
-	const pending = `UPDATE jobs SET status = 'pending', locked_at = NULL, locked_by = NULL, last_error = $2, run_at = $3, updated_at = $4 WHERE id = $1`
+	const pending = `UPDATE jobs SET status = 'pending', locked_at = NULL, locked_by = NULL, lease = NULL, last_error = $3, run_at = $4, updated_at = $5 WHERE ` + owned
 	now := q.now()
-	_, err := q.pool.Exec(ctx, pending, j.ID, msg, now.Add(Backoff(j.Attempts)), now)
-	return true, err
+	return true, held(q.pool.Exec(ctx, pending, j.ID, j.Lease, msg, now.Add(Backoff(j.Attempts)), now))
 }
 
 // Backoff returns the delay before retry number attempt (1-based):
@@ -179,17 +235,18 @@ func Backoff(attempt int) time.Duration {
 	return d
 }
 
-// RecoverStale returns jobs whose lock is older than StaleAfter to pending
-// so another worker can pick them up. Attempts already count the crashed
-// run, so a job that keeps killing its worker eventually fails.
+// RecoverStale returns jobs whose lease ran out to pending so another
+// worker can pick them up, and revokes the lease so the old attempt can
+// no longer act. Attempts already count the crashed run, so a job that
+// keeps killing its worker eventually fails.
 func (q *Queue) RecoverStale(ctx context.Context) (int64, error) {
 	const recover = `
 		UPDATE jobs SET status = CASE WHEN attempts >= max_attempts THEN 'failed' ELSE 'pending' END,
-		       locked_at = NULL, locked_by = NULL, last_error = 'worker lock expired', updated_at = $2
+		       locked_at = NULL, locked_by = NULL, lease = NULL, last_error = 'worker lock expired', updated_at = $2
 		WHERE status = 'running' AND locked_at < $1
 	`
 	now := q.now()
-	tag, err := q.pool.Exec(ctx, recover, now.Add(-StaleAfter), now)
+	tag, err := q.pool.Exec(ctx, recover, now.Add(-q.Lease), now)
 	if err != nil {
 		return 0, fmt.Errorf("jobs: recover stale: %w", err)
 	}

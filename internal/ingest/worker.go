@@ -15,11 +15,14 @@ import (
 
 	"uuid"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/anesthetised/couchcast/internal/entity"
 	"github.com/anesthetised/couchcast/internal/jobs"
 	"github.com/anesthetised/couchcast/internal/mediastore"
 	"github.com/anesthetised/couchcast/internal/metrics"
 	"github.com/anesthetised/couchcast/internal/packager"
+	"github.com/anesthetised/couchcast/internal/repository"
 	"github.com/anesthetised/couchcast/internal/source"
 	"github.com/anesthetised/couchcast/internal/storyboard"
 	"github.com/anesthetised/couchcast/internal/webvtt"
@@ -64,13 +67,22 @@ func (w *Worker) Handle(ctx context.Context, job *jobs.Job) error {
 
 	log := w.logger.With("media", media.ID, "source", media.SourceKey)
 
-	err = w.process(ctx, media, log)
+	err = w.process(ctx, job, media, log)
 	if err != nil {
 		msg := err.Error()
 		if len(msg) > 500 {
 			msg = msg[:500]
 		}
-		if ferr := w.repo.SetMediaFailed(context.WithoutCancel(ctx), media.ID, msg); ferr != nil {
+		// Only while this attempt owns the job: one that lost its lease
+		// must not mark failed what another attempt is working on.
+		ferr := w.queue.Fenced(context.WithoutCancel(ctx), job, func(tx pgx.Tx) error {
+			return w.repo.FailMedia(ctx, tx, media.ID, msg)
+		})
+		switch {
+		case errors.Is(ferr, jobs.ErrLeaseLost):
+			log.Warn("ingest attempt lost its job; not marking the media failed", "error", err)
+			return err
+		case ferr != nil:
 			log.Error("mark media failed", "error", ferr)
 		}
 		w.notify(context.WithoutCancel(ctx), media.ID)
@@ -159,8 +171,10 @@ func SubtitleFile(lang string) string {
 	return "sub-" + safe + ".vtt"
 }
 
-func (w *Worker) process(ctx context.Context, media *entity.Media, log *slog.Logger) error {
-	dir := filepath.Join(w.workDir, media.ID.String())
+func (w *Worker) process(ctx context.Context, job *jobs.Job, media *entity.Media, log *slog.Logger) error {
+	// Per attempt: a stale attempt still running must not share (or clean
+	// up) the files of the one that took over.
+	dir := filepath.Join(w.workDir, media.ID.String()+"-"+job.Lease.String())
 	srcDir, outDir := filepath.Join(dir, "src"), filepath.Join(dir, "dash")
 	if err := os.MkdirAll(outDir, 0o750); err != nil {
 		return err
@@ -270,19 +284,17 @@ func (w *Worker) process(ctx context.Context, media *entity.Media, log *slog.Log
 	}
 	w.metrics.IngestStep("upload", time.Since(start))
 
-	if err := w.repo.SetMediaSubtitles(ctx, media.ID, subtitles); err != nil {
-		return err
-	}
-	if err := w.repo.SetMediaStoryboard(ctx, media.ID, storyboard); err != nil {
-		return err
+	published := repository.PublishedMedia{
+		Renditions: renditions, SizeBytes: size, S3Prefix: prefix, Subtitles: subtitles, Storyboard: storyboard,
 	}
 	if thumb != "" {
-		if err := w.repo.SetMediaThumbnail(ctx, media.ID, "/media/"+media.ID.String()+"/"+thumb); err != nil {
-			return err
-		}
+		published.ThumbnailURL = "/media/" + media.ID.String() + "/" + thumb
 	}
-	if err := w.repo.SetMediaReady(ctx, media.ID, renditions, size, prefix); err != nil {
-		return err
+	// Published only by the attempt that still owns the job.
+	if err := w.queue.Fenced(ctx, job, func(tx pgx.Tx) error {
+		return w.repo.PublishMedia(ctx, tx, media.ID, published)
+	}); err != nil {
+		return fmt.Errorf("publish: %w", err)
 	}
 	w.notify(ctx, media.ID)
 	log.Info("media ready", "bytes", size, "renditions", len(renditions))

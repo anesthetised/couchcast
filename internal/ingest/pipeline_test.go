@@ -358,3 +358,76 @@ func TestServicePrivateAddresses(t *testing.T) {
 	assert.Equal(t, "links to private or local addresses are not allowed", got.Error)
 	assert.Zero(t, p.src.downloads)
 }
+
+// recoverJob does what jobs.Queue.RecoverStale does once a lease runs
+// out: the job goes back to pending and its old attempt loses the lease.
+func (p *pipeline) recoverJob(t *testing.T, id uuid.UUID) {
+	t.Helper()
+	_, err := p.repo.Pool().Exec(context.Background(),
+		`UPDATE jobs SET status = 'pending', locked_at = NULL, locked_by = NULL, lease = NULL WHERE id = $1`, id)
+	require.NoError(t, err)
+}
+
+// The scenario from #120: attempt A is still running when its job is
+// recovered and claimed by attempt B. Both run at once, in the same
+// worker's work directory; only B may publish.
+func TestStaleAttemptDoesNotPublish(t *testing.T) {
+	p := newPipeline(t)
+	ctx := context.Background()
+
+	m, err := p.svc.EnsureMedia(ctx, p.repo.Pool(), "https://video.test/long")
+	require.NoError(t, err)
+	a, err := p.queue.Claim(ctx, "test", []string{JobKind})
+	require.NoError(t, err)
+	p.recoverJob(t, a.ID)
+	b, err := p.queue.Claim(ctx, "test", []string{JobKind})
+	require.NoError(t, err)
+	require.Equal(t, a.ID, b.ID)
+
+	errs := make(chan error, 2)
+	for _, j := range []*jobs.Job{a, b} {
+		go func() { errs <- p.worker.Handle(ctx, j) }()
+	}
+	results := make([]error, 0, 2)
+	for range 2 {
+		results = append(results, <-errs)
+	}
+	lost, ok := 0, 0
+	for _, err := range results {
+		switch {
+		case err == nil:
+			ok++
+		case errors.Is(err, jobs.ErrLeaseLost):
+			lost++
+		default:
+			t.Errorf("unexpected error: %v", err)
+		}
+	}
+	assert.Equal(t, 1, ok, "B finishes: A's cleanup did not take its files")
+	assert.Equal(t, 1, lost, "A cannot publish")
+
+	got, err := p.repo.GetMedia(ctx, m.ID)
+	require.NoError(t, err)
+	assert.Equal(t, entity.MediaReady, got.Status, "A did not mark B's result failed")
+	assert.Contains(t, p.list("media/"+m.ID.String()+"/"), "media/"+m.ID.String()+"/manifest.mpd")
+	require.NoError(t, p.queue.Complete(ctx, b))
+}
+
+func TestStaleAttemptDoesNotFailTheMedia(t *testing.T) {
+	p := newPipeline(t)
+	ctx := context.Background()
+
+	m, err := p.svc.EnsureMedia(ctx, p.repo.Pool(), "https://video.test/flaky")
+	require.NoError(t, err)
+	a, err := p.queue.Claim(ctx, "test", []string{JobKind})
+	require.NoError(t, err)
+	p.recoverJob(t, a.ID)
+
+	p.src.failDL = errors.New("connection reset")
+	err = p.worker.Handle(ctx, a)
+	require.Error(t, err)
+	got, err := p.repo.GetMedia(ctx, m.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, entity.MediaFailed, got.Status, "the job is someone else's now")
+	assert.Empty(t, got.Error)
+}

@@ -162,7 +162,15 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
   through Postgres and S3: `internal/jobs` is the queue (`SKIP LOCKED`
   claims, `LISTEN/NOTIFY` wake-ups, backoff, stale-lock recovery),
   `internal/ingest` runs probe → download → package → upload and publishes
-  progress on the `media_progress` channel. `progressReporter` also derives
+  progress on the `media_progress` channel. Every claim is an attempt
+  with a `jobs.lease` token: the worker renews it every `Lease/5`
+  (`DefaultLease` 5 min) and cancels the handler with `ErrLeaseLost` when
+  the job was taken away or no renewal got through for 3/5 of the lease;
+  `Renew`, `Complete`, `Fail` and `Queue.Fenced` (a transaction holding
+  the job row) only act for the current lease. The ingest publishes the
+  finished media (`PublishMedia`, one statement) and marks failures
+  inside `Fenced`, and works in a per-attempt directory, so a stale
+  attempt can neither publish, fail nor delete another attempt's files. `progressReporter` also derives
   `media.speed_bps` / `media.eta_ms` from the recent progress samples
   (download: bytes from the selected formats; packaging: ffmpeg
   `-progress` out_time against the duration), shown in the queue and on
