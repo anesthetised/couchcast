@@ -231,9 +231,20 @@ prod-migrate:
 
 # --- admin -----------------------------------------------------------------
 
+# Development: runs the command from source in the dev container.
 [group('admin')]
 admin-grant username:
     {{compose}} run --rm web go run ./cmd/couchcast admin grant {{username}}
+
+# Production: the deployed image's own binary, so a server that runs a
+# release (just deploy) needs no Go toolchain or dev image.
+[group('admin')]
+prod-admin-grant username:
+    {{prod}} run --rm web admin grant {{username}}
+
+[group('admin')]
+prod-admin-revoke username:
+    {{prod}} run --rm web admin revoke {{username}}
 
 # Stages a movie night in a throwaway production stack (compose project
 # couchcast-demo, removed afterwards) and films it with Playwright

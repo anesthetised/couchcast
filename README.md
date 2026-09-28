@@ -90,7 +90,7 @@ from couchcast itself, so they are the same with or without Caddy.
 
    ```sh
    just deploy 2026.9.0
-   just admin-grant <your-username>   # after registering
+   just prod-admin-grant <your-username>   # after registering
    ```
 
 To update, `just deploy <newer version>`; migrations are never applied on
@@ -142,11 +142,14 @@ just prod-up`), run `just --yes restore <dir>` there, and look around.
 
 ## Administration
 
-Grant the first administrator from the shell:
+Grant the first administrator from the shell, on a server running a
+release (`prod-admin-revoke` takes the role away again):
 
 ```sh
-just admin-grant <username>
+just prod-admin-grant <username>
 ```
+
+In development, `just admin-grant <username>` does the same from source.
 
 Administrators get an **Admin** link in the header with statistics, media
 reports (dismiss, or delete the video and block its source), user bans,

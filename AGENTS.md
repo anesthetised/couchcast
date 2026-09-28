@@ -325,7 +325,10 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
   rejects `play()` (autoplay policy) `sync.ts` reports it and the player
   shows a tap-to-play gate that resumes inside the gesture.
 - Site administration: `couchcast admin grant|revoke <username>` sets the
-  role; `/api/v1/admin/*` (behind `auth.RequireAdmin`) serves the `/admin`
+  role (`just admin-grant` from source in development; `just
+  prod-admin-grant` / `prod-admin-revoke` run the deployed image's binary,
+  so a released server needs no dev image). `/api/v1/admin/*` (behind
+  `auth.RequireAdmin`) serves the `/admin`
   SPA route, whose open tab is `?tab=` (stats when absent). Ban and
   delete ask for a reason; cancelling the prompt cancels the action.
   Deleting media there also blocklists its `source_key` so it
