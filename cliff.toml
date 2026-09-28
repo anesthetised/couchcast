@@ -40,6 +40,8 @@ split_commits = false
 # name and list them as a release contributor; as code it stays text.
 commit_preprocessors = [
   { pattern = '(^|\s)@([A-Za-z0-9][A-Za-z0-9-]*)', replace = '${1}`@${2}`' },
+  # Commands stay code (and lowercase): `just release`, `prod-admin-grant`.
+  { pattern = '(^|\s)(just [a-z][a-z-]*|prod-[a-z][a-z-]*)', replace = '${1}`${2}`' },
 ]
 commit_parsers = [
   { message = "^feat", group = "<!-- 0 -->Features" },

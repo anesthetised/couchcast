@@ -7,7 +7,7 @@ within the month. Images are published as `ghcr.io/anesthetised/couchcast`.
 
 ### Features
 
-- ops: Prod-admin-grant and prod-admin-revoke ([#129](https://github.com/anesthetised/couchcast/issues/129), [cd615ac](https://github.com/anesthetised/couchcast/commit/cd615ac6006c5faff199d60108ae6d63e5940ac1))
+- ops: `prod-admin-grant` and `prod-admin-revoke` ([#129](https://github.com/anesthetised/couchcast/issues/129), [cd615ac](https://github.com/anesthetised/couchcast/commit/cd615ac6006c5faff199d60108ae6d63e5940ac1))
 
 ### Fixes
 
@@ -22,7 +22,7 @@ within the month. Images are published as `ghcr.io/anesthetised/couchcast`.
 
 ### Features
 
-- ops: Just release and deploys of published versions ([#117](https://github.com/anesthetised/couchcast/issues/117), [#118](https://github.com/anesthetised/couchcast/issues/118), [736b3a6](https://github.com/anesthetised/couchcast/commit/736b3a6be74cb85c80c602a36f4e11e09b557223))
+- ops: `just release` and deploys of published versions ([#117](https://github.com/anesthetised/couchcast/issues/117), [#118](https://github.com/anesthetised/couchcast/issues/118), [736b3a6](https://github.com/anesthetised/couchcast/commit/736b3a6be74cb85c80c602a36f4e11e09b557223))
 - Security headers from the server ([#114](https://github.com/anesthetised/couchcast/issues/114), [9fa16b1](https://github.com/anesthetised/couchcast/commit/9fa16b157264c84da51de4564a461abe37c25f68))
 - web: Accept `@name` in username fields ([#113](https://github.com/anesthetised/couchcast/issues/113), [cffb38b](https://github.com/anesthetised/couchcast/commit/cffb38b891524c9dc5f05eabc0842050c759efba))
 - api: Budget link previews per address and at once ([#109](https://github.com/anesthetised/couchcast/issues/109), [50a426a](https://github.com/anesthetised/couchcast/commit/50a426a3b266a80682dff3d79e9f36f2a1a0594a))
