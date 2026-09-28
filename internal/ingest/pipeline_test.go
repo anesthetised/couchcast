@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"uuid"
 
@@ -430,4 +431,43 @@ func TestStaleAttemptDoesNotFailTheMedia(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEqual(t, entity.MediaFailed, got.Status, "the job is someone else's now")
 	assert.Empty(t, got.Error)
+}
+
+// The final notification is sent in the transaction that publishes the
+// media: whoever hears it reads the ready row.
+func TestPipelineAnnouncesReadyWithTheRow(t *testing.T) {
+	p := newPipeline(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	m, err := p.svc.EnsureMedia(ctx, p.repo.Pool(), "https://video.test/announced")
+	require.NoError(t, err)
+
+	var mu sync.Mutex
+	var seen []entity.MediaStatus
+	connected := make(chan struct{}, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- jobs.Listen(ctx, p.repo.Pool(), ProgressChannel, slog.New(slog.DiscardHandler), func(payload string) {
+			if payload != m.ID.String() {
+				return
+			}
+			got, err := p.repo.GetMedia(ctx, m.ID)
+			if err == nil {
+				mu.Lock()
+				seen = append(seen, got.Status)
+				mu.Unlock()
+			}
+		}, func() { connected <- struct{}{} })
+	}()
+	<-connected
+
+	require.NoError(t, p.run(t))
+	require.Eventually(t, func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		return len(seen) > 0 && seen[len(seen)-1] == entity.MediaReady
+	}, 10*time.Second, 20*time.Millisecond, "the last notification finds the media ready")
+	cancel()
+	<-done
 }

@@ -239,7 +239,15 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
   room holds the authoritative clock (`positionMs` at `positionAt`, plus a
   `seq`), the queue, presence and votes; every mutation ends in a broadcast.
   `Manager` loads rooms lazily, persists positions every 5 s, unloads idle
-  rooms and relays `media_progress` notifications. Finished and skipped
+  rooms and relays `media_progress` notifications. Notifications sent
+  while the listener reconnects are lost, so `jobs.Listen` calls back on
+  every (re)connection and the manager then reconciles: one
+  `GetMediaBatch` for the media loaded rooms still wait for, applied
+  through `Room.ReconcileMedia` only where status or progress moved (it
+  starts a current item that became ready, like a notification would);
+  `Run` repeats this every `ReconcileEvery` (30 s) as a backstop. The
+  ingest sends the final notification with `pg_notify` inside the
+  transaction that publishes (or fails) the media. Finished and skipped
   items are not deleted but marked `played_at` (the room's history, last 20
   in the snapshot as `played`; `queue.replay` re-queues one,
   `queue.clearPlayed` empties it); the `loop` setting re-queues the history

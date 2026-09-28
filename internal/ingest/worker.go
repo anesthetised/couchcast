@@ -75,8 +75,12 @@ func (w *Worker) Handle(ctx context.Context, job *jobs.Job) error {
 		}
 		// Only while this attempt owns the job: one that lost its lease
 		// must not mark failed what another attempt is working on.
-		ferr := w.queue.Fenced(context.WithoutCancel(ctx), job, func(tx pgx.Tx) error {
-			return w.repo.FailMedia(ctx, tx, media.ID, msg)
+		fctx := context.WithoutCancel(ctx)
+		ferr := w.queue.Fenced(fctx, job, func(tx pgx.Tx) error {
+			if err := w.repo.FailMedia(fctx, tx, media.ID, msg); err != nil {
+				return err
+			}
+			return notifyTx(fctx, tx, media.ID)
 		})
 		switch {
 		case errors.Is(ferr, jobs.ErrLeaseLost):
@@ -85,7 +89,6 @@ func (w *Worker) Handle(ctx context.Context, job *jobs.Job) error {
 		case ferr != nil:
 			log.Error("mark media failed", "error", ferr)
 		}
-		w.notify(context.WithoutCancel(ctx), media.ID)
 		w.metrics.IngestJob("failed")
 		return err
 	}
@@ -290,13 +293,17 @@ func (w *Worker) process(ctx context.Context, job *jobs.Job, media *entity.Media
 	if thumb != "" {
 		published.ThumbnailURL = "/media/" + media.ID.String() + "/" + thumb
 	}
-	// Published only by the attempt that still owns the job.
+	// Published only by the attempt that still owns the job, and announced
+	// in the same transaction: the notification goes out exactly when the
+	// ready row becomes visible.
 	if err := w.queue.Fenced(ctx, job, func(tx pgx.Tx) error {
-		return w.repo.PublishMedia(ctx, tx, media.ID, published)
+		if err := w.repo.PublishMedia(ctx, tx, media.ID, published); err != nil {
+			return err
+		}
+		return notifyTx(ctx, tx, media.ID)
 	}); err != nil {
 		return fmt.Errorf("publish: %w", err)
 	}
-	w.notify(ctx, media.ID)
 	log.Info("media ready", "bytes", size, "renditions", len(renditions))
 
 	return nil
@@ -308,6 +315,12 @@ func (w *Worker) setStatus(ctx context.Context, id uuid.UUID, status entity.Medi
 	}
 	w.notify(ctx, id)
 	return nil
+}
+
+// notifyTx announces a media change when tx commits.
+func notifyTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
+	_, err := tx.Exec(ctx, `SELECT pg_notify($1, $2)`, ProgressChannel, id.String())
+	return err
 }
 
 func (w *Worker) notify(ctx context.Context, id uuid.UUID) {

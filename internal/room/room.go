@@ -1843,9 +1843,17 @@ func (r *Room) QueueRetry(ctx context.Context, actor access.Actor, itemID uuid.U
 func (r *Room) MediaUpdated(m *entity.Media) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.mediaUpdatedLocked(m) {
+		r.broadcastLocked()
+	}
+}
+
+// mediaUpdatedLocked stores a fresh media row and starts the current item
+// when it just became playable; false when the room does not hold it.
+func (r *Room) mediaUpdatedLocked(m *entity.Media) bool {
 	old, ok := r.media[m.ID]
 	if !ok {
-		return
+		return false
 	}
 	r.media[m.ID] = m
 
@@ -1856,7 +1864,43 @@ func (r *Room) MediaUpdated(m *entity.Media) {
 		defer cancel()
 		r.savePlaybackLocked(ctx)
 	}
-	r.broadcastLocked()
+	return true
+}
+
+// unsettledMedia lists the media the room holds that are not ready yet:
+// what a missed progress notification could leave stale.
+func (r *Room) unsettledMedia() []uuid.UUID {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	var ids []uuid.UUID
+	for id, m := range r.media {
+		if !m.IsReady() {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// ReconcileMedia applies fresh rows for unsettled media whose status or
+// progress moved on without the room hearing of it, as MediaUpdated
+// would have, and broadcasts once if anything changed.
+func (r *Room) ReconcileMedia(fresh map[uuid.UUID]*entity.Media) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return
+	}
+	changed := false
+	for id, old := range r.media {
+		m, ok := fresh[id]
+		if !ok || old.IsReady() || (m.Status == old.Status && m.Progress == old.Progress) {
+			continue
+		}
+		changed = r.mediaUpdatedLocked(m) || changed
+	}
+	if changed {
+		r.broadcastLocked()
+	}
 }
 
 // ReloadQueue re-reads the queue after rows changed outside the room

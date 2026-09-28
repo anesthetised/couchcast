@@ -229,3 +229,84 @@ func TestManagerRefresh(t *testing.T) {
 	assert.Equal(t, "Renamed", c.lastSnapshot().Room.Name)
 	m.Refresh(ctx, uuid.New()) // not loaded: nothing to do
 }
+
+// A ready row whose notification never arrived (#122): reconciliation
+// starts the waiting item once, and leaves the room alone afterwards.
+func TestManagerReconcilesMissedReadiness(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	m := f.newManager()
+	r, err := m.Get(ctx, f.room.ID())
+	require.NoError(t, err)
+	c := &fakeConn{}
+	r.Join(ctx, c, f.owner)
+	require.NoError(t, r.QueueAdd(ctx, f.owner, "https://a", false, false))
+	require.NoError(t, r.QueueAdd(ctx, f.owner, "https://b", false, false))
+
+	sent := c.count()
+	m.reconcileMedia(ctx)
+	assert.Equal(t, sent, c.count(), "nothing changed, nothing sent")
+
+	f.ready("https://a", 60_000) // the row only: no notification
+	m.reconcileMedia(ctx)
+	snap := c.lastSnapshot()
+	assert.True(t, snap.Playback.Playing, "the current item starts")
+	assert.Equal(t, entity.MediaReady, snap.Queue[0].Media.Status)
+
+	// A moderator pauses; later sweeps neither restart nor resend it.
+	require.NoError(t, r.Pause(ctx, f.owner))
+	sent = c.count()
+	m.reconcileMedia(ctx)
+	assert.False(t, r.Playback().Playing)
+	assert.Equal(t, sent, c.count())
+}
+
+func TestManagerReconcilesWhenTheListenerReconnects(t *testing.T) {
+	f := newFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m := f.newManager()
+	r, err := m.Get(ctx, f.room.ID())
+	require.NoError(t, err)
+	require.NoError(t, r.QueueAdd(ctx, f.owner, "https://a", false, false))
+
+	done := make(chan error, 1)
+	go func() { done <- m.ListenProgress(ctx, f.repo.Pool()) }()
+	pool := f.repo.Pool()
+	listening := func() bool {
+		var n int
+		_ = pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND query = 'LISTEN "' || $1 || '"'`,
+			ingest.ProgressChannel).Scan(&n)
+		return n > 0
+	}
+	require.Eventually(t, listening, 5*time.Second, 20*time.Millisecond)
+
+	// The media becomes ready while the listener is down.
+	_, err = pool.Exec(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND query = 'LISTEN "' || $1 || '"'`,
+		ingest.ProgressChannel)
+	require.NoError(t, err)
+	f.ready("https://a", 60_000)
+	require.Eventually(t, func() bool { return r.Playback().Playing }, 10*time.Second, 20*time.Millisecond,
+		"the reconnect catches up without another notification")
+
+	cancel()
+	<-done
+}
+
+func TestManagerRunReconcilesPeriodically(t *testing.T) {
+	f := newFixture(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	m := f.newManager()
+	m.ReconcileEvery = 20 * time.Millisecond
+	r, err := m.Get(ctx, f.room.ID())
+	require.NoError(t, err)
+	require.NoError(t, r.QueueAdd(ctx, f.owner, "https://a", false, false))
+
+	done := make(chan error, 1)
+	go func() { done <- m.Run(ctx) }()
+	f.ready("https://a", 60_000)
+	require.Eventually(t, func() bool { return r.Playback().Playing }, 5*time.Second, 10*time.Millisecond)
+	cancel()
+	<-done
+}

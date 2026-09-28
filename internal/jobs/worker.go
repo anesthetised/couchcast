@@ -45,7 +45,8 @@ func (w *Worker) Run(ctx context.Context, concurrency int) error {
 	g, ctx := errgroup.WithContext(ctx)
 
 	g.Go(func() error {
-		return Listen(ctx, w.queue.pool, Channel, w.logger, func(string) { kick() })
+		// A reconnect may have missed wake-ups: look at the queue again.
+		return Listen(ctx, w.queue.pool, Channel, w.logger, func(string) { kick() }, kick)
 	})
 
 	g.Go(func() error {

@@ -11,10 +11,12 @@ import (
 
 // Listen holds a dedicated connection on the channel and calls fn for every
 // notification until ctx is cancelled. Connection loss is retried with a
-// short delay; callers that need at-least-once semantics must also poll.
-func Listen(ctx context.Context, pool *pgxpool.Pool, channel string, logger *slog.Logger, fn func(payload string)) error {
+// short delay. Notifications sent while no connection listens are lost,
+// so connected (when not nil) runs each time listening (re)starts, for
+// the caller to catch up on what it may have missed.
+func Listen(ctx context.Context, pool *pgxpool.Pool, channel string, logger *slog.Logger, fn func(payload string), connected func()) error {
 	for {
-		err := listenOnce(ctx, pool, channel, fn)
+		err := listenOnce(ctx, pool, channel, fn, connected)
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
@@ -28,7 +30,7 @@ func Listen(ctx context.Context, pool *pgxpool.Pool, channel string, logger *slo
 	}
 }
 
-func listenOnce(ctx context.Context, pool *pgxpool.Pool, channel string, fn func(string)) error {
+func listenOnce(ctx context.Context, pool *pgxpool.Pool, channel string, fn func(string), connected func()) error {
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
 		return err
@@ -40,6 +42,9 @@ func listenOnce(ctx context.Context, pool *pgxpool.Pool, channel string, fn func
 
 	if _, err := raw.Exec(ctx, "LISTEN "+sanitizeIdent(channel)); err != nil {
 		return err
+	}
+	if connected != nil {
+		connected()
 	}
 
 	for {

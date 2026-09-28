@@ -398,3 +398,46 @@ func TestKeepLeaseStopsWhenRenewalsFail(t *testing.T) {
 	assert.GreaterOrEqual(t, time.Since(start), q.Lease*3/5)
 	assert.Less(t, time.Since(start), q.Lease, "stops before the lease could be recovered")
 }
+
+// terminateListener drops the server side of the connection listening on
+// channel, as a network blip or a database restart would.
+func terminateListener(t *testing.T, pool *pgxpool.Pool, channel string) {
+	t.Helper()
+	require.Eventually(t, func() bool {
+		var n int
+		err := pool.QueryRow(context.Background(), `
+			SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity
+			WHERE datname = current_database() AND query = 'LISTEN "' || $1 || '"'`, channel).Scan(&n)
+		return err == nil && n > 0
+	}, 5*time.Second, 20*time.Millisecond)
+}
+
+func TestListenCatchesUpAfterReconnect(t *testing.T) {
+	pool := repotest.Pool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	var connects atomic.Int32
+	got := make(chan string, 10)
+	done := make(chan error, 1)
+	go func() {
+		done <- Listen(ctx, pool, "listen-test", slog.New(slog.DiscardHandler),
+			func(p string) { got <- p }, func() { connects.Add(1) })
+	}()
+	require.Eventually(t, func() bool { return connects.Load() == 1 }, 5*time.Second, 10*time.Millisecond)
+
+	terminateListener(t, pool, "listen-test")
+	require.Eventually(t, func() bool { return connects.Load() == 2 }, 10*time.Second, 20*time.Millisecond,
+		"connected runs again after the reconnect")
+
+	_, err := pool.Exec(ctx, `SELECT pg_notify('listen-test', 'after')`)
+	require.NoError(t, err)
+	select {
+	case p := <-got:
+		assert.Equal(t, "after", p)
+	case <-ctx.Done():
+		t.Fatal("no notification after the reconnect")
+	}
+	cancel()
+	<-done
+}

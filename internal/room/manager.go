@@ -25,6 +25,9 @@ type Manager struct {
 
 	// IdleAfter is how long an empty room stays in memory.
 	IdleAfter time.Duration
+	// ReconcileEvery is how often Run re-reads media that loaded rooms
+	// still wait for, in case a progress notification was lost.
+	ReconcileEvery time.Duration
 }
 
 // NewManager creates a manager.
@@ -41,7 +44,7 @@ func NewManager(deps Deps) *Manager {
 	if deps.PresenceEvery == 0 {
 		deps.PresenceEvery = 250 * time.Millisecond
 	}
-	return &Manager{deps: deps, rooms: map[uuid.UUID]*Room{}, IdleAfter: 10 * time.Minute}
+	return &Manager{deps: deps, rooms: map[uuid.UUID]*Room{}, IdleAfter: 10 * time.Minute, ReconcileEvery: 30 * time.Second}
 }
 
 // Warm loads every room that was playing when the server last ran, so
@@ -204,10 +207,13 @@ func (m *Manager) Unload(roomID uuid.UUID, reason string) {
 	r.mu.Unlock()
 }
 
-// Run persists positions and evicts idle rooms until ctx is cancelled.
+// Run persists positions, evicts idle rooms and reconciles media until
+// ctx is cancelled.
 func (m *Manager) Run(ctx context.Context) error {
 	t := time.NewTicker(m.deps.PersistEvery)
 	defer t.Stop()
+	reconcile := time.NewTicker(m.ReconcileEvery)
+	defer reconcile.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -215,7 +221,52 @@ func (m *Manager) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-t.C:
 			m.tick(ctx)
+		case <-reconcile.C:
+			m.reconcileMedia(ctx)
 		}
+	}
+}
+
+// loaded returns the rooms in memory.
+func (m *Manager) loaded() []*Room {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	rooms := make([]*Room, 0, len(m.rooms))
+	for _, r := range m.rooms {
+		rooms = append(rooms, r)
+	}
+	return rooms
+}
+
+// reconcileMedia re-reads, in one query, the media loaded rooms still wait
+// for and applies what changed. Rooms normally hear of progress through
+// media_progress notifications; one sent while the listener was
+// reconnecting is lost, and a room must not wait for good on a video that
+// is ready.
+func (m *Manager) reconcileMedia(ctx context.Context) {
+	rooms := m.loaded()
+	seen := map[uuid.UUID]bool{}
+	var ids []uuid.UUID
+	for _, r := range rooms {
+		for _, id := range r.unsettledMedia() {
+			if !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	fresh, err := m.deps.Store.GetMediaBatch(qctx, ids)
+	if err != nil {
+		m.deps.Logger.Warn("reconcile media", "error", err)
+		return
+	}
+	for _, r := range rooms {
+		r.ReconcileMedia(fresh)
 	}
 }
 
@@ -257,7 +308,9 @@ func (m *Manager) shutdownAll() {
 	}
 }
 
-// ListenProgress relays ingest progress notifications to loaded rooms.
+// ListenProgress relays ingest progress notifications to loaded rooms and
+// reconciles their media whenever listening (re)starts, since
+// notifications sent meanwhile are lost.
 func (m *Manager) ListenProgress(ctx context.Context, pool *pgxpool.Pool) error {
 	return jobs.Listen(ctx, pool, ingest.ProgressChannel, m.deps.Logger, func(payload string) {
 		id, err := uuid.Parse(payload)
@@ -265,7 +318,7 @@ func (m *Manager) ListenProgress(ctx context.Context, pool *pgxpool.Pool) error 
 			return
 		}
 		m.mediaChanged(ctx, id)
-	})
+	}, func() { m.reconcileMedia(ctx) })
 }
 
 // mediaChanged reloads the media row and pushes it to every loaded room
