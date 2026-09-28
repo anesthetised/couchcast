@@ -3,6 +3,21 @@
 couchcast uses calendar versions: `vYYYY.M.N`, where N counts the releases
 within the month. Images are published as `ghcr.io/anesthetised/couchcast`.
 
+## [v2026.9.1](https://github.com/anesthetised/couchcast/releases/tag/v2026.9.1) — 2026-09-28
+
+### Features
+
+- ops: Prod-admin-grant and prod-admin-revoke ([#129](https://github.com/anesthetised/couchcast/issues/129), [cd615ac](https://github.com/anesthetised/couchcast/commit/cd615ac6006c5faff199d60108ae6d63e5940ac1))
+
+### Fixes
+
+- room: Reconcile media after missed progress notifications ([#122](https://github.com/anesthetised/couchcast/issues/122), [cf531c3](https://github.com/anesthetised/couchcast/commit/cf531c3307518a700134a914f461c7d46a5891a5))
+- ingest: Job leases so a stale attempt cannot publish ([#120](https://github.com/anesthetised/couchcast/issues/120), [a1f8c9c](https://github.com/anesthetised/couchcast/commit/a1f8c9ccc2c0626f2c0e20529a87d3127350f95c))
+
+### Performance
+
+- room: Keep slow I/O out of room and manager locks ([#121](https://github.com/anesthetised/couchcast/issues/121), [#128](https://github.com/anesthetised/couchcast/issues/128), [6c6e209](https://github.com/anesthetised/couchcast/commit/6c6e209f986a7ac65c32711c1dfb200fce495e0e))
+
 ## [v2026.9.0](https://github.com/anesthetised/couchcast/releases/tag/v2026.9.0) — 2026-09-26
 
 ### Features
@@ -124,3 +139,4 @@ within the month. Images are published as `ghcr.io/anesthetised/couchcast`.
 ### Performance
 
 - web: Split the bundle ([#73](https://github.com/anesthetised/couchcast/issues/73), [1347481](https://github.com/anesthetised/couchcast/commit/13474816f4fd8312bff56a7dcda787d0ff40f3f5))
+
