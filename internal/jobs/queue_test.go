@@ -407,7 +407,9 @@ func terminateListener(t *testing.T, pool *pgxpool.Pool, channel string) {
 		var n int
 		err := pool.QueryRow(context.Background(), `
 			SELECT count(pg_terminate_backend(pid)) FROM pg_stat_activity
-			WHERE datname = current_database() AND query = 'LISTEN "' || $1 || '"'`, channel).Scan(&n)
+			WHERE datname = current_database()
+			  AND application_name = current_setting('application_name')
+			  AND query = 'LISTEN "' || $1 || '"'`, channel).Scan(&n)
 		return err == nil && n > 0
 	}, 5*time.Second, 20*time.Millisecond)
 }

@@ -79,7 +79,9 @@ func TestAuthOriginCheck(t *testing.T) {
 
 func TestLoginRateLimits(t *testing.T) {
 	env := newTestEnv(t, fstest.MapFS{}, func(d *Deps) {
-		d.LoginLimiter = ratelimit.New(60, 2)
+		// No refill: password hashing under the race detector can take long
+		// enough for a real-time bucket to regain a token between attempts.
+		d.LoginLimiter = ratelimit.New(0, 2)
 	})
 	rec := env.do(http.MethodPost, "/api/v1/auth/register", credentials{Username: "carol", Password: "correct-horse"})
 	require.Equal(t, http.StatusCreated, rec.Code)
@@ -94,7 +96,7 @@ func TestLoginRateLimits(t *testing.T) {
 
 func TestAuthIPRateLimit(t *testing.T) {
 	env := newTestEnv(t, fstest.MapFS{}, func(d *Deps) {
-		d.AuthLimiter = ratelimit.New(60, 1)
+		d.AuthLimiter = ratelimit.New(0, 1)
 	})
 	c := credentials{Username: "dave", Password: "correct-horse"}
 	assert.Equal(t, http.StatusCreated, env.do(http.MethodPost, "/api/v1/auth/register", c).Code)

@@ -437,7 +437,7 @@ func TestStaleAttemptDoesNotFailTheMedia(t *testing.T) {
 // media: whoever hears it reads the ready row.
 func TestPipelineAnnouncesReadyWithTheRow(t *testing.T) {
 	p := newPipeline(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
 	m, err := p.svc.EnsureMedia(ctx, p.repo.Pool(), "https://video.test/announced")
@@ -445,6 +445,8 @@ func TestPipelineAnnouncesReadyWithTheRow(t *testing.T) {
 
 	var mu sync.Mutex
 	var seen []entity.MediaStatus
+	var readErr error
+	ready := make(chan struct{}, 1)
 	connected := make(chan struct{}, 1)
 	done := make(chan error, 1)
 	go func() {
@@ -453,21 +455,33 @@ func TestPipelineAnnouncesReadyWithTheRow(t *testing.T) {
 				return
 			}
 			got, err := p.repo.GetMedia(ctx, m.ID)
-			if err == nil {
-				mu.Lock()
-				seen = append(seen, got.Status)
-				mu.Unlock()
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				readErr = err
+				return
+			}
+			seen = append(seen, got.Status)
+			if got.Status == entity.MediaReady {
+				select {
+				case ready <- struct{}{}:
+				default:
+				}
 			}
 		}, func() { connected <- struct{}{} })
 	}()
 	<-connected
 
 	require.NoError(t, p.run(t))
-	require.Eventually(t, func() bool {
+	select {
+	case <-ready:
+	case err := <-done:
+		require.Failf(t, "listener stopped before the ready notification", "error: %v", err)
+	case <-time.After(30 * time.Second):
 		mu.Lock()
 		defer mu.Unlock()
-		return len(seen) > 0 && seen[len(seen)-1] == entity.MediaReady
-	}, 10*time.Second, 20*time.Millisecond, "the last notification finds the media ready")
+		require.Failf(t, "no ready notification", "seen: %v; last read error: %v", seen, readErr)
+	}
 	cancel()
-	<-done
+	require.ErrorIs(t, <-done, context.Canceled)
 }

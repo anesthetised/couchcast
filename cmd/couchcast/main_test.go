@@ -25,6 +25,10 @@ import (
 	"github.com/anesthetised/couchcast/internal/repository/repotest"
 )
 
+func TestMain(m *testing.M) {
+	os.Exit(repotest.Run(m))
+}
+
 // env points the commands at the test database and a throwaway bucket,
 // as the environment would in a deployment.
 func env(t *testing.T) *repository.Repo {
@@ -32,7 +36,7 @@ func env(t *testing.T) *repository.Repo {
 	repo := repository.New(repotest.Pool(t))
 	s3 := storetest.Config(t)
 	for k, v := range map[string]string{
-		"COUCHCAST_DATABASE_URL":  os.Getenv("COUCHCAST_TEST_DATABASE_URL"),
+		"COUCHCAST_DATABASE_URL":  repotest.DatabaseURL(t),
 		"COUCHCAST_S3_ENDPOINT":   s3.Endpoint,
 		"COUCHCAST_S3_BUCKET":     s3.Bucket,
 		"COUCHCAST_S3_ACCESS_KEY": s3.AccessKey,

@@ -275,14 +275,20 @@ func TestManagerReconcilesWhenTheListenerReconnects(t *testing.T) {
 	pool := f.repo.Pool()
 	listening := func() bool {
 		var n int
-		_ = pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND query = 'LISTEN "' || $1 || '"'`,
+		_ = pool.QueryRow(ctx, `SELECT count(*) FROM pg_stat_activity
+			WHERE datname = current_database()
+			  AND application_name = current_setting('application_name')
+			  AND query = 'LISTEN "' || $1 || '"'`,
 			ingest.ProgressChannel).Scan(&n)
 		return n > 0
 	}
 	require.Eventually(t, listening, 5*time.Second, 20*time.Millisecond)
 
 	// The media becomes ready while the listener is down.
-	_, err = pool.Exec(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = current_database() AND query = 'LISTEN "' || $1 || '"'`,
+	_, err = pool.Exec(ctx, `SELECT pg_terminate_backend(pid) FROM pg_stat_activity
+		WHERE datname = current_database()
+		  AND application_name = current_setting('application_name')
+		  AND query = 'LISTEN "' || $1 || '"'`,
 		ingest.ProgressChannel)
 	require.NoError(t, err)
 	f.ready("https://a", 60_000)
