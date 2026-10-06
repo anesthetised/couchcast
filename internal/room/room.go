@@ -11,7 +11,6 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"slices"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -622,158 +621,6 @@ func (r *Room) persistLocked(ctx context.Context) error {
 	return r.deps.Store.UpdateRoomPlayback(ctx, r.info.ID, r.clock.state())
 }
 
-// --- snapshot & broadcast ----------------------------------------------------
-
-func (r *Room) mediaInfoLocked(m *entity.Media) protocol.MediaInfo {
-	if m == nil {
-		return protocol.MediaInfo{}
-	}
-	info := protocol.MediaInfo{
-		ID: m.ID, Title: m.Title, DurationMs: m.DurationMs, ThumbnailURL: m.ThumbnailURL,
-		Status: m.Status, Progress: m.Progress, SpeedBps: m.SpeedBps, EtaMs: m.EtaMs, Error: m.Error, Renditions: m.Renditions, Subtitles: m.Subtitles, Chapters: m.Chapters, Storyboard: m.Storyboard, SourceURL: m.SourceURL,
-	}
-	if info.Renditions == nil {
-		info.Renditions = []entity.Rendition{}
-	}
-	if m.IsReady() && r.deps.Signer != nil {
-		info.Manifest = "/media/" + m.ID.String() + "/manifest.mpd"
-		info.Token = r.deps.Signer.Sign(m.ID, r.now())
-	}
-	return info
-}
-
-// snapshotLocked builds the viewer-independent snapshot.
-func (r *Room) snapshotLocked() protocol.Snapshot {
-	snap := protocol.Snapshot{
-		Type: protocol.TypeRoomState,
-		Room: protocol.RoomInfo{
-			ID: r.info.ID, Slug: r.info.Slug, Name: r.info.Name, Visibility: r.info.Visibility,
-			Settings: r.info.Settings, Owner: r.owner, Description: r.info.Description, Pinned: r.pinned,
-			ScheduledMs: unixMs(r.info.ScheduledAt),
-		},
-		Playback: r.clock.playback(),
-		Waiting:  r.waiting,
-		CountdownMs: func() int64 {
-			if r.countdown == nil {
-				return 0
-			}
-			return r.countdown.UnixMilli()
-		}(),
-		Queue:   make([]protocol.QueueEntry, 0, len(r.queue)),
-		Members: []protocol.Presence{},
-	}
-	snap.Playback.Type = ""
-
-	for _, it := range r.queue {
-		snap.Queue = append(snap.Queue, protocol.QueueEntry{
-			ID: it.ID, Media: r.mediaInfoLocked(r.media[it.MediaID]), AddedBy: it.AddedByName, Votes: it.Votes,
-			Current: r.clock.isCurrent(it.ID),
-		})
-	}
-	snap.Played = make([]protocol.QueueEntry, 0, len(r.played))
-	for _, it := range r.played {
-		var playedMs int64
-		if it.PlayedAt != nil {
-			playedMs = it.PlayedAt.UnixMilli()
-		}
-		snap.Played = append(snap.Played, protocol.QueueEntry{
-			ID: it.ID, Media: r.mediaInfoLocked(r.media[it.MediaID]), AddedBy: it.AddedByName, PlayedMs: playedMs,
-		})
-	}
-
-	seen := map[string]int{}
-	for _, v := range r.viewers {
-		if v.user == nil {
-			snap.Guests++
-			continue
-		}
-		if i, ok := seen[v.user.Username]; ok {
-			snap.Members[i].Buffering = snap.Members[i].Buffering || v.buffering
-			if abs(v.lagMs) > abs(snap.Members[i].LagMs) {
-				snap.Members[i].LagMs = v.lagMs // the worst of their tabs
-			}
-			continue
-		}
-		seen[v.user.Username] = len(snap.Members)
-		snap.Members = append(snap.Members, protocol.Presence{Username: v.user.Username, Color: v.user.AvatarColor, Role: v.role, Buffering: v.buffering, LagMs: v.lagMs})
-	}
-	sort.Slice(snap.Members, func(i, j int) bool { return snap.Members[i].Username < snap.Members[j].Username })
-
-	snap.SkipVotes = len(r.skipVotes)
-	snap.SkipNeeded = r.skipNeededLocked()
-
-	return snap
-}
-
-// personalize adds the viewer-specific flags to a copy of the snapshot.
-func (r *Room) personalizeLocked(base protocol.Snapshot, v *viewer, voted map[uuid.UUID]bool) protocol.Snapshot {
-	snap := base
-	if v.user == nil {
-		return snap
-	}
-	_, snap.SkipVoted = r.skipVotes[v.user.ID]
-	if len(voted) > 0 {
-		snap.Queue = make([]protocol.QueueEntry, len(base.Queue))
-		copy(snap.Queue, base.Queue)
-		for i := range snap.Queue {
-			snap.Queue[i].Voted = voted[snap.Queue[i].ID]
-		}
-	}
-	return snap
-}
-
-// broadcastLocked sends the current snapshot to every viewer.
-func (r *Room) broadcastLocked() {
-	// A full snapshot carries the latest presence too.
-	if r.presenceTimer != nil {
-		r.presenceTimer.Stop()
-		r.presenceTimer = nil
-	}
-	base := r.snapshotLocked()
-	for _, v := range r.viewers {
-		v.conn.Send(r.personalizeLocked(base, v, r.votesFor(v)))
-	}
-}
-
-// presenceChangedLocked broadcasts a presence change, coalesced over
-// Deps.PresenceEvery: in a big room N viewers changing at once would
-// otherwise send N full snapshots to N viewers and overflow them all.
-func (r *Room) presenceChangedLocked() {
-	if r.deps.PresenceEvery <= 0 {
-		r.broadcastLocked()
-		return
-	}
-	if r.presenceTimer == nil {
-		r.presenceTimer = time.AfterFunc(r.deps.PresenceEvery, r.flushPresence)
-	}
-}
-
-func (r *Room) flushPresence() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closed || r.presenceTimer == nil {
-		return
-	}
-	r.broadcastLocked()
-}
-
-// broadcastPlaybackLocked sends only the clock: cheaper and jitter-free.
-func (r *Room) broadcastPlaybackLocked() {
-	pb := r.clock.playback()
-	for _, v := range r.viewers {
-		v.conn.Send(pb)
-	}
-}
-
-// votesFor returns the viewer's queue votes, from memory: a broadcast to
-// every viewer must not cost a query each (#121).
-func (r *Room) votesFor(v *viewer) map[uuid.UUID]bool {
-	if v.user == nil || !r.info.Settings.VoteMode {
-		return nil
-	}
-	return r.votes[v.user.ID]
-}
-
 // --- viewers -----------------------------------------------------------------
 
 // Join registers a connection and sends it the welcome message with the
@@ -801,7 +648,7 @@ func (r *Room) Join(ctx context.Context, conn Conn, actor access.Actor) {
 	welcome := protocol.Welcome{
 		Type:     protocol.TypeWelcome,
 		Role:     v.role,
-		Snapshot: r.personalizeLocked(base, v, r.votesFor(v)),
+		Snapshot: r.personalizedLocked(base, v),
 		Messages: messages,
 	}
 	if v.user != nil {
@@ -818,11 +665,7 @@ func (r *Room) Join(ctx context.Context, conn Conn, actor access.Actor) {
 	if r.deps.PresenceEvery > 0 {
 		r.presenceChangedLocked()
 	} else {
-		for c, other := range r.viewers {
-			if c != conn {
-				other.conn.Send(r.personalizeLocked(base, other, r.votesFor(other)))
-			}
-		}
+		send(r.snapshotsLocked(base, conn))
 	}
 	if first {
 		r.logLocked(ctx, actor.User.Username+" joined")
