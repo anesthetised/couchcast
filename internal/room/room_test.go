@@ -1061,3 +1061,53 @@ func TestPlaybackSurvivesADatabaseBlip(t *testing.T) {
 	assert.False(t, saved.Playing)
 	assert.EqualValues(t, 42_000, saved.PositionMs)
 }
+
+// failingAddStore fails the n-th AddQueueItem (1-based), as a constraint
+// or a dropped connection would in the middle of a transaction.
+type failingAddStore struct {
+	Store
+	calls, failOn int
+}
+
+func (s *failingAddStore) AddQueueItem(ctx context.Context, q repository.Querier, roomID, mediaID uuid.UUID, addedBy *uuid.UUID) (*entity.QueueItem, error) {
+	s.calls++
+	if s.calls == s.failOn {
+		return nil, errors.New("insert failed")
+	}
+	return s.Store.AddQueueItem(ctx, q, roomID, mediaID, addedBy)
+}
+
+func TestQueueAddsAreTransactional(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	conn := &fakeConn{}
+	f.room.Join(ctx, conn, f.owner)
+	store := &failingAddStore{Store: f.repo}
+	f.room.deps.Store = store
+
+	// A failed insert takes the new media row with it and leaves the room
+	// as it was.
+	store.failOn = 1
+	require.Error(t, f.room.QueueAdd(ctx, f.owner, "https://new", false, false))
+	_, err := f.repo.GetMediaByKey(ctx, "url:https://new")
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	assert.Empty(t, f.room.Debug().Queue)
+
+	// A batch is all or nothing: the second insert fails, the first one is
+	// rolled back too.
+	store.calls, store.failOn = 0, 2
+	require.Error(t, f.room.QueueAddMany(ctx, f.owner, []string{"https://b1", "https://b2"}, false))
+	saved, err := f.repo.ListQueue(ctx, f.room.ID())
+	require.NoError(t, err)
+	assert.Empty(t, saved)
+	_, err = f.repo.GetMediaByKey(ctx, "url:https://b1")
+	require.ErrorIs(t, err, repository.ErrNotFound)
+	assert.Empty(t, f.room.Debug().Queue)
+
+	// The same commands go through once the store works again.
+	store.failOn = 0
+	require.NoError(t, f.room.QueueAddMany(ctx, f.owner, []string{"https://b1", "https://b2"}, false))
+	saved, err = f.repo.ListQueue(ctx, f.room.ID())
+	require.NoError(t, err)
+	assert.Len(t, saved, 2)
+}

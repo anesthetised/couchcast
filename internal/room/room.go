@@ -18,7 +18,6 @@ import (
 
 	"uuid"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/time/rate"
 
 	"github.com/anesthetised/couchcast/internal/access"
@@ -31,9 +30,11 @@ import (
 	"github.com/anesthetised/couchcast/internal/repository"
 )
 
-// Store is the persistence the room needs.
+// Store is the persistence the room needs. Writes that must land together
+// (a new media row and its queue item) go through InTx; the room never
+// sees a connection pool.
 type Store interface {
-	Pool() *pgxpool.Pool
+	InTx(ctx context.Context, fn func(q repository.Querier) error) error
 	GetRoomByID(ctx context.Context, id uuid.UUID) (*entity.Room, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (*entity.User, error)
 	GetMember(ctx context.Context, roomID, userID uuid.UUID) (*entity.RoomMember, error)
@@ -1401,30 +1402,28 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, 
 		return err
 	}
 
-	tx, err := r.deps.Store.Pool().Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
-
-	media, err := r.deps.Admit.Create(ctx, tx, adm)
-	if err != nil {
-		return err
-	}
-	if !force {
-		if err := r.duplicateLocked(media.ID); err != nil {
-			return err
-		}
-	}
 	var addedBy *uuid.UUID
 	if actor.User != nil {
 		addedBy = &actor.User.ID
 	}
-	item, err := r.deps.Store.AddQueueItem(ctx, tx, r.info.ID, media.ID, addedBy)
-	if err != nil {
+	var (
+		media *entity.Media
+		item  *entity.QueueItem
+	)
+	err = r.deps.Store.InTx(ctx, func(q repository.Querier) error {
+		var err error
+		if media, err = r.deps.Admit.Create(ctx, q, adm); err != nil {
+			return err
+		}
+		if !force {
+			if err := r.duplicateLocked(media.ID); err != nil {
+				return err
+			}
+		}
+		item, err = r.deps.Store.AddQueueItem(ctx, q, r.info.ID, media.ID, addedBy)
 		return err
-	}
-	if err := tx.Commit(ctx); err != nil {
+	})
+	if err != nil {
 		return err
 	}
 
@@ -1519,12 +1518,6 @@ func (r *Room) QueueAddMany(ctx context.Context, actor access.Actor, urls []stri
 		seen[it.MediaID] = true
 	}
 
-	tx, err := r.deps.Store.Pool().Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
-
 	var addedBy *uuid.UUID
 	if actor.User != nil {
 		addedBy = &actor.User.ID
@@ -1533,34 +1526,37 @@ func (r *Room) QueueAddMany(ctx context.Context, actor access.Actor, urls []stri
 		added  []*entity.QueueItem
 		medias []*entity.Media
 	)
-	for _, a := range admitted {
-		if len(r.queue)+len(added) >= 200 {
-			skipped++
-			continue
+	err = r.deps.Store.InTx(ctx, func(q repository.Querier) error {
+		for _, a := range admitted {
+			if len(r.queue)+len(added) >= 200 {
+				skipped++
+				continue
+			}
+			media, err := r.deps.Admit.Create(ctx, q, a)
+			if err != nil {
+				return err
+			}
+			if seen[media.ID] {
+				skipped++
+				continue
+			}
+			seen[media.ID] = true
+			item, err := r.deps.Store.AddQueueItem(ctx, q, r.info.ID, media.ID, addedBy)
+			if err != nil {
+				return err
+			}
+			if actor.User != nil {
+				item.AddedByName = actor.User.Username
+			}
+			added = append(added, item)
+			medias = append(medias, media)
 		}
-		media, err := r.deps.Admit.Create(ctx, tx, a)
-		if err != nil {
-			return err
+		if len(added) == 0 {
+			return &Error{Code: protocol.CodeDuplicate, Message: "nothing to add: these videos are already here or cannot be played"}
 		}
-		if seen[media.ID] {
-			skipped++
-			continue
-		}
-		seen[media.ID] = true
-		item, err := r.deps.Store.AddQueueItem(ctx, tx, r.info.ID, media.ID, addedBy)
-		if err != nil {
-			return err
-		}
-		if actor.User != nil {
-			item.AddedByName = actor.User.Username
-		}
-		added = append(added, item)
-		medias = append(medias, media)
-	}
-	if len(added) == 0 {
-		return &Error{Code: protocol.CodeDuplicate, Message: "nothing to add: these videos are already here or cannot be played"}
-	}
-	if err := tx.Commit(ctx); err != nil {
+		return nil
+	})
+	if err != nil {
 		return err
 	}
 
@@ -1720,7 +1716,12 @@ func (r *Room) QueueReplay(ctx context.Context, actor access.Actor, itemID uuid.
 	if actor.User != nil {
 		addedBy = &actor.User.ID
 	}
-	item, err := r.deps.Store.AddQueueItem(ctx, r.deps.Store.Pool(), r.info.ID, src.MediaID, addedBy)
+	var item *entity.QueueItem
+	err := r.deps.Store.InTx(ctx, func(q repository.Querier) error {
+		var err error
+		item, err = r.deps.Store.AddQueueItem(ctx, q, r.info.ID, src.MediaID, addedBy)
+		return err
+	})
 	if err != nil {
 		return err
 	}

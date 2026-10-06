@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -168,4 +169,44 @@ func TestPlayedHistory(t *testing.T) {
 	require.NoError(t, repo.ClearPlayed(ctx, room.ID))
 	played, _ = repo.ListPlayed(ctx, room.ID, 10)
 	assert.Empty(t, played)
+}
+
+func TestInTx(t *testing.T) {
+	repo := newTestRepo(t)
+	ctx := context.Background()
+
+	owner, _ := repo.CreateUser(ctx, "owner", "h")
+	room, err := repo.CreateRoom(ctx, "tx-room", "T", owner.ID, entity.VisibilityPublic, entity.DefaultSettings())
+	require.NoError(t, err)
+	queued := func() int {
+		items, err := repo.ListQueue(ctx, room.ID)
+		require.NoError(t, err)
+		return len(items)
+	}
+
+	// An error from fn rolls back everything written through q and comes
+	// back as is.
+	boom := errors.New("boom")
+	err = repo.InTx(ctx, func(q Querier) error {
+		m, _, err := repo.CreateMedia(ctx, q, "url:a", "https://a")
+		require.NoError(t, err)
+		_, err = repo.AddQueueItem(ctx, q, room.ID, m.ID, nil)
+		require.NoError(t, err)
+		return boom
+	})
+	require.ErrorIs(t, err, boom)
+	assert.Zero(t, queued())
+	_, err = repo.GetMediaByKey(ctx, "url:a")
+	require.ErrorIs(t, err, ErrNotFound)
+
+	// Success commits.
+	require.NoError(t, repo.InTx(ctx, func(q Querier) error {
+		m, _, err := repo.CreateMedia(ctx, q, "url:b", "https://b")
+		if err != nil {
+			return err
+		}
+		_, err = repo.AddQueueItem(ctx, q, room.ID, m.ID, nil)
+		return err
+	}))
+	assert.Equal(t, 1, queued())
 }

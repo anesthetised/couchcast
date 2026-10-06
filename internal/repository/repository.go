@@ -31,6 +31,20 @@ func New(pool *pgxpool.Pool) *Repo {
 // Pool exposes the pool for components that need transactions or LISTEN.
 func (r *Repo) Pool() *pgxpool.Pool { return r.pool }
 
+// InTx runs fn in one transaction: committed when fn returns nil, rolled
+// back when it returns an error (which InTx passes on).
+func (r *Repo) InTx(ctx context.Context, fn func(q Querier) error) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck // no-op after commit
+	if err := fn(tx); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // Ping implements apihttp.Pinger.
 func (r *Repo) Ping(ctx context.Context) error { return r.pool.Ping(ctx) }
 
