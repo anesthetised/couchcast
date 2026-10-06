@@ -21,6 +21,11 @@ updates:
     groups:
       web-minor-patch:
         update-types: [minor, patch]
+    ignore:
+      # The types follow the Node major we run (NODE_VERSION, node:22 in
+      # compose and CI); bump them together with it.
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: github-actions
     directory: /
