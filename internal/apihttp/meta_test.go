@@ -75,7 +75,9 @@ func TestRoomMeta(t *testing.T) {
 	assert.Contains(t, body, `<meta property="og:image" content="https://img/bbb.jpg">`)
 
 	// A self-hosted poster is a path and comes out absolute.
-	require.NoError(t, repo.SetMediaThumbnail(ctx, m.ID, "/media/"+m.ID.String()+"/thumb.jpg"))
+	require.NoError(t, repo.PublishMedia(ctx, repo.Pool(), m.ID, repository.PublishedMedia{
+		SizeBytes: 1, S3Prefix: "p", ThumbnailURL: "/media/" + m.ID.String() + "/thumb.jpg",
+	}))
 	env3 := &dbEnv{&testEnv{t: t, handler: build(), cookies: env.cookies}}
 	body = env3.do(http.MethodGet, "/r/movies", nil).Body.String()
 	assert.Contains(t, body, `<meta property="og:image" content="http://example.com/media/`+m.ID.String()+`/thumb.jpg">`)
