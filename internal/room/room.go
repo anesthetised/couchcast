@@ -574,12 +574,7 @@ func (r *Room) nextLocked(ctx context.Context) error {
 		return err
 	}
 
-	var next *entity.QueueItem
-	if idx >= 0 && idx < len(r.queue) {
-		next = r.queue[idx]
-	} else if len(r.queue) > 0 {
-		next = r.queue[0]
-	}
+	next := following(r.queue, idx)
 	// Items whose ingest failed can never play: skip them into the history
 	// instead of stalling the room on them.
 	for next != nil {
@@ -591,12 +586,7 @@ func (r *Room) nextLocked(ctx context.Context) error {
 		if err := r.markPlayedLocked(ctx, next.ID); err != nil {
 			return err
 		}
-		next = nil
-		if idx >= 0 && idx < len(r.queue) {
-			next = r.queue[idx]
-		} else if len(r.queue) > 0 {
-			next = r.queue[0]
-		}
+		next = following(r.queue, idx)
 	}
 	// Loop: the queue ran out, so the history becomes the queue again in
 	// the order it was played.
@@ -1433,7 +1423,11 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, 
 	r.queue = append(r.queue, item)
 	r.media[media.ID] = media
 	if next && r.orderedByRule() == "" && r.current != nil && len(r.queue) > 1 {
-		if err := r.placeAfterLocked(ctx, len(r.queue)-1, r.current); err != nil {
+		ordered, err := placeAfter(r.queue, len(r.queue)-1, r.current, r.current)
+		if err != nil {
+			return err
+		}
+		if err := r.applyOrderLocked(ctx, ordered); err != nil {
 			return err
 		}
 	}
@@ -1565,25 +1559,9 @@ func (r *Room) QueueAddMany(ctx context.Context, actor access.Actor, urls []stri
 	}
 	if next && r.orderedByRule() == "" && r.current != nil {
 		// One re-rank for the whole batch: current, the batch, the rest.
-		ordered := make([]*entity.QueueItem, 0, len(r.queue)+len(added))
-		rest := make([]*entity.QueueItem, 0, len(r.queue))
-		for _, it := range r.queue {
-			if it.ID == *r.current {
-				ordered = append(ordered, it)
-			} else {
-				rest = append(rest, it)
-			}
-		}
-		ordered = append(append(ordered, added...), rest...)
-		ids := make([]uuid.UUID, len(ordered))
-		for i, it := range ordered {
-			ids[i] = it.ID
-			it.Rank = fmt.Sprintf("%08d", i+1)
-		}
-		if err := r.deps.Store.SetQueueRanks(ctx, r.info.ID, ids); err != nil {
+		if err := r.applyOrderLocked(ctx, batchAfterCurrent(r.queue, added, r.current)); err != nil {
 			return err
 		}
-		r.queue = ordered
 	} else {
 		r.queue = append(r.queue, added...)
 	}
@@ -1660,23 +1638,15 @@ func (r *Room) QueueShuffle(ctx context.Context, actor access.Actor) error {
 	if why := r.orderedByRule(); why != "" {
 		return invalid(why)
 	}
-	rest := r.queue
+	waiting := len(r.queue)
 	if r.current != nil && len(r.queue) > 0 && r.queue[0].ID == *r.current {
-		rest = r.queue[1:]
+		waiting--
 	}
-	if len(rest) < 2 {
+	if waiting < 2 {
 		return nil
 	}
-	rand.Shuffle(len(rest), func(i, j int) { rest[i], rest[j] = rest[j], rest[i] }) //nolint:gosec // play order, not a secret
-	ids := make([]uuid.UUID, len(r.queue))
-	for i, it := range r.queue {
-		ids[i] = it.ID
-	}
-	if err := r.deps.Store.SetQueueRanks(ctx, r.info.ID, ids); err != nil {
+	if err := r.applyOrderLocked(ctx, shuffled(r.queue, r.current, rand.Shuffle)); err != nil {
 		return err
-	}
-	for i, it := range r.queue {
-		it.Rank = fmt.Sprintf("%08d", i+1)
 	}
 	if actor.User != nil {
 		r.logLocked(ctx, actor.User.Username+" shuffled the queue")
@@ -1824,49 +1794,14 @@ func (r *Room) QueueMove(ctx context.Context, actor access.Actor, itemID uuid.UU
 		return invalid("the current item cannot be moved")
 	}
 
-	if err := r.placeAfterLocked(ctx, idx, afterID); err != nil {
+	ordered, err := placeAfter(r.queue, idx, afterID, r.current)
+	if err != nil {
+		return err
+	}
+	if err := r.applyOrderLocked(ctx, ordered); err != nil {
 		return err
 	}
 	r.broadcastLocked()
-	return nil
-}
-
-// placeAfterLocked moves the item at idx right after afterID (nil = head)
-// and persists the new ranks.
-func (r *Room) placeAfterLocked(ctx context.Context, idx int, afterID *uuid.UUID) error {
-	item := r.queue[idx]
-	rest := append(append([]*entity.QueueItem{}, r.queue[:idx]...), r.queue[idx+1:]...)
-
-	insertAt := 0
-	if afterID != nil {
-		found := false
-		for i, it := range rest {
-			if it.ID == *afterID {
-				insertAt, found = i+1, true
-				break
-			}
-		}
-		if !found {
-			return notFound("anchor item")
-		}
-	}
-	// Never place anything ahead of the current item.
-	if r.current != nil && insertAt == 0 && len(rest) > 0 && rest[0].ID == *r.current {
-		insertAt = 1
-	}
-
-	ordered := append(append(append([]*entity.QueueItem{}, rest[:insertAt]...), item), rest[insertAt:]...)
-	ids := make([]uuid.UUID, len(ordered))
-	for i, it := range ordered {
-		ids[i] = it.ID
-	}
-	if err := r.deps.Store.SetQueueRanks(ctx, r.info.ID, ids); err != nil {
-		return err
-	}
-	for i, it := range ordered {
-		it.Rank = fmt.Sprintf("%08d", i+1)
-	}
-	r.queue = ordered
 	return nil
 }
 

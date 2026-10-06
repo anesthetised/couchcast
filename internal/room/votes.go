@@ -2,14 +2,11 @@ package room
 
 import (
 	"context"
-	"fmt"
 	"math"
-	"sort"
 
 	"uuid"
 
 	"github.com/anesthetised/couchcast/internal/access"
-	"github.com/anesthetised/couchcast/internal/entity"
 	"github.com/anesthetised/couchcast/internal/protocol"
 )
 
@@ -176,48 +173,8 @@ func (r *Room) SkipVote(ctx context.Context, actor access.Actor) error {
 	return nil
 }
 
-// reorderByVotesLocked sorts non-current items by votes (desc) then age
-// and persists the new ranks when anything moved.
+// reorderByVotesLocked applies voteOrder and persists the new ranks when
+// anything moved.
 func (r *Room) reorderByVotesLocked(ctx context.Context) error {
-	if len(r.queue) < 2 {
-		return nil
-	}
-	ordered := make([]*entity.QueueItem, 0, len(r.queue))
-	var cur *entity.QueueItem
-	for _, it := range r.queue {
-		if r.current != nil && it.ID == *r.current {
-			cur = it
-			continue
-		}
-		ordered = append(ordered, it)
-	}
-	sort.SliceStable(ordered, func(i, j int) bool {
-		if ordered[i].Votes != ordered[j].Votes {
-			return ordered[i].Votes > ordered[j].Votes
-		}
-		return ordered[i].CreatedAt.Before(ordered[j].CreatedAt)
-	})
-	if cur != nil {
-		ordered = append([]*entity.QueueItem{cur}, ordered...)
-	}
-
-	changed := false
-	ids := make([]uuid.UUID, len(ordered))
-	for i, it := range ordered {
-		ids[i] = it.ID
-		if r.queue[i].ID != it.ID {
-			changed = true
-		}
-	}
-	if !changed {
-		return nil
-	}
-	if err := r.deps.Store.SetQueueRanks(ctx, r.info.ID, ids); err != nil {
-		return err
-	}
-	for i, it := range ordered {
-		it.Rank = fmt.Sprintf("%08d", i+1)
-	}
-	r.queue = ordered
-	return nil
+	return r.applyOrderLocked(ctx, voteOrder(r.queue, r.current))
 }
