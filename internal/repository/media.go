@@ -88,6 +88,35 @@ func (r *Repo) GetMedia(ctx context.Context, id uuid.UUID) (*entity.Media, error
 	return scanMedia(r.pool.QueryRow(ctx, q, id))
 }
 
+// MediaPrefix returns the published package, or an empty string when none
+// exists. Segment requests need only this column, not the media metadata.
+func (r *Repo) MediaPrefix(ctx context.Context, id uuid.UUID) (string, error) {
+	const q = `SELECT coalesce(s3_prefix, '') FROM media WHERE id = $1`
+	var prefix string
+	err := r.pool.QueryRow(ctx, q, id).Scan(&prefix)
+	if err == pgx.ErrNoRows { //nolint:errorlint // pgx returns this sentinel directly
+		return "", nil
+	}
+	return prefix, wrapErr(err)
+}
+
+// UnusedMediaAttempts returns prefixes that no published media or running
+// lease references. Lease tokens are never reused: an unreferenced attempt
+// cannot become publishable after this check, even if it resumes uploading.
+func (r *Repo) UnusedMediaAttempts(ctx context.Context, prefixes []string) ([]string, error) {
+	const q = `
+		SELECT prefix FROM unnest($1::text[]) AS candidate(prefix)
+		WHERE NOT EXISTS (SELECT 1 FROM media WHERE s3_prefix = prefix)
+		  AND NOT EXISTS (SELECT 1 FROM jobs WHERE status = 'running' AND lease = split_part(prefix, '/', 3)::uuid)
+	`
+	rows, err := r.pool.Query(ctx, q, prefixes)
+	if err != nil {
+		return nil, wrapErr(err)
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowTo[string])
+}
+
 // GetMediaBatch returns the given media rows keyed by id.
 func (r *Repo) GetMediaBatch(ctx context.Context, ids []uuid.UUID) (map[uuid.UUID]*entity.Media, error) {
 	const q = `SELECT ` + mediaColumns + ` FROM media WHERE id = ANY($1)`

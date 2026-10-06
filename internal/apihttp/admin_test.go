@@ -16,6 +16,7 @@ import (
 
 	"github.com/anesthetised/couchcast/internal/auth"
 	"github.com/anesthetised/couchcast/internal/entity"
+	"github.com/anesthetised/couchcast/internal/mediastore"
 	"github.com/anesthetised/couchcast/internal/metrics"
 	"github.com/anesthetised/couchcast/internal/ratelimit"
 	"github.com/anesthetised/couchcast/internal/repository"
@@ -56,7 +57,8 @@ func TestAdminAPI(t *testing.T) {
 
 	media, _, err := repo.CreateMedia(ctx, repo.Pool(), "youtube:bad", "https://youtu.be/bad")
 	require.NoError(t, err)
-	require.NoError(t, repo.SetMediaReady(ctx, media.ID, nil, 10, "media/"+media.ID.String()+"/"))
+	prefix := mediastore.AttemptPrefix(media.ID.String(), uuid.New().String())
+	require.NoError(t, repo.SetMediaReady(ctx, media.ID, nil, 10, prefix))
 	room, err := repo.CreateRoom(ctx, "reported-room", "R", boss.ID, entity.VisibilityPublic, entity.DefaultSettings())
 	require.NoError(t, err)
 	_, err = repo.AddQueueItem(ctx, repo.Pool(), room.ID, media.ID, nil)
@@ -94,7 +96,7 @@ func TestAdminAPI(t *testing.T) {
 
 	// Deleting the media blocks the source, removes objects and queue rows.
 	assert.Equal(t, http.StatusNoContent, admin.do(http.MethodDelete, "/api/v1/admin/media/"+media.ID.String(), banRequest{Reason: "dmca"}).Code)
-	assert.Equal(t, []string{"media/" + media.ID.String() + "/"}, deleter.prefixes)
+	assert.Equal(t, []string{prefix}, deleter.prefixes)
 	assert.Equal(t, []uuid.UUID{media.ID}, deletedMedia)
 	blocked, _ := repo.IsSourceBlocked(ctx, "youtube:bad")
 	assert.True(t, blocked)

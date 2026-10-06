@@ -187,7 +187,15 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
   the job row) only act for the current lease. The ingest publishes the
   finished media (`PublishMedia`, one statement) and marks failures
   inside `Fenced`, and works in a per-attempt directory, so a stale
-  attempt can neither publish, fail nor delete another attempt's files. `progressReporter` also derives
+  attempt can neither publish, fail nor delete another attempt's files.
+  Uploads go to `media/<id>/<lease>/`; publication selects that prefix in
+  `media.s3_prefix`. The media proxy resolves it through `MediaPrefix`,
+  keeping `/media/<id>/<file>` URLs stable and serving legacy packages too.
+  Every 30 minutes the web server prunes attempt prefixes whose newest
+  object is over an hour old and which neither a media row nor a running
+  job's lease references, even with cache eviction disabled. Deletion and
+  eviction remove only the published prefix; pruning handles abandoned
+  uploads, including those left by a crash. `progressReporter` also derives
   `media.speed_bps` / `media.eta_ms` from the recent progress samples
   (download: bytes from the selected formats; packaging: ffmpeg
   `-progress` out_time against the duration), shown in the queue and on

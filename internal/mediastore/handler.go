@@ -14,9 +14,10 @@ import (
 	"github.com/minio/minio-go/v7"
 )
 
-// AccessRecorder is notified when a manifest is fetched so that the
-// eviction janitor knows the media is in use.
-type AccessRecorder interface {
+// MediaAccess resolves the published package and records manifest reads
+// so the eviction janitor knows the media is in use.
+type MediaAccess interface {
+	MediaPrefix(ctx context.Context, id uuid.UUID) (string, error)
 	TouchMediaAccess(ctx context.Context, id uuid.UUID, at time.Time) error
 }
 
@@ -24,14 +25,14 @@ type AccessRecorder interface {
 type Handler struct {
 	store   *Store
 	signer  *Signer
-	access  AccessRecorder
+	access  MediaAccess
 	logger  *slog.Logger
 	onBytes func(int64)
 	now     func() time.Time
 }
 
 // NewHandler creates the media proxy. onBytes may be nil.
-func NewHandler(store *Store, signer *Signer, access AccessRecorder, logger *slog.Logger, onBytes func(int64)) *Handler {
+func NewHandler(store *Store, signer *Signer, access MediaAccess, logger *slog.Logger, onBytes func(int64)) *Handler {
 	if onBytes == nil {
 		onBytes = func(int64) {}
 	}
@@ -61,7 +62,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key := Prefix(mediaID.String()) + file
+	prefix, err := h.access.MediaPrefix(r.Context(), mediaID)
+	if err != nil {
+		h.logger.ErrorContext(r.Context(), "resolve media prefix", "media", mediaID, "error", err)
+		http.Error(w, "storage error", http.StatusBadGateway)
+		return
+	}
+	if prefix == "" {
+		http.NotFound(w, r)
+		return
+	}
+	key := prefix + file
 	obj, err := h.store.Open(r.Context(), key)
 	if err != nil {
 		h.logger.ErrorContext(r.Context(), "open media object", "key", key, "error", err)

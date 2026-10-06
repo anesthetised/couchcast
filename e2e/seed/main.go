@@ -29,6 +29,7 @@ import (
 // The tests queue https://www.youtube.com/watch?v=<VideoID>.
 const (
 	mediaID    = "0e2e0000-0000-4000-8000-000000000001"
+	leaseID    = "0e2e0000-0000-4000-8000-000000000002"
 	videoID    = "e2ePlayable"
 	durationMs = 20_000
 )
@@ -55,7 +56,7 @@ func run(ctx context.Context) error {
 	if err := store.EnsureBucket(ctx); err != nil {
 		return err
 	}
-	prefix := mediastore.Prefix(mediaID)
+	prefix := mediastore.AttemptPrefix(mediaID, leaseID)
 	if !exists(ctx, store, prefix+packager.ManifestName) {
 		if err := render(ctx, store, prefix); err != nil {
 			return err

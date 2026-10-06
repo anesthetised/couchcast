@@ -281,7 +281,7 @@ func (w *Worker) process(ctx context.Context, job *jobs.Job, media *entity.Media
 		return err
 	}
 	start = time.Now()
-	prefix := mediastore.Prefix(media.ID.String())
+	prefix := mediastore.AttemptPrefix(media.ID.String(), job.Lease.String())
 	size, err := w.store.UploadDir(ctx, prefix, outDir)
 	if err != nil {
 		return fmt.Errorf("upload: %w", err)

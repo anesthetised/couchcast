@@ -38,6 +38,10 @@ func New(cfg config.S3Config) (*Store, error) {
 // Prefix returns the object key prefix for a media id.
 func Prefix(mediaID string) string { return "media/" + mediaID + "/" }
 
+// AttemptPrefix isolates the objects of one ingest lease from every other
+// attempt. The media row selects the published prefix.
+func AttemptPrefix(mediaID, lease string) string { return Prefix(mediaID) + lease + "/" }
+
 // EnsureBucket verifies the bucket is reachable and creates it when it
 // is missing (a fresh development or self-hosted store). The web server
 // and the ingest worker may race here: losing the race is fine.
@@ -109,16 +113,27 @@ func (s *Store) Open(ctx context.Context, key string) (*minio.Object, error) {
 
 // DeletePrefix removes every object under prefix.
 func (s *Store) DeletePrefix(ctx context.Context, prefix string) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	objects := s.client.ListObjects(ctx, s.bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true})
 
 	toDelete := make(chan minio.ObjectInfo)
+	listed := make(chan error, 1)
 	go func() {
 		defer close(toDelete)
 		for obj := range objects {
-			if obj.Err == nil {
-				toDelete <- obj
+			if obj.Err != nil {
+				listed <- obj.Err
+				return
+			}
+			select {
+			case toDelete <- obj:
+			case <-ctx.Done():
+				listed <- ctx.Err()
+				return
 			}
 		}
+		listed <- ctx.Err()
 	}()
 
 	for res := range s.client.RemoveObjects(ctx, s.bucket, toDelete, minio.RemoveObjectsOptions{}) {
@@ -126,7 +141,7 @@ func (s *Store) DeletePrefix(ctx context.Context, prefix string) error {
 			return fmt.Errorf("mediastore: delete %s: %w", res.ObjectName, res.Err)
 		}
 	}
-	return nil
+	return <-listed
 }
 
 // IsThumbnail reports whether a media object name is the poster the

@@ -2,6 +2,7 @@ package mediastore
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -120,8 +121,14 @@ func TestStoreUploadOpenDelete(t *testing.T) {
 }
 
 type touches struct {
-	mu  sync.Mutex
-	ids []uuid.UUID
+	mu     sync.Mutex
+	ids    []uuid.UUID
+	prefix string
+	err    error
+}
+
+func (r *touches) MediaPrefix(context.Context, uuid.UUID) (string, error) {
+	return r.prefix, r.err
 }
 
 func (r *touches) TouchMediaAccess(_ context.Context, id uuid.UUID, _ time.Time) error {
@@ -135,15 +142,18 @@ func TestHandlerServesFromStorage(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 	id := uuid.New()
-	_, err := s.UploadDir(ctx, Prefix(id.String()), writeTree(t, map[string]string{
+	prefix := AttemptPrefix(id.String(), uuid.New().String())
+	_, err := s.UploadDir(ctx, prefix, writeTree(t, map[string]string{
 		"manifest.mpd":      "<MPD/>",
 		"chunk-0-00001.m4s": "0123456789",
 		"thumb.jpg":         "jpeg",
+		"sub-en.vtt":        "WEBVTT",
+		"sb-0.jpg":          "storyboard",
 	}))
 	require.NoError(t, err)
 
 	signer := NewSigner("0123456789abcdef0123456789abcdef", time.Hour)
-	rec := &touches{}
+	rec := &touches{prefix: prefix}
 	var served int64
 	h := NewHandler(s, signer, rec, slog.New(slog.DiscardHandler), func(n int64) { served += n })
 	token := signer.Sign(id, time.Now())
@@ -188,10 +198,70 @@ func TestHandlerServesFromStorage(t *testing.T) {
 	w = get(http.MethodGet, "thumb.jpg", "", nil)
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "public, max-age=86400", w.Header().Get("Cache-Control"))
+	assert.Equal(t, "WEBVTT", get(http.MethodGet, "sub-en.vtt", token, nil).Body.String())
+	assert.Equal(t, "storyboard", get(http.MethodGet, "sb-0.jpg", token, nil).Body.String())
 
 	assert.Equal(t, http.StatusNotFound, get(http.MethodGet, "missing.m4s", token, nil).Code)
 	assert.Equal(t, http.StatusNotFound, get(http.MethodGet, "../other/manifest.mpd", token, nil).Code)
 	assert.Equal(t, http.StatusMethodNotAllowed, get(http.MethodPost, "manifest.mpd", token, nil).Code)
+}
+
+func TestHandlerOnlyServesThePublishedPackage(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	id := uuid.New()
+	legacy := Prefix(id.String())
+	abandoned := AttemptPrefix(id.String(), uuid.New().String())
+	for prefix, body := range map[string]string{legacy: "published legacy", abandoned: "abandoned"} {
+		_, err := s.UploadDir(ctx, prefix, writeTree(t, map[string]string{"manifest.mpd": body, "thumb.jpg": body}))
+		require.NoError(t, err)
+	}
+	signer := NewSigner("0123456789abcdef0123456789abcdef", time.Hour)
+	rec := &touches{prefix: legacy}
+	h := NewHandler(s, signer, rec, slog.New(slog.DiscardHandler), nil)
+	get := func(file string) *httptest.ResponseRecorder {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/media/"+id.String()+"/"+file+"?t="+signer.Sign(id, time.Now()), nil))
+		return w
+	}
+	w := get("manifest.mpd")
+	require.Equal(t, http.StatusOK, w.Code)
+	assert.Equal(t, "published legacy", w.Body.String(), "existing packages keep their URLs")
+	assert.Equal(t, "published legacy", get("thumb.jpg").Body.String())
+	assert.Equal(t, http.StatusNotFound, get(strings.TrimPrefix(abandoned, legacy)+"manifest.mpd").Code)
+	rec.prefix = ""
+	assert.Equal(t, http.StatusNotFound, get("manifest.mpd").Code, "unpublished or deleted media cannot be fetched")
+	assert.Equal(t, http.StatusNotFound, get("thumb.jpg").Code)
+	rec.err = errors.New("database unavailable")
+	assert.Equal(t, http.StatusBadGateway, get("manifest.mpd").Code, "lookup failures must not fall back to old objects")
+}
+
+type unavailableReferences struct{}
+
+func (unavailableReferences) UnusedMediaAttempts(context.Context, []string) ([]string, error) {
+	return nil, errors.New("database unavailable")
+}
+
+func TestPruneAttemptsKeepsObjectsWhenReferencesCannotBeRead(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	prefix := AttemptPrefix(uuid.New().String(), uuid.New().String())
+	_, err := s.UploadDir(ctx, prefix, writeTree(t, map[string]string{"manifest.mpd": "keep"}))
+	require.NoError(t, err)
+	n, err := s.PruneAttempts(ctx, unavailableReferences{}, time.Now().Add(time.Hour))
+	require.Error(t, err)
+	assert.Zero(t, n)
+	assert.NotEmpty(t, s.keys(t, prefix))
+}
+
+func TestDeletePrefixReportsListingErrors(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	require.NoError(t, s.client.RemoveBucket(ctx, s.bucket))
+	assert.Error(t, s.DeletePrefix(ctx, "media/"), "a failed listing must not report successful deletion")
+	ctx, cancel := context.WithCancel(ctx)
+	cancel()
+	assert.ErrorIs(t, s.DeletePrefix(ctx, "media/"), context.Canceled)
 }
 
 // evictionRepo is an in-memory EvictionStore.
@@ -227,16 +297,24 @@ func TestEvictorKeepsTheCacheUnderBudget(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
 	old, older, fresh := uuid.New(), uuid.New(), uuid.New()
+	prefixes := map[uuid.UUID]string{
+		old:   Prefix(old.String()),
+		older: AttemptPrefix(older.String(), uuid.New().String()),
+		fresh: AttemptPrefix(fresh.String(), uuid.New().String()),
+	}
 	for _, id := range []uuid.UUID{old, older, fresh} {
-		_, err := s.UploadDir(ctx, Prefix(id.String()), writeTree(t, map[string]string{"manifest.mpd": "x"}))
+		_, err := s.UploadDir(ctx, prefixes[id], writeTree(t, map[string]string{"manifest.mpd": "x"}))
 		require.NoError(t, err)
 	}
+	active := AttemptPrefix(older.String(), uuid.New().String())
+	_, err := s.UploadDir(ctx, active, writeTree(t, map[string]string{"manifest.mpd": "active"}))
+	require.NoError(t, err)
 	now := time.Now()
 	// Least recently used first, as the repository lists them.
 	repo := &evictionRepo{media: []entity.Media{
-		{ID: fresh, SizeBytes: 400, LastAccessedAt: now},
-		{ID: older, SizeBytes: 300, LastAccessedAt: now.Add(-3 * time.Hour)},
-		{ID: old, SizeBytes: 300, LastAccessedAt: now.Add(-2 * time.Hour)},
+		{ID: fresh, S3Prefix: prefixes[fresh], SizeBytes: 400, LastAccessedAt: now},
+		{ID: older, S3Prefix: prefixes[older], SizeBytes: 300, LastAccessedAt: now.Add(-3 * time.Hour)},
+		{ID: old, S3Prefix: prefixes[old], SizeBytes: 300, LastAccessedAt: now.Add(-2 * time.Hour)},
 	}}
 	logger := slog.New(slog.DiscardHandler)
 
@@ -253,7 +331,8 @@ func TestEvictorKeepsTheCacheUnderBudget(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, n)
 	assert.Equal(t, []uuid.UUID{older}, repo.deleted)
-	assert.Empty(t, s.keys(t, Prefix(older.String())))
+	assert.Empty(t, s.keys(t, prefixes[older]))
+	assert.NotEmpty(t, s.keys(t, active), "eviction must not delete another attempt")
 	assert.NotEmpty(t, s.keys(t, Prefix(old.String())))
 	assert.NotEmpty(t, s.keys(t, Prefix(fresh.String())))
 

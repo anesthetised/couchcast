@@ -3,10 +3,12 @@ package ingest
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"image"
 	"image/jpeg"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -206,10 +208,10 @@ func TestPipelinePackagesAndUploads(t *testing.T) {
 	assert.Positive(t, got.SizeBytes)
 	assert.InDelta(t, 1, got.Progress, 0.001)
 
-	keys := p.list("media/" + m.ID.String() + "/")
+	keys := p.list(got.S3Prefix)
 	names := make([]string, 0, len(keys))
 	for _, k := range keys {
-		names = append(names, strings.TrimPrefix(k, "media/"+m.ID.String()+"/"))
+		names = append(names, strings.TrimPrefix(k, got.S3Prefix))
 	}
 	assert.Contains(t, names, "manifest.mpd")
 	assert.Contains(t, names, "init-0.webm")
@@ -414,7 +416,8 @@ func TestStaleAttemptDoesNotPublish(t *testing.T) {
 	got, err := p.repo.GetMedia(ctx, m.ID)
 	require.NoError(t, err)
 	assert.Equal(t, entity.MediaReady, got.Status, "A did not mark B's result failed")
-	assert.Contains(t, p.list("media/"+m.ID.String()+"/"), "media/"+m.ID.String()+"/manifest.mpd")
+	assert.Equal(t, mediastore.AttemptPrefix(m.ID.String(), b.Lease.String()), got.S3Prefix)
+	assert.Contains(t, p.list(got.S3Prefix), got.S3Prefix+"manifest.mpd")
 	require.NoError(t, p.queue.Complete(ctx, b))
 }
 
@@ -435,6 +438,142 @@ func TestStaleAttemptDoesNotFailTheMedia(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEqual(t, entity.MediaFailed, got.Status, "the job is someone else's now")
 	assert.Empty(t, got.Error)
+}
+
+type pausedUploadRepo struct {
+	MediaRepo
+	beforeUpload func() error
+}
+
+func (r pausedUploadRepo) SetMediaStatus(ctx context.Context, id uuid.UUID, status entity.MediaStatus) error {
+	if err := r.MediaRepo.SetMediaStatus(ctx, id, status); err != nil {
+		return err
+	}
+	if status == entity.MediaUploading {
+		return r.beforeUpload()
+	}
+	return nil
+}
+
+func TestStaleUploadDoesNotOverwritePublishedObjects(t *testing.T) {
+	p := newPipeline(t)
+	ctx := context.Background()
+	m, err := p.svc.EnsureMedia(ctx, p.repo.Pool(), "https://video.test/stale-upload")
+	require.NoError(t, err)
+	a, err := p.queue.Claim(ctx, "test", []string{JobKind})
+	require.NoError(t, err)
+	paused, resume := make(chan struct{}), make(chan struct{})
+	stale := *p.worker
+	stale.repo = pausedUploadRepo{MediaRepo: p.repo, beforeUpload: func() error {
+		// Distinct output makes a late overwrite visible, even though both
+		// attempts downloaded the same fixture.
+		outDir := filepath.Join(stale.workDir, m.ID.String()+"-"+a.Lease.String(), "dash")
+		if err := os.WriteFile(filepath.Join(outDir, "manifest.mpd"), []byte("stale manifest"), 0o600); err != nil {
+			return err
+		}
+		close(paused)
+		<-resume
+		return nil
+	}}
+	finished := make(chan error, 1)
+	joined := false
+	go func() { finished <- stale.Handle(ctx, a) }()
+	t.Cleanup(func() {
+		select {
+		case <-resume:
+		default:
+			close(resume)
+		}
+		if !joined {
+			<-finished
+		}
+	})
+	select {
+	case <-paused:
+	case err := <-finished:
+		joined = true
+		t.Fatalf("stale attempt stopped before upload: %v", err)
+	case <-time.After(30 * time.Second):
+		t.Fatal("stale attempt did not reach upload")
+	}
+	p.recoverJob(t, a.ID)
+	b, err := p.queue.Claim(ctx, "test", []string{JobKind})
+	require.NoError(t, err)
+	require.NoError(t, p.worker.Handle(ctx, b))
+	winner, err := p.repo.GetMedia(ctx, m.ID)
+	require.NoError(t, err)
+	read := func(key string) []byte {
+		obj, err := p.store.Open(ctx, key)
+		require.NoError(t, err)
+		defer obj.Close() //nolint:errcheck // test cleanup
+		data, err := io.ReadAll(obj)
+		require.NoError(t, err)
+		return data
+	}
+	objects := map[string][32]byte{}
+	for _, key := range p.list(winner.S3Prefix) {
+		objects[key] = sha256.Sum256(read(key))
+	}
+	require.NotEmpty(t, objects)
+	close(resume)
+	err = <-finished
+	joined = true
+	require.ErrorIs(t, err, jobs.ErrLeaseLost)
+	got, err := p.repo.GetMedia(ctx, m.ID)
+	require.NoError(t, err)
+	assert.Equal(t, winner.S3Prefix, got.S3Prefix)
+	assert.Equal(t, entity.MediaReady, got.Status)
+	for key, data := range objects {
+		assert.Equal(t, data, sha256.Sum256(read(key)), "the stale upload changed %s", key)
+	}
+	// The abandoned upload can be removed without touching the winner.
+	n, err := p.store.PruneAttempts(ctx, p.repo, time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.Empty(t, p.list(mediastore.AttemptPrefix(m.ID.String(), a.Lease.String())))
+	for key, data := range objects {
+		assert.Equal(t, data, sha256.Sum256(read(key)))
+	}
+}
+
+func TestPruneAttemptsProtectsPublishedActiveAndLegacyPackages(t *testing.T) {
+	p := newPipeline(t)
+	ctx := context.Background()
+	m, err := p.svc.EnsureMedia(ctx, p.repo.Pool(), "https://video.test/prune")
+	require.NoError(t, err)
+	job, err := p.queue.Claim(ctx, "test", []string{JobKind})
+	require.NoError(t, err)
+	active := mediastore.AttemptPrefix(m.ID.String(), job.Lease.String())
+	ready, _, err := p.repo.CreateMedia(ctx, p.repo.Pool(), "test:published", "https://video.test/published")
+	require.NoError(t, err)
+	published := mediastore.AttemptPrefix(ready.ID.String(), uuid.New().String())
+	require.NoError(t, p.repo.SetMediaReady(ctx, ready.ID, nil, 9, published))
+	legacy := mediastore.Prefix(uuid.New().String())
+	orphan := mediastore.AttemptPrefix(uuid.New().String(), uuid.New().String())
+	malformed := mediastore.Prefix(uuid.New().String()) + "not-a-lease/"
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "manifest.mpd"), []byte("package"), 0o600))
+	for _, prefix := range []string{active, published, legacy, orphan, malformed} {
+		_, err := p.store.UploadDir(ctx, prefix, dir)
+		require.NoError(t, err)
+	}
+	n, err := p.store.PruneAttempts(ctx, p.repo, time.Now().Add(-time.Hour))
+	require.NoError(t, err)
+	assert.Zero(t, n, "recent uploads are not candidates")
+	n, err = p.store.PruneAttempts(ctx, p.repo, time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.Empty(t, p.list(orphan))
+	for _, prefix := range []string{active, published, legacy, malformed} {
+		assert.NotEmpty(t, p.list(prefix), "must preserve %s", prefix)
+	}
+	// Once the attempt is recovered, its partial upload becomes garbage.
+	p.recoverJob(t, job.ID)
+	n, err = p.store.PruneAttempts(ctx, p.repo, time.Now().Add(time.Hour))
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.Empty(t, p.list(active))
+	assert.NotEmpty(t, p.list(published))
 }
 
 func TestFailedMediaPublicationIsBoundedAfterCancellation(t *testing.T) {

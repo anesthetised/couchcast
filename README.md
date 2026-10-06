@@ -176,7 +176,11 @@ deploy/          files mounted into infrastructure containers
   `db/migrations`.
 - **Cache budget.** `COUCHCAST_MAX_CACHE_BYTES` caps packaged media in S3;
   every 30 minutes the least recently watched items that no room has
-  queued are evicted. Chat older than `COUCHCAST_CHAT_RETENTION_DAYS` is
+  queued are evicted. Ingest attempts upload to separate prefixes; only
+  the package published in PostgreSQL is served. The same periodic pass
+  removes abandoned attempt packages older than an hour, preserving
+  published packages and running leases even when the cache budget is
+  disabled. Chat older than `COUCHCAST_CHAT_RETENTION_DAYS` is
   purged hourly.
 - **Metrics** are exposed at `/metrics` on the web server and on
   `COUCHCAST_INGEST_METRICS_ADDR` on the worker (Prometheus format).

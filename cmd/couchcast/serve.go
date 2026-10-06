@@ -171,6 +171,13 @@ func serve(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	evictor := mediastore.NewEvictor(store, repo, cfg.Web.MaxCacheBytes, logger)
 	g.Go(func() error {
 		return runPeriodic(ctx, 30*time.Minute, func(ctx context.Context) {
+			cleanCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)
+			defer cancel()
+			if n, err := store.PruneAttempts(cleanCtx, repo, time.Now().Add(-time.Hour)); err != nil {
+				logger.Warn("prune ingest attempts", "error", err)
+			} else if n > 0 {
+				logger.Info("pruned ingest attempts", "removed", n)
+			}
 			if n, err := evictor.Run(ctx); err != nil {
 				logger.Warn("media eviction", "error", err)
 			} else if n > 0 {

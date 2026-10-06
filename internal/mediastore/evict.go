@@ -59,7 +59,10 @@ func (e *Evictor) Run(ctx context.Context) (int, error) {
 		if time.Since(m.LastAccessedAt) < e.MinAge {
 			continue
 		}
-		if err := e.store.DeletePrefix(ctx, Prefix(m.ID.String())); err != nil {
+		if m.S3Prefix == "" {
+			continue
+		}
+		if err := e.store.DeletePrefix(ctx, m.S3Prefix); err != nil {
 			e.logger.Warn("evict media objects", "media", m.ID, "error", err)
 			continue
 		}
