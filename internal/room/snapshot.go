@@ -1,8 +1,8 @@
 package room
 
 import (
+	"context"
 	"sort"
-	"time"
 
 	"uuid"
 
@@ -156,10 +156,7 @@ func (r *Room) snapshotsLocked(base protocol.Snapshot, except Conn) []envelope {
 // broadcastLocked sends the current snapshot to every viewer.
 func (r *Room) broadcastLocked() {
 	// A full snapshot carries the latest presence too.
-	if r.presenceTimer != nil {
-		r.presenceTimer.Stop()
-		r.presenceTimer = nil
-	}
+	stop(&r.timers.presence)
 	send(r.snapshotsLocked(r.snapshotLocked(), nil))
 }
 
@@ -171,15 +168,13 @@ func (r *Room) presenceChangedLocked() {
 		r.broadcastLocked()
 		return
 	}
-	if r.presenceTimer == nil {
-		r.presenceTimer = time.AfterFunc(r.deps.PresenceEvery, r.flushPresence)
+	if r.timers.presence == nil {
+		r.timers.presence = r.afterLocked(r.deps.PresenceEvery, r.flushPresenceLocked)
 	}
 }
 
-func (r *Room) flushPresence() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closed || r.presenceTimer == nil {
+func (r *Room) flushPresenceLocked(context.Context) {
+	if r.timers.presence == nil {
 		return
 	}
 	r.broadcastLocked()

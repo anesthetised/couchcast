@@ -165,36 +165,25 @@ type Room struct {
 	// leftAt remembers when a user's last connection closed, so a quick
 	// reconnect (reload, network blip) is not logged as a new join; the
 	// matching timer logs "left" once the grace period passes.
-	leftAt     map[uuid.UUID]time.Time
-	leftTimers map[uuid.UUID]*time.Timer
+	leftAt map[uuid.UUID]time.Time
 
-	advance     *time.Timer
+	timers timers // every timer the room owns (timers.go)
+
 	lastPersist time.Time
 	lastActive  time.Time
 
 	// pinned is the message shown above the chat, nil when none.
 	pinned *protocol.ChatMessage
-	// emptyTimer pauses the room once nobody has been here for the rejoin
-	// grace period (Settings.PauseWhenEmpty).
-	emptyTimer *time.Timer
-
-	// Waiting for buffering viewers (Settings.WaitForBuffering):
-	// bufferTimer runs while someone buffers and the room still plays;
-	// waiting holds who the room paused for, waitTimer caps the pause.
-	bufferTimer *time.Timer
-	waiting     []string
-	waitTimer   *time.Timer
+	// waiting holds who the room paused for while they buffer
+	// (Settings.WaitForBuffering).
+	waiting []string
 
 	// countdown is when a counted-down start begins (nil: none pending).
-	countdown      *time.Time
-	countdownTimer *time.Timer
+	countdown *time.Time
 
 	// closed is set when the manager drops the room; a timer that fired
 	// just before then finds it and does nothing.
 	closed bool
-
-	// presenceTimer is a pending coalesced presence broadcast.
-	presenceTimer *time.Timer
 
 	// unsaved is set when persisting the clock failed; Tick retries.
 	unsaved bool
@@ -223,7 +212,7 @@ func load(ctx context.Context, deps Deps, id uuid.UUID) (*Room, error) {
 		lastChatAt:  map[uuid.UUID]time.Time{},
 		lastMention: map[uuid.UUID]time.Time{},
 		leftAt:      map[uuid.UUID]time.Time{},
-		leftTimers:  map[uuid.UUID]*time.Timer{},
+		timers:      timers{left: map[uuid.UUID]*time.Timer{}},
 		clock:       clockFrom(info),
 		lastActive:  deps.Now(),
 	}
@@ -384,34 +373,24 @@ func (r *Room) setPlaybackLocked(playing bool, positionMs int64) {
 // armEmptyPauseLocked starts the empty-room countdown when the room is
 // playing with nobody in it; it is a no-op otherwise or when armed.
 func (r *Room) armEmptyPauseLocked() {
-	if !r.info.Settings.PauseWhenEmpty || !r.clock.playing || len(r.viewers) > 0 || r.emptyTimer != nil {
+	if !r.info.Settings.PauseWhenEmpty || !r.clock.playing || len(r.viewers) > 0 || r.timers.empty != nil {
 		return
 	}
-	r.emptyTimer = time.AfterFunc(r.rejoinGrace(), r.pauseIfEmpty)
+	r.timers.empty = r.afterLocked(r.rejoinGrace(), r.pauseIfEmptyLocked)
 }
 
 func (r *Room) disarmEmptyPauseLocked() {
-	if r.emptyTimer != nil {
-		r.emptyTimer.Stop()
-		r.emptyTimer = nil
-	}
+	stop(&r.timers.empty)
 }
 
-// pauseIfEmpty fires after the grace period: still nobody here, still
-// playing — pause where the clock is, once, and say so in the log.
-func (r *Room) pauseIfEmpty() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closed {
-		return
-	}
-	r.emptyTimer = nil
+// pauseIfEmptyLocked fires after the grace period: still nobody here,
+// still playing — pause where the clock is, once, and say so in the log.
+func (r *Room) pauseIfEmptyLocked(ctx context.Context) {
+	r.timers.empty = nil
 	if !r.info.Settings.PauseWhenEmpty || !r.clock.playing || len(r.viewers) > 0 {
 		return
 	}
 	r.setPlaybackLocked(false, r.positionLocked(r.now()))
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	r.savePlaybackLocked(ctx)
 	r.logLocked(ctx, "paused: everyone left")
 }
@@ -419,10 +398,7 @@ func (r *Room) pauseIfEmpty() {
 // scheduleAdvanceLocked arms the timer that moves to the next item when
 // the current one ends.
 func (r *Room) scheduleAdvanceLocked() {
-	if r.advance != nil {
-		r.advance.Stop()
-		r.advance = nil
-	}
+	stop(&r.timers.advance)
 	m := r.currentMedia()
 	if !r.clock.playing || m == nil || m.DurationMs <= 0 || r.clock.current == nil {
 		return
@@ -430,21 +406,15 @@ func (r *Room) scheduleAdvanceLocked() {
 	remaining := r.clock.remaining(r.now(), m.DurationMs)
 	itemID := *r.clock.current
 	seq := r.clock.seq
-	r.advance = time.AfterFunc(remaining+500*time.Millisecond, func() { r.onEnded(itemID, seq) })
+	r.timers.advance = r.afterLocked(remaining+500*time.Millisecond, func(ctx context.Context) { r.onEndedLocked(ctx, itemID, seq) })
 }
 
-// onEnded fires from the advance timer.
-func (r *Room) onEnded(itemID uuid.UUID, seq uint64) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closed {
+// onEndedLocked fires from the advance timer: still the same item on the
+// same clock, still playing — go to the next one.
+func (r *Room) onEndedLocked(ctx context.Context, itemID uuid.UUID, seq uint64) {
+	if !r.clock.isCurrent(itemID) || r.clock.seq != seq || !r.clock.playing {
 		return
 	}
-	if r.clock.current == nil || *r.clock.current != itemID || r.clock.seq != seq || !r.clock.playing {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	if err := r.nextLocked(ctx); err != nil {
 		r.deps.Logger.Error("auto advance", "room", r.info.Slug, "error", err)
 	}
@@ -635,9 +605,9 @@ func (r *Room) Join(ctx context.Context, conn Conn, actor access.Actor) {
 	first := actor.User != nil && !r.userOnlineLocked(actor.User.ID) &&
 		r.now().Sub(r.leftAt[actor.User.ID]) > r.rejoinGrace()
 	if actor.User != nil {
-		if t, ok := r.leftTimers[actor.User.ID]; ok {
+		if t, ok := r.timers.left[actor.User.ID]; ok {
 			t.Stop()
-			delete(r.leftTimers, actor.User.ID)
+			delete(r.timers.left, actor.User.ID)
 		}
 	}
 	v := &viewer{conn: conn, user: actor.User, role: actor.Role()}
@@ -683,19 +653,13 @@ func (r *Room) rejoinGrace() time.Duration {
 	return defaultRejoinGrace
 }
 
-// onLeft fires after the grace period: if the user is still gone, log it.
-func (r *Room) onLeft(userID uuid.UUID, username string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closed {
-		return
-	}
-	delete(r.leftTimers, userID)
+// onLeftLocked fires after the grace period: if the user is still gone,
+// log it.
+func (r *Room) onLeftLocked(ctx context.Context, userID uuid.UUID, username string) {
+	delete(r.timers.left, userID)
 	if r.userOnlineLocked(userID) {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	r.logLocked(ctx, username+" left")
 }
 
@@ -723,11 +687,11 @@ func (r *Room) Leave(conn Conn) {
 	r.checkBufferingLocked()
 	if v.user != nil && !r.userOnlineLocked(v.user.ID) {
 		r.leftAt[v.user.ID] = r.now()
-		if t, ok := r.leftTimers[v.user.ID]; ok {
+		if t, ok := r.timers.left[v.user.ID]; ok {
 			t.Stop()
 		}
 		id, name := v.user.ID, v.user.Username
-		r.leftTimers[id] = time.AfterFunc(r.rejoinGrace(), func() { r.onLeft(id, name) })
+		r.timers.left[id] = r.afterLocked(r.rejoinGrace(), func(ctx context.Context) { r.onLeftLocked(ctx, id, name) })
 	}
 	r.presenceChangedLocked()
 }
@@ -909,14 +873,11 @@ func (r *Room) checkBufferingLocked() {
 		return
 	}
 	if !r.info.Settings.WaitForBuffering || !r.clock.playing || len(stuck) == 0 {
-		if r.bufferTimer != nil {
-			r.bufferTimer.Stop()
-			r.bufferTimer = nil
-		}
+		stop(&r.timers.buffer)
 		return
 	}
-	if r.bufferTimer == nil {
-		r.bufferTimer = time.AfterFunc(r.patience(bufferPatience), r.startWaiting)
+	if r.timers.buffer == nil {
+		r.timers.buffer = r.afterLocked(r.patience(bufferPatience), r.startWaitingLocked)
 	}
 }
 
@@ -929,36 +890,25 @@ func (r *Room) patience(d time.Duration) time.Duration {
 	return d
 }
 
-// startWaiting pauses the room for whoever is still buffering.
-func (r *Room) startWaiting() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closed {
-		return
-	}
-	r.bufferTimer = nil
+// startWaitingLocked pauses the room for whoever is still buffering.
+func (r *Room) startWaitingLocked(ctx context.Context) {
+	r.timers.buffer = nil
 	stuck := r.stuckLocked()
 	if !r.info.Settings.WaitForBuffering || !r.clock.playing || len(stuck) == 0 || r.waiting != nil {
 		return
 	}
 	r.waiting = stuck
 	r.setPlaybackLocked(false, r.positionLocked(r.now()))
-	r.waitTimer = time.AfterFunc(r.patience(maxWait), r.stopWaiting)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	r.timers.wait = r.afterLocked(r.patience(maxWait), r.stopWaitingLocked)
 	r.savePlaybackLocked(ctx)
 	r.logLocked(ctx, "waiting for "+strings.Join(stuck, ", "))
 	r.broadcastLocked()
 }
 
-// stopWaiting goes on without the viewers still buffering after maxWait.
-func (r *Room) stopWaiting() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closed {
-		return
-	}
-	r.waitTimer = nil
+// stopWaitingLocked goes on without the viewers still buffering after
+// maxWait.
+func (r *Room) stopWaitingLocked(ctx context.Context) {
+	r.timers.wait = nil
 	if r.waiting == nil {
 		return
 	}
@@ -967,8 +917,6 @@ func (r *Room) stopWaiting() {
 			v.ignored = true
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	r.logLocked(ctx, "continuing without "+strings.Join(r.waiting, ", "))
 	r.endWaitLocked(true)
 }
@@ -976,10 +924,7 @@ func (r *Room) stopWaiting() {
 // endWaitLocked leaves the waiting state, resuming playback when asked
 // (a moderator's own play/pause leaves it without touching the clock).
 func (r *Room) endWaitLocked(resume bool) {
-	if r.waitTimer != nil {
-		r.waitTimer.Stop()
-		r.waitTimer = nil
-	}
+	stop(&r.timers.wait)
 	if r.waiting == nil {
 		return
 	}
@@ -1038,7 +983,7 @@ func (r *Room) play(ctx context.Context, actor access.Actor, countdown bool) err
 	if (countdown || r.info.ScheduledAt != nil) && r.countdown == nil {
 		at := r.now().Add(countdownFor)
 		r.countdown = &at
-		r.countdownTimer = time.AfterFunc(r.patience(countdownFor), r.endCountdown)
+		r.timers.countdown = r.afterLocked(r.patience(countdownFor), r.endCountdownLocked)
 		r.broadcastLocked()
 		return nil
 	}
@@ -1049,17 +994,12 @@ func (r *Room) play(ctx context.Context, actor access.Actor, countdown bool) err
 	return nil
 }
 
-// endCountdown starts playback when the countdown runs out.
-func (r *Room) endCountdown() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closed {
-		return
-	}
+// endCountdownLocked starts playback when the countdown runs out.
+func (r *Room) endCountdownLocked(ctx context.Context) {
 	if r.countdown == nil {
 		return
 	}
-	r.countdown, r.countdownTimer = nil, nil
+	r.countdown, r.timers.countdown = nil, nil
 	m := r.currentMedia()
 	if m == nil || !m.IsReady() || r.clock.playing {
 		r.broadcastLocked()
@@ -1067,8 +1007,6 @@ func (r *Room) endCountdown() {
 	}
 	pos := startFrom(r.clock.positionMs, m.DurationMs)
 	r.setPlaybackLocked(true, pos)
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	r.savePlaybackLocked(ctx)
 	r.broadcastLocked()
 }
@@ -1076,11 +1014,9 @@ func (r *Room) endCountdown() {
 // cancelCountdownLocked drops a pending countdown (pause, seek to another
 // item, a direct play).
 func (r *Room) cancelCountdownLocked() {
-	if r.countdownTimer != nil {
-		r.countdownTimer.Stop()
-	}
+	stop(&r.timers.countdown)
 	if r.countdown != nil {
-		r.countdown, r.countdownTimer = nil, nil
+		r.countdown = nil
 		r.broadcastLocked()
 	}
 }
@@ -1818,12 +1754,5 @@ func (r *Room) closeViewers(reason string) {
 // scheduled acts on it once the manager has let go of it.
 func (r *Room) closeLocked() {
 	r.closed = true
-	for _, t := range []*time.Timer{r.advance, r.emptyTimer, r.bufferTimer, r.waitTimer, r.countdownTimer, r.presenceTimer} {
-		if t != nil {
-			t.Stop()
-		}
-	}
-	for _, t := range r.leftTimers {
-		t.Stop()
-	}
+	r.timers.stopAll()
 }
