@@ -239,6 +239,16 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
 - `internal/room` is the live room: one mutex-guarded `Room` per loaded
   room holds the authoritative clock (`positionMs` at `positionAt`, plus a
   `seq`), the queue, presence and votes; every mutation ends in a broadcast.
+  The rules are pure and tested without Postgres: `clock.go` (the clock
+  as a value), `order.go` (vote order, fair turns, moves, shuffle; the
+  room persists the result with `applyOrderLocked`), `snapshot.go`
+  (presence and personalisation, prepared and then sent). Commands live
+  by subject (`playback.go`, `queue.go`, `presence.go`, `votes.go`,
+  `chat.go`), take the mutex themselves and write only through `Store`
+  and `ChatStore`; writes that belong together go through `Store.InTx`
+  (the room never sees a pool). `timers.go` owns every timer: armed
+  through `afterLocked` (under the mutex, nothing once closed), each
+  callback re-checks its state, `closeLocked` stops them all.
   `Manager` loads rooms lazily, persists positions every 5 s, unloads idle
   rooms and relays `media_progress` notifications. Notifications sent
   while the listener reconnects are lost, so `jobs.Listen` calls back on
