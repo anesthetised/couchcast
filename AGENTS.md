@@ -4,15 +4,20 @@ Guidance for AI coding agents working in this repository.
 
 ## Collaboration preferences
 
-- Communicate with the user in Russian. Everything else, including code
-  comments, documentation, issues, pull requests and other GitHub content,
-  must be in English.
+- Write all project content in English, including code comments,
+  documentation, commits, issues and pull requests.
 - Use Conventional Commits. When a commit or pull request completes an
   issue, include `Closes #N` in its body.
 - Include a `Co-authored-by: Name <email>` trailer crediting the AI
   assistant in every AI-assisted commit.
 - Commits are allowed without asking. Push only when the user explicitly
   requests it.
+- Prioritize meaningful test coverage and benchmarks. Verify correctness
+  with tests and performance claims with representative measurements.
+- Consult the user before implementing architectural decisions. Present
+  alternatives, explain trade-offs and critically assess the proposed approach.
+- Recommend reasoning effort changes when warranted, naming the suggested
+  level and explaining which part of the task benefits from it.
 
 ## Project
 
