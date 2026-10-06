@@ -112,7 +112,7 @@ func (r *Room) QueueVote(ctx context.Context, actor access.Actor, itemID uuid.UU
 	if item == nil {
 		return notFound("queue item")
 	}
-	if r.current != nil && *r.current == itemID {
+	if r.clock.isCurrent(itemID) {
 		return invalid("the current item cannot be voted on")
 	}
 
@@ -152,7 +152,7 @@ func (r *Room) SkipVote(ctx context.Context, actor access.Actor) error {
 	if !r.info.Settings.VoteMode {
 		return invalid("vote mode is off")
 	}
-	if r.current == nil {
+	if r.clock.current == nil {
 		return errNoCurrent
 	}
 
@@ -176,5 +176,5 @@ func (r *Room) SkipVote(ctx context.Context, actor access.Actor) error {
 // reorderByVotesLocked applies voteOrder and persists the new ranks when
 // anything moved.
 func (r *Room) reorderByVotesLocked(ctx context.Context) error {
-	return r.applyOrderLocked(ctx, voteOrder(r.queue, r.current))
+	return r.applyOrderLocked(ctx, voteOrder(r.queue, r.clock.current))
 }

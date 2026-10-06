@@ -411,7 +411,7 @@ func TestRestoreFromDatabase(t *testing.T) {
 
 	restored, err := load(ctx, f.deps, f.room.ID())
 	require.NoError(t, err)
-	pb := restored.playbackLocked()
+	pb := restored.clock.playback()
 	assert.False(t, pb.Playing)
 	assert.EqualValues(t, 7_000, pb.PositionMs)
 	assert.NotNil(t, pb.ItemID)
@@ -728,7 +728,7 @@ func TestLoopPausesWhenNobodyWatches(t *testing.T) {
 	require.NotNil(t, pb.ItemID)
 	f.room.mu.Lock()
 	assert.Equal(t, "T https://a", f.room.media[f.room.queue[0].MediaID].Title)
-	assert.Equal(t, f.room.queue[0].ID, *f.room.current)
+	assert.Equal(t, f.room.queue[0].ID, *f.room.clock.current)
 	f.room.mu.Unlock()
 	msgs, err := f.repo.ListRecentMessages(ctx, f.room.ID(), 5)
 	require.NoError(t, err)

@@ -8,7 +8,7 @@ func (r *Room) fairReorderLocked(ctx context.Context) error {
 	if !r.info.Settings.FairQueue || r.info.Settings.VoteMode {
 		return nil
 	}
-	return r.applyOrderLocked(ctx, fairOrder(r.queue, r.current))
+	return r.applyOrderLocked(ctx, fairOrder(r.queue, r.clock.current))
 }
 
 // orderedByRule reports whether something other than a moderator's hand

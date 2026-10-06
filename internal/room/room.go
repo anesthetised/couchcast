@@ -152,12 +152,7 @@ type Room struct {
 	played []*entity.QueueItem // history, newest first, at most playedKept
 	media  map[uuid.UUID]*entity.Media
 
-	current    *uuid.UUID
-	playing    bool
-	positionMs int64
-	positionAt time.Time
-	rate       float64 // playback speed, 1 = normal
-	seq        uint64
+	clock clock // the authoritative playback clock (clock.go)
 
 	viewers   map[Conn]*viewer
 	skipVotes map[uuid.UUID]struct{}
@@ -230,15 +225,8 @@ func load(ctx context.Context, deps Deps, id uuid.UUID) (*Room, error) {
 		lastMention: map[uuid.UUID]time.Time{},
 		leftAt:      map[uuid.UUID]time.Time{},
 		leftTimers:  map[uuid.UUID]*time.Timer{},
-		current:     info.CurrentItemID,
-		playing:     info.Playing,
-		positionMs:  info.PositionMs,
-		positionAt:  info.PositionAt,
-		rate:        info.Rate,
+		clock:       clockFrom(info),
 		lastActive:  deps.Now(),
-	}
-	if r.rate <= 0 {
-		r.rate = 1
 	}
 
 	if err := r.reloadQueue(ctx); err != nil {
@@ -248,10 +236,10 @@ func load(ctx context.Context, deps Deps, id uuid.UUID) (*Room, error) {
 
 	// A room restored mid-playback resumes from where it was; the clock
 	// keeps running from the persisted timestamp.
-	if r.current != nil && r.itemByID(*r.current) == nil {
-		r.current, r.playing, r.positionMs = nil, false, 0
+	if r.clock.current != nil && r.itemByID(*r.clock.current) == nil {
+		r.clock.current, r.clock.playing, r.clock.positionMs = nil, false, 0
 	}
-	if r.playing {
+	if r.clock.playing {
 		r.scheduleAdvanceLocked()
 	}
 	// Restored playing with nobody connected yet (after a restart).
@@ -361,10 +349,10 @@ func (r *Room) indexOf(id uuid.UUID) int {
 }
 
 func (r *Room) currentMedia() *entity.Media {
-	if r.current == nil {
+	if r.clock.current == nil {
 		return nil
 	}
-	it := r.itemByID(*r.current)
+	it := r.itemByID(*r.clock.current)
 	if it == nil {
 		return nil
 	}
@@ -373,36 +361,23 @@ func (r *Room) currentMedia() *entity.Media {
 
 // --- playback math -----------------------------------------------------------
 
-// positionLocked returns the position at time t.
-func (r *Room) positionLocked(t time.Time) int64 {
-	if !r.playing {
-		return r.positionMs
-	}
-	pos := r.positionMs + int64(float64(t.Sub(r.positionAt).Milliseconds())*r.rate)
-	if m := r.currentMedia(); m != nil && m.DurationMs > 0 && pos > m.DurationMs {
+// currentDurationLocked is the current media's length (0: unknown).
+func (r *Room) currentDurationLocked() int64 {
+	if m := r.currentMedia(); m != nil {
 		return m.DurationMs
 	}
-	return pos
+	return 0
 }
 
-func (r *Room) playbackLocked() protocol.Playback {
-	return protocol.Playback{
-		Type: protocol.TypePlayback, ItemID: r.current, Playing: r.playing,
-		PositionMs: r.positionMs, AtServerMs: r.positionAt.UnixMilli(), Rate: r.rate, Seq: r.seq,
-	}
+// positionLocked returns the position at time t.
+func (r *Room) positionLocked(t time.Time) int64 {
+	return r.clock.position(t, r.currentDurationLocked())
 }
 
-func (r *Room) stateLocked() entity.PlaybackState {
-	return entity.PlaybackState{CurrentItemID: r.current, Playing: r.playing, PositionMs: r.positionMs, PositionAt: r.positionAt, Rate: r.rate}
-}
-
-// setPlayback updates the clock: freezes the current position and restarts
-// it from now with the new playing flag.
+// setPlaybackLocked restarts the clock from now and re-arms what depends
+// on it: the end-of-item timer and the empty-room pause.
 func (r *Room) setPlaybackLocked(playing bool, positionMs int64) {
-	r.playing = playing
-	r.positionMs = positionMs
-	r.positionAt = r.now()
-	r.seq++
+	r.clock.restart(playing, positionMs, r.now())
 	r.scheduleAdvanceLocked()
 	r.armEmptyPauseLocked()
 }
@@ -410,7 +385,7 @@ func (r *Room) setPlaybackLocked(playing bool, positionMs int64) {
 // armEmptyPauseLocked starts the empty-room countdown when the room is
 // playing with nobody in it; it is a no-op otherwise or when armed.
 func (r *Room) armEmptyPauseLocked() {
-	if !r.info.Settings.PauseWhenEmpty || !r.playing || len(r.viewers) > 0 || r.emptyTimer != nil {
+	if !r.info.Settings.PauseWhenEmpty || !r.clock.playing || len(r.viewers) > 0 || r.emptyTimer != nil {
 		return
 	}
 	r.emptyTimer = time.AfterFunc(r.rejoinGrace(), r.pauseIfEmpty)
@@ -432,7 +407,7 @@ func (r *Room) pauseIfEmpty() {
 		return
 	}
 	r.emptyTimer = nil
-	if !r.info.Settings.PauseWhenEmpty || !r.playing || len(r.viewers) > 0 {
+	if !r.info.Settings.PauseWhenEmpty || !r.clock.playing || len(r.viewers) > 0 {
 		return
 	}
 	r.setPlaybackLocked(false, r.positionLocked(r.now()))
@@ -450,15 +425,12 @@ func (r *Room) scheduleAdvanceLocked() {
 		r.advance = nil
 	}
 	m := r.currentMedia()
-	if !r.playing || m == nil || m.DurationMs <= 0 || r.current == nil {
+	if !r.clock.playing || m == nil || m.DurationMs <= 0 || r.clock.current == nil {
 		return
 	}
-	remaining := time.Duration(float64(m.DurationMs-r.positionLocked(r.now()))/r.rate) * time.Millisecond
-	if remaining < 0 {
-		remaining = 0
-	}
-	itemID := *r.current
-	seq := r.seq
+	remaining := r.clock.remaining(r.now(), m.DurationMs)
+	itemID := *r.clock.current
+	seq := r.clock.seq
 	r.advance = time.AfterFunc(remaining+500*time.Millisecond, func() { r.onEnded(itemID, seq) })
 }
 
@@ -469,7 +441,7 @@ func (r *Room) onEnded(itemID uuid.UUID, seq uint64) {
 	if r.closed {
 		return
 	}
-	if r.current == nil || *r.current != itemID || r.seq != seq || !r.playing {
+	if r.clock.current == nil || *r.clock.current != itemID || r.clock.seq != seq || !r.clock.playing {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -485,15 +457,15 @@ func (r *Room) onEnded(itemID uuid.UUID, seq uint64) {
 func (r *Room) setCurrentLocked(item *entity.QueueItem) {
 	r.skipVotes = map[uuid.UUID]struct{}{}
 	if item == nil {
-		r.current = nil
+		r.clock.current = nil
 		r.setPlaybackLocked(false, 0)
 		return
 	}
 	r.endWaitLocked(false)
 	r.cancelCountdownLocked()
 	id := item.ID
-	r.current = &id
-	r.rate = 1 // a new video always starts at normal speed
+	r.clock.current = &id
+	r.clock.rate = 1 // a new video always starts at normal speed
 	m := r.media[item.MediaID]
 	r.setPlaybackLocked(m.IsReady(), 0)
 
@@ -538,7 +510,7 @@ func (r *Room) SetRate(ctx context.Context, actor access.Actor, rate float64) er
 	if err := r.requireLocked(actor, access.ControlPlayback); err != nil {
 		return err
 	}
-	if r.current == nil {
+	if r.clock.current == nil {
 		return errNoCurrent
 	}
 	ok := false
@@ -551,13 +523,13 @@ func (r *Room) SetRate(ctx context.Context, actor access.Actor, rate float64) er
 	if !ok {
 		return invalid("rate must be one of 0.5, 0.75, 1, 1.25, 1.5, 2")
 	}
-	if rate == r.rate {
+	if rate == r.clock.rate {
 		return nil
 	}
 	// Fold the elapsed time in at the old speed, then switch.
 	pos := r.positionLocked(r.now())
-	r.rate = rate
-	r.setPlaybackLocked(r.playing, pos)
+	r.clock.rate = rate
+	r.setPlaybackLocked(r.clock.playing, pos)
 	r.savePlaybackLocked(ctx)
 	r.logLocked(ctx, fmt.Sprintf("%s set speed to %g×", actor.User.Username, rate))
 	r.broadcastPlaybackLocked()
@@ -566,11 +538,11 @@ func (r *Room) SetRate(ctx context.Context, actor access.Actor, rate float64) er
 
 // nextLocked drops the current item and advances to the following one.
 func (r *Room) nextLocked(ctx context.Context) error {
-	if r.current == nil {
+	if r.clock.current == nil {
 		return errNoCurrent
 	}
-	idx := r.indexOf(*r.current)
-	if err := r.markPlayedLocked(ctx, *r.current); err != nil {
+	idx := r.indexOf(*r.clock.current)
+	if err := r.markPlayedLocked(ctx, *r.clock.current); err != nil {
 		return err
 	}
 
@@ -610,7 +582,7 @@ func (r *Room) nextLocked(ctx context.Context) error {
 		if len(r.viewers) == 0 && next != nil {
 			r.skipVotes = map[uuid.UUID]struct{}{}
 			id := next.ID
-			r.current, r.rate = &id, 1
+			r.clock.current, r.clock.rate = &id, 1
 			r.setPlaybackLocked(false, 0)
 			r.logLocked(ctx, "queue restarted from the top, paused until someone is back")
 			r.savePlaybackLocked(ctx)
@@ -641,13 +613,13 @@ func (r *Room) savePlaybackLocked(ctx context.Context) {
 func (r *Room) persistLocked(ctx context.Context) error {
 	r.lastPersist = r.now()
 	// The session has started: the announcement has served its purpose.
-	if r.playing && r.info.ScheduledAt != nil {
+	if r.clock.playing && r.info.ScheduledAt != nil {
 		r.info.ScheduledAt = nil
 		if err := r.deps.Store.SetRoomSchedule(ctx, r.info.ID, nil); err != nil {
 			r.deps.Logger.Warn("clear schedule", "room", r.info.Slug, "error", err)
 		}
 	}
-	return r.deps.Store.UpdateRoomPlayback(ctx, r.info.ID, r.stateLocked())
+	return r.deps.Store.UpdateRoomPlayback(ctx, r.info.ID, r.clock.state())
 }
 
 // --- snapshot & broadcast ----------------------------------------------------
@@ -679,7 +651,7 @@ func (r *Room) snapshotLocked() protocol.Snapshot {
 			Settings: r.info.Settings, Owner: r.owner, Description: r.info.Description, Pinned: r.pinned,
 			ScheduledMs: unixMs(r.info.ScheduledAt),
 		},
-		Playback: r.playbackLocked(),
+		Playback: r.clock.playback(),
 		Waiting:  r.waiting,
 		CountdownMs: func() int64 {
 			if r.countdown == nil {
@@ -695,7 +667,7 @@ func (r *Room) snapshotLocked() protocol.Snapshot {
 	for _, it := range r.queue {
 		snap.Queue = append(snap.Queue, protocol.QueueEntry{
 			ID: it.ID, Media: r.mediaInfoLocked(r.media[it.MediaID]), AddedBy: it.AddedByName, Votes: it.Votes,
-			Current: r.current != nil && *r.current == it.ID,
+			Current: r.clock.isCurrent(it.ID),
 		})
 	}
 	snap.Played = make([]protocol.QueueEntry, 0, len(r.played))
@@ -787,7 +759,7 @@ func (r *Room) flushPresence() {
 
 // broadcastPlaybackLocked sends only the clock: cheaper and jitter-free.
 func (r *Room) broadcastPlaybackLocked() {
-	pb := r.playbackLocked()
+	pb := r.clock.playback()
 	for _, v := range r.viewers {
 		v.conn.Send(pb)
 	}
@@ -946,7 +918,7 @@ func (r *Room) Kick(userID uuid.UUID, reason string) {
 func (r *Room) Playback() protocol.Playback {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	pb := r.playbackLocked()
+	pb := r.clock.playback()
 	pb.Type = ""
 	return pb
 }
@@ -977,7 +949,7 @@ func (r *Room) Debug() DebugState {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	d := DebugState{
-		Playback: r.playbackLocked(), ServerMs: r.now().UnixMilli(), Viewers: len(r.viewers),
+		Playback: r.clock.playback(), ServerMs: r.now().UnixMilli(), Viewers: len(r.viewers),
 		Buffering: []string{}, Settings: r.info.Settings, Played: len(r.played), Unsaved: r.unsaved,
 	}
 	d.Playback.Type = ""
@@ -990,7 +962,7 @@ func (r *Room) Debug() DebugState {
 		if i == 5 {
 			break
 		}
-		item := DebugItem{ID: it.ID, MediaID: it.MediaID, Current: r.current != nil && *r.current == it.ID}
+		item := DebugItem{ID: it.ID, MediaID: it.MediaID, Current: r.clock.isCurrent(it.ID)}
 		if m := r.media[it.MediaID]; m != nil {
 			item.Title, item.Status = m.Title, m.Status
 		}
@@ -1018,7 +990,7 @@ func (r *Room) Report(conn Conn, state string, positionMs int64) {
 	// only changes (and is broadcast) when that moves by half a second
 	// or crosses the one-second "in sync" band.
 	changed := false
-	if r.current != nil && state != "ended" {
+	if r.clock.current != nil && state != "ended" {
 		if lag := lagOf(r.positionLocked(r.now()) - positionMs); lag != v.lagMs {
 			v.lagMs = lag
 			changed = true
@@ -1093,7 +1065,7 @@ func (r *Room) checkBufferingLocked() {
 		}
 		return
 	}
-	if !r.info.Settings.WaitForBuffering || !r.playing || len(stuck) == 0 {
+	if !r.info.Settings.WaitForBuffering || !r.clock.playing || len(stuck) == 0 {
 		if r.bufferTimer != nil {
 			r.bufferTimer.Stop()
 			r.bufferTimer = nil
@@ -1123,7 +1095,7 @@ func (r *Room) startWaiting() {
 	}
 	r.bufferTimer = nil
 	stuck := r.stuckLocked()
-	if !r.info.Settings.WaitForBuffering || !r.playing || len(stuck) == 0 || r.waiting != nil {
+	if !r.info.Settings.WaitForBuffering || !r.clock.playing || len(stuck) == 0 || r.waiting != nil {
 		return
 	}
 	r.waiting = stuck
@@ -1169,8 +1141,8 @@ func (r *Room) endWaitLocked(resume bool) {
 		return
 	}
 	r.waiting = nil
-	if resume && !r.playing && r.current != nil {
-		r.setPlaybackLocked(true, r.positionMs)
+	if resume && !r.clock.playing && r.clock.current != nil {
+		r.setPlaybackLocked(true, r.clock.positionMs)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		r.savePlaybackLocked(ctx)
@@ -1214,13 +1186,10 @@ func (r *Room) play(ctx context.Context, actor access.Actor, countdown bool) err
 		return invalid("media is not ready yet")
 	}
 	r.endWaitLocked(false)
-	if r.playing {
+	if r.clock.playing {
 		return nil
 	}
-	pos := r.positionMs
-	if m.DurationMs > 0 && pos >= m.DurationMs {
-		pos = 0
-	}
+	pos := startFrom(r.clock.positionMs, m.DurationMs)
 	// The announced session starts with a countdown, as does any start a
 	// moderator asks to count down; a second play during it starts now.
 	if (countdown || r.info.ScheduledAt != nil) && r.countdown == nil {
@@ -1249,14 +1218,11 @@ func (r *Room) endCountdown() {
 	}
 	r.countdown, r.countdownTimer = nil, nil
 	m := r.currentMedia()
-	if m == nil || !m.IsReady() || r.playing {
+	if m == nil || !m.IsReady() || r.clock.playing {
 		r.broadcastLocked()
 		return
 	}
-	pos := r.positionMs
-	if m.DurationMs > 0 && pos >= m.DurationMs {
-		pos = 0
-	}
+	pos := startFrom(r.clock.positionMs, m.DurationMs)
 	r.setPlaybackLocked(true, pos)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -1283,12 +1249,12 @@ func (r *Room) Pause(ctx context.Context, actor access.Actor) error {
 	if err := r.requireLocked(actor, access.ControlPlayback); err != nil {
 		return err
 	}
-	if r.current == nil {
+	if r.clock.current == nil {
 		return errNoCurrent
 	}
 	r.endWaitLocked(false)
 	r.cancelCountdownLocked()
-	if !r.playing {
+	if !r.clock.playing {
 		return nil
 	}
 	r.setPlaybackLocked(false, r.positionLocked(r.now()))
@@ -1308,13 +1274,7 @@ func (r *Room) Seek(ctx context.Context, actor access.Actor, positionMs int64) e
 	if m == nil {
 		return errNoCurrent
 	}
-	if positionMs < 0 {
-		positionMs = 0
-	}
-	if m.DurationMs > 0 && positionMs > m.DurationMs {
-		positionMs = m.DurationMs
-	}
-	r.setPlaybackLocked(r.playing && m.IsReady(), positionMs)
+	r.setPlaybackLocked(r.clock.playing && m.IsReady(), clampSeek(positionMs, m.DurationMs))
 	r.savePlaybackLocked(ctx)
 	r.broadcastPlaybackLocked()
 	return nil
@@ -1327,7 +1287,7 @@ func (r *Room) Next(ctx context.Context, actor access.Actor) error {
 	if err := r.requireLocked(actor, access.ControlPlayback); err != nil {
 		return err
 	}
-	if r.current == nil {
+	if r.clock.current == nil {
 		return errNoCurrent
 	}
 	// Logged first so a loop restart reads after the skip in the chat.
@@ -1350,8 +1310,8 @@ func (r *Room) Jump(ctx context.Context, actor access.Actor, itemID uuid.UUID) e
 	if target == nil {
 		return notFound("queue item")
 	}
-	if r.current != nil && *r.current != itemID {
-		if err := r.markPlayedLocked(ctx, *r.current); err != nil {
+	if r.clock.current != nil && *r.clock.current != itemID {
+		if err := r.markPlayedLocked(ctx, *r.clock.current); err != nil {
 			return err
 		}
 	}
@@ -1422,8 +1382,8 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, 
 	}
 	r.queue = append(r.queue, item)
 	r.media[media.ID] = media
-	if next && r.orderedByRule() == "" && r.current != nil && len(r.queue) > 1 {
-		ordered, err := placeAfter(r.queue, len(r.queue)-1, r.current, r.current)
+	if next && r.orderedByRule() == "" && r.clock.current != nil && len(r.queue) > 1 {
+		ordered, err := placeAfter(r.queue, len(r.queue)-1, r.clock.current, r.clock.current)
 		if err != nil {
 			return err
 		}
@@ -1438,7 +1398,7 @@ func (r *Room) QueueAdd(ctx context.Context, actor access.Actor, rawURL string, 
 		r.logLocked(ctx, actor.User.Username+" added "+mediaLabel(media))
 	}
 
-	if r.current == nil {
+	if r.clock.current == nil {
 		r.setCurrentLocked(item)
 		r.savePlaybackLocked(ctx)
 	}
@@ -1557,9 +1517,9 @@ func (r *Room) QueueAddMany(ctx context.Context, actor access.Actor, urls []stri
 	for i, item := range added {
 		r.media[item.MediaID] = medias[i]
 	}
-	if next && r.orderedByRule() == "" && r.current != nil {
+	if next && r.orderedByRule() == "" && r.clock.current != nil {
 		// One re-rank for the whole batch: current, the batch, the rest.
-		if err := r.applyOrderLocked(ctx, batchAfterCurrent(r.queue, added, r.current)); err != nil {
+		if err := r.applyOrderLocked(ctx, batchAfterCurrent(r.queue, added, r.clock.current)); err != nil {
 			return err
 		}
 	} else {
@@ -1578,7 +1538,7 @@ func (r *Room) QueueAddMany(ctx context.Context, actor access.Actor, urls []stri
 		}
 		r.logLocked(ctx, line)
 	}
-	if r.current == nil {
+	if r.clock.current == nil {
 		r.setCurrentLocked(added[0])
 		r.savePlaybackLocked(ctx)
 	}
@@ -1609,12 +1569,12 @@ func (r *Room) QueueClear(ctx context.Context, actor access.Actor) error {
 	if err := r.requireLocked(actor, access.ManageQueue); err != nil {
 		return err
 	}
-	if err := r.deps.Store.ClearQueue(ctx, r.info.ID, r.current); err != nil {
+	if err := r.deps.Store.ClearQueue(ctx, r.info.ID, r.clock.current); err != nil {
 		return err
 	}
 	kept := r.queue[:0]
 	for _, it := range r.queue {
-		if r.current != nil && it.ID == *r.current {
+		if r.clock.current != nil && it.ID == *r.clock.current {
 			kept = append(kept, it)
 		}
 	}
@@ -1639,13 +1599,13 @@ func (r *Room) QueueShuffle(ctx context.Context, actor access.Actor) error {
 		return invalid(why)
 	}
 	waiting := len(r.queue)
-	if r.current != nil && len(r.queue) > 0 && r.queue[0].ID == *r.current {
+	if r.clock.current != nil && len(r.queue) > 0 && r.queue[0].ID == *r.clock.current {
 		waiting--
 	}
 	if waiting < 2 {
 		return nil
 	}
-	if err := r.applyOrderLocked(ctx, shuffled(r.queue, r.current, rand.Shuffle)); err != nil {
+	if err := r.applyOrderLocked(ctx, shuffled(r.queue, r.clock.current, rand.Shuffle)); err != nil {
 		return err
 	}
 	if actor.User != nil {
@@ -1703,7 +1663,7 @@ func (r *Room) QueueReplay(ctx context.Context, actor access.Actor, itemID uuid.
 	if err := r.fairReorderLocked(ctx); err != nil {
 		return err
 	}
-	if r.current == nil {
+	if r.clock.current == nil {
 		r.setCurrentLocked(item)
 		r.savePlaybackLocked(ctx)
 	}
@@ -1753,12 +1713,12 @@ func (r *Room) QueueRemove(ctx context.Context, actor access.Actor, itemID uuid.
 	}
 	// Members may remove what they added themselves.
 	own := actor.User != nil && item.AddedBy != nil && *item.AddedBy == actor.User.ID
-	if !own || item.ID == ptrVal(r.current) {
+	if !own || r.clock.isCurrent(item.ID) {
 		if err := r.requireLocked(actor, access.ManageQueue); err != nil {
 			return err
 		}
 	}
-	if r.current != nil && *r.current == itemID {
+	if r.clock.isCurrent(itemID) {
 		if err := r.nextLocked(ctx); err != nil {
 			return err
 		}
@@ -1790,11 +1750,11 @@ func (r *Room) QueueMove(ctx context.Context, actor access.Actor, itemID uuid.UU
 	if idx < 0 {
 		return notFound("queue item")
 	}
-	if r.current != nil && *r.current == itemID {
+	if r.clock.isCurrent(itemID) {
 		return invalid("the current item cannot be moved")
 	}
 
-	ordered, err := placeAfter(r.queue, idx, afterID, r.current)
+	ordered, err := placeAfter(r.queue, idx, afterID, r.clock.current)
 	if err != nil {
 		return err
 	}
@@ -1847,7 +1807,7 @@ func (r *Room) mediaUpdatedLocked(m *entity.Media) bool {
 	r.media[m.ID] = m
 
 	// The current item just became playable: start it.
-	if cur := r.currentMedia(); cur != nil && cur.ID == m.ID && m.IsReady() && !old.IsReady() && !r.playing && r.positionMs == 0 {
+	if cur := r.currentMedia(); cur != nil && cur.ID == m.ID && m.IsReady() && !old.IsReady() && !r.clock.playing && r.clock.positionMs == 0 {
 		r.setPlaybackLocked(true, 0)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -1900,7 +1860,7 @@ func (r *Room) ReloadQueue(ctx context.Context) error {
 	if err := r.reloadQueue(ctx); err != nil {
 		return err
 	}
-	if r.current != nil && r.itemByID(*r.current) == nil {
+	if r.clock.current != nil && r.itemByID(*r.clock.current) == nil {
 		var next *entity.QueueItem
 		if len(r.queue) > 0 {
 			next = r.queue[0]
@@ -1924,7 +1884,7 @@ func (r *Room) Refresh(ctx context.Context) error {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	info.CurrentItemID, info.Playing, info.PositionMs, info.PositionAt = r.current, r.playing, r.positionMs, r.positionAt
+	info.CurrentItemID, info.Playing, info.PositionMs, info.PositionAt = r.clock.current, r.clock.playing, r.clock.positionMs, r.clock.positionAt
 	r.info = info
 	r.owner = owner.Username
 	// Roles may have changed under connected viewers (ownership transfer).
@@ -1980,7 +1940,7 @@ func (r *Room) Tick(ctx context.Context, idleAfter time.Duration) (idle bool) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := r.now()
-	if r.unsaved || (r.playing && now.Sub(r.lastPersist) >= r.deps.PersistEvery) {
+	if r.unsaved || (r.clock.playing && now.Sub(r.lastPersist) >= r.deps.PersistEvery) {
 		wasUnsaved := r.unsaved
 		r.savePlaybackLocked(ctx)
 		if wasUnsaved && !r.unsaved {
@@ -1988,7 +1948,7 @@ func (r *Room) Tick(ctx context.Context, idleAfter time.Duration) (idle bool) {
 		}
 	}
 	// An unsaved room stays loaded: dropping it would lose the state.
-	return !r.unsaved && !r.playing && len(r.viewers) == 0 && now.Sub(r.lastActive) > idleAfter
+	return !r.unsaved && !r.clock.playing && len(r.viewers) == 0 && now.Sub(r.lastActive) > idleAfter
 }
 
 // shutdown stops timers and persists state before the room is unloaded.
@@ -2023,11 +1983,4 @@ func (r *Room) closeLocked() {
 	for _, t := range r.leftTimers {
 		t.Stop()
 	}
-}
-
-func ptrVal(p *uuid.UUID) uuid.UUID {
-	if p == nil {
-		return uuid.Nil()
-	}
-	return *p
 }
