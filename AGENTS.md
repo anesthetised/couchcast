@@ -12,12 +12,18 @@ Guidance for AI coding agents working in this repository.
   assistant in every AI-assisted commit.
 - Commits are allowed without asking. Push only when the user explicitly
   requests it.
-- Prioritize meaningful test coverage and benchmarks. Verify correctness
-  with tests and performance claims with representative measurements.
+- Track substantial changes in issues and implement them on separate
+  branches. Obtain the user's agreement before opening a pull request;
+  pushing still requires an explicit request.
+- Prioritize documentation, meaningful test coverage and benchmarks.
+  Keep documentation current, verify correctness with tests and support
+  performance claims with representative measurements.
 - Consult the user before implementing architectural decisions. Present
   alternatives, explain trade-offs and critically assess the proposed approach.
 - Recommend reasoning effort changes when warranted, naming the suggested
   level and explaining which part of the task benefits from it.
+- Use applicable skills when appropriate, especially ponytail for keeping
+  implementation simple and avoiding unnecessary complexity.
 
 ## Project
 
