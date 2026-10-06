@@ -2,6 +2,18 @@
 
 Guidance for AI coding agents working in this repository.
 
+## Collaboration preferences
+
+- Communicate with the user in Russian. Everything else, including code
+  comments, documentation, issues, pull requests and other GitHub content,
+  must be in English.
+- Use Conventional Commits. When a commit or pull request completes an
+  issue, include `Closes #N` in its body.
+- Include a `Co-authored-by: Name <email>` trailer crediting the AI
+  assistant in every AI-assisted commit.
+- Commits are allowed without asking. Push only when the user explicitly
+  requests it.
+
 ## Project
 
 couchcast is a watch-together service: users create rooms, queue videos
