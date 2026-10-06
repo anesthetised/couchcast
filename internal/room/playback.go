@@ -109,7 +109,7 @@ func (r *Room) setCurrentLocked(item *entity.QueueItem) {
 	r.setPlaybackLocked(m.IsReady(), 0)
 
 	// Whoever queued it hears about it if they are not watching.
-	if r.deps.Notifier != nil && item.AddedBy != nil && !r.connectedLocked(*item.AddedBy) {
+	if r.deps.Notifier != nil && item.AddedBy != nil && !r.userOnlineLocked(*item.AddedBy) {
 		r.deps.Notifier.Notify(*item.AddedBy, notify.Message{
 			Title: "Your video is starting",
 			Body:  mediaTitle(m) + " — " + r.info.Name,

@@ -18,16 +18,6 @@ import (
 // Everything here runs under the room's mutex; the only database writes
 // are chat log lines and the clock when the room pauses or resumes.
 
-// connectedLocked reports whether the user has a live connection here.
-func (r *Room) connectedLocked(user uuid.UUID) bool {
-	for _, v := range r.viewers {
-		if v.user != nil && v.user.ID == user {
-			return true
-		}
-	}
-	return false
-}
-
 // Join registers a connection and sends it the welcome message with the
 // chat backlog.
 func (r *Room) Join(ctx context.Context, conn Conn, actor access.Actor) {
@@ -98,7 +88,7 @@ func (r *Room) onLeftLocked(ctx context.Context, userID uuid.UUID, username stri
 	r.logLocked(ctx, username+" left")
 }
 
-// userOnlineLocked reports whether the user has another connection.
+// userOnlineLocked reports whether the user has a live connection here.
 func (r *Room) userOnlineLocked(userID uuid.UUID) bool {
 	for _, v := range r.viewers {
 		if v.user != nil && v.user.ID == userID {

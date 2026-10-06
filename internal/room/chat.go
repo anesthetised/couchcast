@@ -187,7 +187,7 @@ func (r *Room) notifyMentionsLocked(ctx context.Context, actor access.Actor, msg
 	}
 	now := r.now()
 	for _, id := range ids {
-		if r.connectedLocked(id) || now.Sub(r.lastMention[id]) < mentionPushEvery {
+		if r.userOnlineLocked(id) || now.Sub(r.lastMention[id]) < mentionPushEvery {
 			continue
 		}
 		if !r.info.IsPublic() {
