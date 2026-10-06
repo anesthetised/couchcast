@@ -399,6 +399,101 @@ func TestKeepLeaseStopsWhenRenewalsFail(t *testing.T) {
 	assert.Less(t, time.Since(start), q.Lease, "stops before the lease could be recovered")
 }
 
+func TestKeepLeaseStopsWhenRenewalBlocks(t *testing.T) {
+	for _, blocked := range []string{"row lock", "pool acquisition"} {
+		t.Run(blocked, func(t *testing.T) {
+			shared := repotest.Pool(t)
+			config := shared.Config().Copy()
+			config.MaxConns = 1
+			pool, err := pgxpool.NewWithConfig(context.Background(), config)
+			require.NoError(t, err)
+			defer pool.Close()
+			q := New(pool)
+			q.Lease = time.Second
+			_, err = q.Enqueue(context.Background(), nil, "ingest", nil, 3)
+			require.NoError(t, err)
+			job, err := q.Claim(context.Background(), "test", []string{"ingest"})
+			require.NoError(t, err)
+
+			locker := shared
+			if blocked == "pool acquisition" {
+				locker = pool
+			}
+			tx, err := locker.Begin(context.Background())
+			require.NoError(t, err)
+			defer tx.Rollback(context.Background()) //nolint:errcheck // test cleanup
+			_, err = tx.Exec(context.Background(), `SELECT id FROM jobs WHERE id = $1 FOR UPDATE`, job.ID)
+			require.NoError(t, err)
+
+			ctx, cancel := context.WithCancelCause(context.Background())
+			defer cancel(nil)
+			finished := make(chan struct{})
+			start := time.Now()
+			go func() {
+				defer close(finished)
+				(&Worker{queue: q}).keepLease(ctx, job, cancel, slog.New(slog.DiscardHandler))
+			}()
+			select {
+			case <-ctx.Done():
+				assert.ErrorIs(t, context.Cause(ctx), ErrLeaseLost)
+				assert.GreaterOrEqual(t, time.Since(start), q.Lease*3/5)
+				assert.Less(t, time.Since(start), q.Lease)
+			case <-time.After(q.Lease):
+				t.Error("a blocked renewal outlived the lease safety window")
+				cancel(nil)
+			}
+			<-finished
+		})
+	}
+}
+
+func TestWorkerFinalizationIsBoundedAfterCancellation(t *testing.T) {
+	for _, outcome := range []string{"complete", "fail"} {
+		t.Run(outcome, func(t *testing.T) {
+			pool := repotest.Pool(t)
+			q := New(pool)
+			_, err := q.Enqueue(context.Background(), nil, "ingest", nil, 3)
+			require.NoError(t, err)
+			job, err := q.Claim(context.Background(), "test", []string{"ingest"})
+			require.NoError(t, err)
+
+			tx, err := pool.Begin(context.Background())
+			require.NoError(t, err)
+			defer tx.Rollback(context.Background()) //nolint:errcheck // test cleanup
+			_, err = tx.Exec(context.Background(), `SELECT id FROM jobs WHERE id = $1 FOR UPDATE`, job.ID)
+			require.NoError(t, err)
+
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			w := NewWorker(q, slog.New(slog.DiscardHandler), "test", nil, func(context.Context, *Job) error {
+				cancel()
+				if outcome == "fail" {
+					return errors.New("interrupted")
+				}
+				return nil
+			})
+			finished := make(chan struct{})
+			start := time.Now()
+			go func() {
+				defer close(finished)
+				w.run(ctx, job, 0)
+			}()
+			select {
+			case <-finished:
+				assert.GreaterOrEqual(t, time.Since(start), FinalizeTimeout, "finalization is attempted despite parent cancellation")
+			case <-time.After(FinalizeTimeout + 2*time.Second):
+				t.Error("blocked finalization prevented the worker from stopping")
+				require.NoError(t, tx.Rollback(context.Background()))
+				<-finished
+			}
+			got, err := scanJob(pool.QueryRow(context.Background(), `SELECT `+jobColumns+` FROM jobs WHERE id = $1`, job.ID))
+			require.NoError(t, err)
+			assert.Equal(t, StatusRunning, got.Status, "timed-out finalization leaves the job for lease recovery")
+			assert.Empty(t, got.LastError)
+		})
+	}
+}
+
 // terminateListener drops the server side of the connection listening on
 // channel, as a network blip or a database restart would.
 func terminateListener(t *testing.T, pool *pgxpool.Pool, channel string) {

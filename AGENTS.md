@@ -179,6 +179,10 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
   with a `jobs.lease` token: the worker renews it every `Lease/5`
   (`DefaultLease` 5 min) and cancels the handler with `ErrLeaseLost` when
   the job was taken away or no renewal got through for 3/5 of the lease;
+  an independent watchdog enforces that window even while a renewal is
+  blocked. Renewal queries are bounded by the smaller of 5 s and `Lease/5`;
+  job finalization and failed-media publication get a fresh 5 s deadline
+  even after the attempt's context was cancelled.
   `Renew`, `Complete`, `Fail` and `Queue.Fenced` (a transaction holding
   the job row) only act for the current lease. The ingest publishes the
   finished media (`PublishMedia`, one statement) and marks failures

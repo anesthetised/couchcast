@@ -37,12 +37,13 @@ import (
 // fakeSource is an extractor whose "downloads" are short clips rendered
 // by ffmpeg, so the rest of the pipeline runs for real.
 type fakeSource struct {
-	ffmpeg    string
-	probe     *source.Probe
-	probeErr  error
-	failDL    error
-	mu        sync.Mutex
-	downloads int
+	ffmpeg      string
+	probe       *source.Probe
+	probeErr    error
+	probeCancel context.CancelFunc
+	failDL      error
+	mu          sync.Mutex
+	downloads   int
 }
 
 func (f *fakeSource) Key(url string) (string, bool) {
@@ -53,6 +54,9 @@ func (f *fakeSource) Key(url string) (string, bool) {
 }
 
 func (f *fakeSource) Probe(context.Context, string) (*source.Probe, error) {
+	if f.probeCancel != nil {
+		f.probeCancel()
+	}
 	return f.probe, f.probeErr
 }
 
@@ -430,6 +434,40 @@ func TestStaleAttemptDoesNotFailTheMedia(t *testing.T) {
 	got, err := p.repo.GetMedia(ctx, m.ID)
 	require.NoError(t, err)
 	assert.NotEqual(t, entity.MediaFailed, got.Status, "the job is someone else's now")
+	assert.Empty(t, got.Error)
+}
+
+func TestFailedMediaPublicationIsBoundedAfterCancellation(t *testing.T) {
+	p := newPipeline(t)
+	m, err := p.svc.EnsureMedia(context.Background(), p.repo.Pool(), "https://video.test/blocked-failure")
+	require.NoError(t, err)
+	job, err := p.queue.Claim(context.Background(), "test", []string{JobKind})
+	require.NoError(t, err)
+	tx, err := p.repo.Pool().Begin(context.Background())
+	require.NoError(t, err)
+	defer tx.Rollback(context.Background()) //nolint:errcheck // test cleanup
+	_, err = tx.Exec(context.Background(), `SELECT id FROM jobs WHERE id = $1 FOR UPDATE`, job.ID)
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	p.src.probeCancel = cancel
+	p.src.probeErr = errors.New("probe interrupted")
+	finished := make(chan error, 1)
+	start := time.Now()
+	go func() { finished <- p.worker.Handle(ctx, job) }()
+	select {
+	case err := <-finished:
+		assert.ErrorIs(t, err, p.src.probeErr)
+		assert.GreaterOrEqual(t, time.Since(start), jobs.FinalizeTimeout, "failure publication is attempted despite parent cancellation")
+	case <-time.After(jobs.FinalizeTimeout + 2*time.Second):
+		t.Error("blocked failed-media publication outlived its deadline")
+		require.NoError(t, tx.Rollback(context.Background()))
+		<-finished
+	}
+	got, err := p.repo.GetMedia(context.Background(), m.ID)
+	require.NoError(t, err)
+	assert.NotEqual(t, entity.MediaFailed, got.Status, "timed-out publication leaves the media untouched")
 	assert.Empty(t, got.Error)
 }
 

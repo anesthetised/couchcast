@@ -75,7 +75,8 @@ func (w *Worker) Handle(ctx context.Context, job *jobs.Job) error {
 		}
 		// Only while this attempt owns the job: one that lost its lease
 		// must not mark failed what another attempt is working on.
-		fctx := context.WithoutCancel(ctx)
+		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), jobs.FinalizeTimeout)
+		defer cancel()
 		ferr := w.queue.Fenced(fctx, job, func(tx pgx.Tx) error {
 			if err := w.repo.FailMedia(fctx, tx, media.ID, msg); err != nil {
 				return err

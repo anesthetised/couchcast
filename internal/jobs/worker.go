@@ -13,6 +13,10 @@ import (
 // (or Permanent(err) to fail immediately).
 type Handler func(ctx context.Context, job *Job) error
 
+// FinalizeTimeout bounds result recording after the attempt's context ends.
+// Ingest uses the same bound when publishing a failed media row.
+const FinalizeTimeout = 5 * time.Second
+
 // Worker pulls jobs of the given kinds with a fixed concurrency.
 type Worker struct {
 	queue   *Queue
@@ -125,24 +129,25 @@ func (w *Worker) run(ctx context.Context, job *Job, slot int) {
 		w.keepLease(hctx, job, cancel, log)
 	}()
 	err := w.handler(hctx, job)
-	lost := errors.Is(context.Cause(hctx), ErrLeaseLost)
 	cancel(nil)
 	<-kept
 
 	// Another attempt may own the job now: its outcome is not ours to write.
-	if lost {
+	if errors.Is(context.Cause(hctx), ErrLeaseLost) {
 		log.Warn("job lost its lease; the result is dropped", "error", err, "duration", time.Since(start))
 		return
 	}
+	fctx, finish := context.WithTimeout(context.WithoutCancel(ctx), FinalizeTimeout)
+	defer finish()
 	if err != nil {
-		retry, ferr := w.queue.Fail(context.WithoutCancel(ctx), job, err)
+		retry, ferr := w.queue.Fail(fctx, job, err)
 		if ferr != nil {
 			log.Error("record job failure", "error", ferr)
 		}
 		log.Warn("job failed", "error", err, "retry", retry, "duration", time.Since(start))
 		return
 	}
-	if err := w.queue.Complete(context.WithoutCancel(ctx), job); err != nil {
+	if err := w.queue.Complete(fctx, job); err != nil {
 		log.Error("complete job", "error", err)
 	}
 	log.Info("job done", "duration", time.Since(start))
@@ -157,17 +162,23 @@ func (w *Worker) keepLease(ctx context.Context, job *Job, cancel context.CancelC
 	lease := w.queue.Lease
 	t := time.NewTicker(lease / 5)
 	defer t.Stop()
-	renewed := time.Now()
+	// The watchdog also runs while Renew waits for a row lock or a pool
+	// connection: a blocked query must not extend the ownership window.
+	safety := lease * 3 / 5
+	watchdog := time.AfterFunc(safety, func() { cancel(ErrLeaseLost) })
+	defer watchdog.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 		}
-		err := w.queue.Renew(ctx, job)
+		rctx, stop := context.WithTimeout(ctx, min(5*time.Second, lease/5))
+		err := w.queue.Renew(rctx, job)
+		stop()
 		switch {
 		case err == nil:
-			renewed = time.Now()
+			watchdog.Reset(safety)
 		case errors.Is(err, ErrLeaseLost):
 			log.Warn("job lease lost")
 			cancel(ErrLeaseLost)
@@ -176,10 +187,6 @@ func (w *Worker) keepLease(ctx context.Context, job *Job, cancel context.CancelC
 			return
 		default:
 			log.Warn("renew job lease", "error", err)
-			if time.Since(renewed) >= lease*3/5 {
-				cancel(ErrLeaseLost)
-				return
-			}
 		}
 	}
 }
