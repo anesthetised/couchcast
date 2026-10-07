@@ -50,6 +50,8 @@ viewers disconnects nobody (p99 23 ms and 30 ms).
   machine; the next costs are CPU for per-viewer JSON encoding and the
   snapshot size, which grows with the member list.
 - A viewer that cannot keep up is dropped rather than slowing anyone
-  down: 256 queued messages or a 10 s write stall.
+  down: 256 queued messages or a 10 s write stall. The close says 1013
+  (try again later), so the browser reconnects and starts from a fresh
+  snapshot.
 - Clients get at most 20 commands per second (burst 40).
 - Coalescing delays presence by up to 250 ms; nothing else is delayed.
