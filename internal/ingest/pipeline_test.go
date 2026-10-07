@@ -421,6 +421,33 @@ func TestStaleAttemptDoesNotPublish(t *testing.T) {
 	require.NoError(t, p.queue.Complete(ctx, b))
 }
 
+// Deterministic half of the above (#144): once another attempt has
+// published, the stale one can move neither the status nor the progress.
+func TestStaleAttemptStepWritesAreRefused(t *testing.T) {
+	p := newPipeline(t)
+	ctx := context.Background()
+
+	m, err := p.svc.EnsureMedia(ctx, p.repo.Pool(), "https://video.test/steps")
+	require.NoError(t, err)
+	a, err := p.queue.Claim(ctx, "test", []string{JobKind})
+	require.NoError(t, err)
+	p.recoverJob(t, a.ID)
+	b, err := p.queue.Claim(ctx, "test", []string{JobKind})
+	require.NoError(t, err)
+	require.NoError(t, p.worker.Handle(ctx, b))
+	published, err := p.repo.GetMedia(ctx, m.ID)
+	require.NoError(t, err)
+
+	require.ErrorIs(t, p.worker.setStatus(ctx, a, m.ID, entity.MediaUploading), jobs.ErrLeaseLost)
+	stale := &progressReporter{repo: p.repo, queue: p.queue, job: a, mediaID: m.ID, interval: time.Second, now: time.Now}
+	stale.report(ctx, 0.5, true)
+
+	got, err := p.repo.GetMedia(ctx, m.ID)
+	require.NoError(t, err)
+	assert.Equal(t, entity.MediaReady, got.Status)
+	assert.Equal(t, published.Progress, got.Progress)
+}
+
 func TestStaleAttemptDoesNotFailTheMedia(t *testing.T) {
 	p := newPipeline(t)
 	ctx := context.Background()
@@ -440,19 +467,16 @@ func TestStaleAttemptDoesNotFailTheMedia(t *testing.T) {
 	assert.Empty(t, got.Error)
 }
 
-type pausedUploadRepo struct {
-	MediaRepo
+type pausedUploader struct {
+	uploader
 	beforeUpload func() error
 }
 
-func (r pausedUploadRepo) SetMediaStatus(ctx context.Context, id uuid.UUID, status entity.MediaStatus) error {
-	if err := r.MediaRepo.SetMediaStatus(ctx, id, status); err != nil {
-		return err
+func (u pausedUploader) UploadDir(ctx context.Context, prefix, dir string) (int64, error) {
+	if err := u.beforeUpload(); err != nil {
+		return 0, err
 	}
-	if status == entity.MediaUploading {
-		return r.beforeUpload()
-	}
-	return nil
+	return u.uploader.UploadDir(ctx, prefix, dir)
 }
 
 func TestStaleUploadDoesNotOverwritePublishedObjects(t *testing.T) {
@@ -464,7 +488,7 @@ func TestStaleUploadDoesNotOverwritePublishedObjects(t *testing.T) {
 	require.NoError(t, err)
 	paused, resume := make(chan struct{}), make(chan struct{})
 	stale := *p.worker
-	stale.repo = pausedUploadRepo{MediaRepo: p.repo, beforeUpload: func() error {
+	stale.store = pausedUploader{uploader: p.store, beforeUpload: func() error {
 		// Distinct output makes a late overwrite visible, even though both
 		// attempts downloaded the same fixture.
 		outDir := filepath.Join(stale.workDir, m.ID.String()+"-"+a.Lease.String(), "dash")
@@ -585,12 +609,16 @@ func TestFailedMediaPublicationIsBoundedAfterCancellation(t *testing.T) {
 	tx, err := p.repo.Pool().Begin(context.Background())
 	require.NoError(t, err)
 	defer tx.Rollback(context.Background()) //nolint:errcheck // test cleanup
-	_, err = tx.Exec(context.Background(), `SELECT id FROM jobs WHERE id = $1 FOR UPDATE`, job.ID)
-	require.NoError(t, err)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	p.src.probeCancel = cancel
+	// The row is locked once the attempt is past its fenced status write,
+	// so only the failure publication waits on it.
+	p.src.probeCancel = func() {
+		_, err := tx.Exec(context.Background(), `SELECT id FROM jobs WHERE id = $1 FOR UPDATE`, job.ID)
+		assert.NoError(t, err)
+		cancel()
+	}
 	p.src.probeErr = errors.New("probe interrupted")
 	finished := make(chan error, 1)
 	start := time.Now()

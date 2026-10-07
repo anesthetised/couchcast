@@ -195,10 +195,12 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
   job finalization and failed-media publication get a fresh 5 s deadline
   even after the attempt's context was cancelled.
   `Renew`, `Complete`, `Fail` and `Queue.Fenced` (a transaction holding
-  the job row) only act for the current lease. The ingest publishes the
-  finished media (`PublishMedia`, one statement) and marks failures
-  inside `Fenced`, and works in a per-attempt directory, so a stale
-  attempt can neither publish, fail nor delete another attempt's files.
+  the job row) only act for the current lease. The ingest moves the
+  media through its steps (status and progress), publishes the finished
+  media (`PublishMedia`, one statement) and marks failures inside
+  `Fenced`, and works in a per-attempt directory, so a stale attempt can
+  neither move a published item back, publish, fail nor delete another
+  attempt's files; its next step write ends it with `ErrLeaseLost`.
   Uploads go to `media/<id>/<lease>/`; publication selects that prefix in
   `media.s3_prefix`. The media proxy resolves it through `MediaPrefix`,
   keeping `/media/<id>/<file>` URLs stable and serving legacy packages too.

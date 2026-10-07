@@ -138,16 +138,16 @@ func (r *Repo) GetMediaBatch(ctx context.Context, ids []uuid.UUID) (map[uuid.UUI
 }
 
 // SetMediaStatus moves the item to a new step and resets step progress.
-func (r *Repo) SetMediaStatus(ctx context.Context, id uuid.UUID, status entity.MediaStatus) error {
-	const q = `UPDATE media SET status = $2, progress = 0, speed_bps = NULL, eta_ms = NULL, error = NULL, updated_at = now() WHERE id = $1`
-	return r.exec(ctx, q, id, status)
+func (r *Repo) SetMediaStatus(ctx context.Context, q Querier, id uuid.UUID, status entity.MediaStatus) error {
+	const set = `UPDATE media SET status = $2, progress = 0, speed_bps = NULL, eta_ms = NULL, error = NULL, updated_at = now() WHERE id = $1`
+	return execOn(ctx, q, set, id, status)
 }
 
 // SetMediaProgress updates progress within the current step; zero speed
 // or ETA means unknown.
-func (r *Repo) SetMediaProgress(ctx context.Context, id uuid.UUID, progress float32, speedBps, etaMs int64) error {
-	const q = `UPDATE media SET progress = $2, speed_bps = nullif($3, 0), eta_ms = nullif($4, 0), updated_at = now() WHERE id = $1`
-	return r.exec(ctx, q, id, progress, speedBps, etaMs)
+func (r *Repo) SetMediaProgress(ctx context.Context, q Querier, id uuid.UUID, progress float32, speedBps, etaMs int64) error {
+	const set = `UPDATE media SET progress = $2, speed_bps = nullif($3, 0), eta_ms = nullif($4, 0), updated_at = now() WHERE id = $1`
+	return execOn(ctx, q, set, id, progress, speedBps, etaMs)
 }
 
 // SetMediaProbed stores the metadata learned from the source.
