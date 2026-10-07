@@ -69,8 +69,10 @@ const Chat: Component<Props> = (props) => {
   };
 
   // --- replies and editing -------------------------------------------------------
-  const [replyTo, setReplyTo] = createSignal<ChatMessage | null>(null);
-  const [editing, setEditing] = createSignal<ChatMessage | null>(null);
+  // Not deduplicated: starting the same reply or edit again re-focuses the
+  // field and restores the line's text.
+  const [replyTo, setReplyTo] = createSignal<ChatMessage | null>(null, { equals: false });
+  const [editing, setEditing] = createSignal<ChatMessage | null>(null, { equals: false });
   const canEdit = (m: ChatMessage) => !m.system && me() !== null && m.username === me() && now() - m.createdMs < EDIT_WINDOW_MS;
   const startReply = (m: ChatMessage) => {
     setEditing(null);
