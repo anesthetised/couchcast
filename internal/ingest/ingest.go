@@ -13,6 +13,9 @@ import (
 
 	"uuid"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/anesthetised/couchcast/internal/entity"
 	"github.com/anesthetised/couchcast/internal/jobs"
 	"github.com/anesthetised/couchcast/internal/netguard"
@@ -91,14 +94,16 @@ func (p SourcePolicy) httpClient(timeout time.Duration) *http.Client {
 
 // MediaRepo is the persistence the package needs.
 type MediaRepo interface {
+	Pool() *pgxpool.Pool
 	CreateMedia(ctx context.Context, q repository.Querier, sourceKey, sourceURL string) (*entity.Media, bool, error)
 	GetMedia(ctx context.Context, id uuid.UUID) (*entity.Media, error)
 	GetMediaByKey(ctx context.Context, sourceKey string) (*entity.Media, error)
 	IsSourceBlocked(ctx context.Context, sourceKey string) (bool, error)
-	SetMediaStatus(ctx context.Context, id uuid.UUID, status entity.MediaStatus) error
-	SetMediaProgress(ctx context.Context, id uuid.UUID, progress float32, speedBps, etaMs int64) error
 	SetMediaProbed(ctx context.Context, id uuid.UUID, title string, durationMs int64, thumbnailURL string, chapters []entity.Chapter) error
-	// The final writes run inside jobs.Queue.Fenced, on its transaction.
+	// The worker's steps, progress and final writes run inside
+	// jobs.Queue.Fenced, on its transaction.
+	SetMediaStatus(ctx context.Context, q repository.Querier, id uuid.UUID, status entity.MediaStatus) error
+	SetMediaProgress(ctx context.Context, q repository.Querier, id uuid.UUID, progress float32, speedBps, etaMs int64) error
 	PublishMedia(ctx context.Context, q repository.Querier, id uuid.UUID, p repository.PublishedMedia) error
 	FailMedia(ctx context.Context, q repository.Querier, id uuid.UUID, reason string) error
 }
@@ -251,7 +256,7 @@ func (s *Service) Retry(ctx context.Context, media *entity.Media) error {
 	if media.Status != entity.MediaFailed {
 		return fmt.Errorf("ingest: media %s is %s, not failed", media.ID, media.Status)
 	}
-	if err := s.repo.SetMediaStatus(ctx, media.ID, entity.MediaQueued); err != nil {
+	if err := s.repo.SetMediaStatus(ctx, s.repo.Pool(), media.ID, entity.MediaQueued); err != nil {
 		return err
 	}
 	_, err := s.queue.Enqueue(ctx, nil, JobKind, Payload{MediaID: media.ID}, MaxAttempts)
@@ -267,6 +272,7 @@ func (s *Service) Retry(ctx context.Context, media *entity.Media) error {
 type progressReporter struct {
 	repo       MediaRepo
 	queue      *jobs.Queue
+	job        *jobs.Job
 	mediaID    uuid.UUID
 	interval   time.Duration
 	totalBytes int64
@@ -294,8 +300,13 @@ func (p *progressReporter) report(ctx context.Context, v float64, force bool) {
 	if force && v >= 1 {
 		speed, eta = 0, 0
 	}
-	_ = p.repo.SetMediaProgress(ctx, p.mediaID, float32(v), speed, eta)
-	_ = p.queue.Notify(ctx, ProgressChannel, p.mediaID.String())
+	// A stale attempt's progress is dropped; its next step stops it.
+	_ = p.queue.Fenced(ctx, p.job, func(tx pgx.Tx) error {
+		if err := p.repo.SetMediaProgress(ctx, tx, p.mediaID, float32(v), speed, eta); err != nil {
+			return err
+		}
+		return notifyTx(ctx, tx, p.mediaID)
+	})
 }
 
 // estimate records the sample and returns bytes per second (0 without a

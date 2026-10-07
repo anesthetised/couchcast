@@ -28,13 +28,18 @@ import (
 	"github.com/anesthetised/couchcast/internal/webvtt"
 )
 
+// uploader is what the worker needs from object storage.
+type uploader interface {
+	UploadDir(ctx context.Context, prefix, dir string) (int64, error)
+}
+
 // Worker runs the pipeline for one job at a time per slot.
 type Worker struct {
 	repo      MediaRepo
 	queue     *jobs.Queue
 	extractor source.Extractor
 	packager  *packager.Packager
-	store     *mediastore.Store
+	store     uploader
 	workDir   string
 	ladder    []int
 	logger    *slog.Logger
@@ -189,7 +194,7 @@ func (w *Worker) process(ctx context.Context, job *jobs.Job, media *entity.Media
 	defer func() { _ = os.RemoveAll(dir) }()
 
 	// --- probe ---------------------------------------------------------------
-	if err := w.setStatus(ctx, media.ID, entity.MediaProbing); err != nil {
+	if err := w.setStatus(ctx, job, media.ID, entity.MediaProbing); err != nil {
 		return err
 	}
 	// Checked again at fetch time: the row may predate the check (a retry)
@@ -220,7 +225,7 @@ func (w *Worker) process(ctx context.Context, job *jobs.Job, media *entity.Media
 	log.Info("probed", "title", probe.Title, "duration_ms", probe.DurationMs, "formats", sel.IDs())
 
 	// --- download ------------------------------------------------------------
-	if err := w.setStatus(ctx, media.ID, entity.MediaDownloading); err != nil {
+	if err := w.setStatus(ctx, job, media.ID, entity.MediaDownloading); err != nil {
 		return err
 	}
 	start = time.Now()
@@ -228,7 +233,7 @@ func (w *Worker) process(ctx context.Context, job *jobs.Job, media *entity.Media
 	for _, f := range sel.Formats() {
 		totalBytes += f.Filesize
 	}
-	reporter := &progressReporter{repo: w.repo, queue: w.queue, mediaID: media.ID, interval: time.Second, now: time.Now, totalBytes: totalBytes}
+	reporter := &progressReporter{repo: w.repo, queue: w.queue, job: job, mediaID: media.ID, interval: time.Second, now: time.Now, totalBytes: totalBytes}
 	files, err := w.extractor.Download(ctx, media.SourceURL, sel.Formats(), srcDir, func(v float64) {
 		reporter.report(ctx, v, false)
 	})
@@ -246,7 +251,7 @@ func (w *Worker) process(ctx context.Context, job *jobs.Job, media *entity.Media
 	}
 
 	// --- package -------------------------------------------------------------
-	if err := w.setStatus(ctx, media.ID, entity.MediaPackaging); err != nil {
+	if err := w.setStatus(ctx, job, media.ID, entity.MediaPackaging); err != nil {
 		return err
 	}
 	start = time.Now()
@@ -262,7 +267,7 @@ func (w *Worker) process(ctx context.Context, job *jobs.Job, media *entity.Media
 
 	// ffmpeg reports the output timestamp; against the duration that is
 	// the packaging progress.
-	pkgReporter := &progressReporter{repo: w.repo, queue: w.queue, mediaID: media.ID, interval: time.Second, now: time.Now}
+	pkgReporter := &progressReporter{repo: w.repo, queue: w.queue, job: job, mediaID: media.ID, interval: time.Second, now: time.Now}
 	if err := w.packager.Run(ctx, inputs, outDir, func(outTimeMs int64) {
 		if probe.DurationMs > 0 {
 			pkgReporter.report(ctx, min(float64(outTimeMs)/float64(probe.DurationMs), 1), false)
@@ -277,7 +282,7 @@ func (w *Worker) process(ctx context.Context, job *jobs.Job, media *entity.Media
 	w.metrics.IngestStep("package", time.Since(start))
 
 	// --- upload --------------------------------------------------------------
-	if err := w.setStatus(ctx, media.ID, entity.MediaUploading); err != nil {
+	if err := w.setStatus(ctx, job, media.ID, entity.MediaUploading); err != nil {
 		return err
 	}
 	start = time.Now()
@@ -310,22 +315,20 @@ func (w *Worker) process(ctx context.Context, job *jobs.Job, media *entity.Media
 	return nil
 }
 
-func (w *Worker) setStatus(ctx context.Context, id uuid.UUID, status entity.MediaStatus) error {
-	if err := w.repo.SetMediaStatus(ctx, id, status); err != nil {
-		return err
-	}
-	w.notify(ctx, id)
-	return nil
+// setStatus moves the media to the next step while the attempt owns the
+// job: a stale attempt stops here with ErrLeaseLost instead of moving a
+// published item back (#144).
+func (w *Worker) setStatus(ctx context.Context, job *jobs.Job, id uuid.UUID, status entity.MediaStatus) error {
+	return w.queue.Fenced(ctx, job, func(tx pgx.Tx) error {
+		if err := w.repo.SetMediaStatus(ctx, tx, id, status); err != nil {
+			return err
+		}
+		return notifyTx(ctx, tx, id)
+	})
 }
 
 // notifyTx announces a media change when tx commits.
 func notifyTx(ctx context.Context, tx pgx.Tx, id uuid.UUID) error {
 	_, err := tx.Exec(ctx, `SELECT pg_notify($1, $2)`, ProgressChannel, id.String())
 	return err
-}
-
-func (w *Worker) notify(ctx context.Context, id uuid.UUID) {
-	if err := w.queue.Notify(ctx, ProgressChannel, id.String()); err != nil && !errors.Is(err, context.Canceled) {
-		w.logger.Warn("notify progress", "error", err)
-	}
 }
