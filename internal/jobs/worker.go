@@ -71,7 +71,10 @@ func (w *Worker) Run(ctx context.Context, concurrency int) error {
 		}
 	})
 
-	// Slots gate concurrency; every slot drains the queue when woken.
+	// Slots gate concurrency; a woken slot drains the queue. Each claim
+	// wakes another slot, so a backlog spreads over the slots, while a
+	// slot that finds nothing goes back to waiting for a notification or
+	// the poll.
 	for i := range concurrency {
 		slot := i
 		g.Go(func() error {
@@ -81,18 +84,7 @@ func (w *Worker) Run(ctx context.Context, concurrency int) error {
 					return ctx.Err()
 				case <-wake:
 				}
-				w.drain(ctx, slot)
-				// Another slot may still have work: re-arm for the others.
-				kick()
-				if ctx.Err() != nil {
-					return ctx.Err()
-				}
-				// Avoid a hot loop when the queue is empty.
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case <-time.After(200 * time.Millisecond):
-				}
+				w.drain(ctx, slot, kick)
 			}
 		})
 	}
@@ -101,8 +93,9 @@ func (w *Worker) Run(ctx context.Context, concurrency int) error {
 	return g.Wait()
 }
 
-// drain runs jobs until Claim finds nothing.
-func (w *Worker) drain(ctx context.Context, slot int) {
+// drain runs jobs until Claim finds nothing (or fails: the poll retries),
+// calling more after each claim since further jobs may be waiting.
+func (w *Worker) drain(ctx context.Context, slot int, more func()) {
 	for ctx.Err() == nil {
 		job, err := w.queue.Claim(ctx, w.name, w.kinds)
 		if err != nil {
@@ -111,6 +104,7 @@ func (w *Worker) drain(ctx context.Context, slot int) {
 			}
 			return
 		}
+		more()
 		w.run(ctx, job, slot)
 	}
 }
