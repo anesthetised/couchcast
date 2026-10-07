@@ -1,10 +1,14 @@
-import { createEffect, createSignal, For, lazy, on, onCleanup, onMount, Show, type Component } from "solid-js";
+import { createSignal, For, lazy, onCleanup, onMount, Show, type Component } from "solid-js";
 
+import PlayerOverlays from "~/components/PlayerOverlays";
+import PlayerTimeline from "~/components/PlayerTimeline";
 import { openBugReport } from "~/lib/bugs";
 import { bufferedRanges, registerProbe, registerVideo } from "~/lib/diagnostics";
-import { formatTime, progressDetail } from "~/lib/format";
-import { Player as ShakaPlayer, type QualityOption } from "~/lib/player";
-import { Synchronizer, type SyncDebug } from "~/lib/sync";
+import { formatTime } from "~/lib/format";
+import { playerHotkey } from "~/lib/hotkeys";
+import { createPlayback } from "~/lib/playback";
+import type { SyncDebug } from "~/lib/sync";
+import { chapterAt, chapterTarget, nextRate, RATES } from "~/lib/timeline";
 import type { Chapter } from "~/protocol";
 import type { RoomStore } from "~/store/room";
 
@@ -28,103 +32,59 @@ type Props = {
   onToggleQueue?: () => void;
 };
 
-const UP_NEXT_WINDOW_MS = 5000;
 const SEEK_STEP_MS = 5000;
 const VOLUME_STEP = 0.05;
-const RATES = [0.5, 0.75, 1, 1.25, 1.5, 2];
 const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "👏", "🎉"];
 const CLICK_DELAY_MS = 220; // single click waits this long for a double click
-const REPORT_EVERY_MS = 5000; // position heartbeat for the lag indicator
 
 type SyncState = "ok" | "nudge" | "seek" | "off";
 
 // Player renders the video, custom controls and the quality menu. Native
 // controls are off: every interaction goes through the server so all
-// viewers stay in sync; non-moderators get a read-only bar.
+// viewers stay in sync; non-moderators get a read-only bar. The media
+// lifecycle lives in createPlayback (lib/playback.ts), the overlays and
+// the seek bar in their own components; this one owns the controls,
+// preferences and input.
 const Player: Component<Props> = (props) => {
   let video!: HTMLVideoElement;
   let wrap!: HTMLDivElement;
-  let seekBar!: HTMLInputElement;
-  let player: ShakaPlayer | undefined;
-  let sync: Synchronizer | undefined;
   let clickTimer: number | null = null;
 
-  const [qualities, setQualities] = createSignal<QualityOption[]>([]);
-  const [activeHeight, setActiveHeight] = createSignal<number | null>(null);
+  const current = () => props.room.current();
+  const canControl = () => props.room.isModerator();
+
   const [chosen, setChosen] = createSignal<number | null>(readStored("couchcast.quality", null));
   // Subtitle language preference; "" means off. Applied when a video that
   // has the language loads, ignored otherwise.
   const [subtitle, setSubtitle] = createSignal<string>(readStored("couchcast.subtitles", ""));
   const subtitles = () => current()?.media.subtitles ?? [];
   const activeSubtitle = () => (subtitles().some((s) => s.lang === subtitle()) ? subtitle() : "");
+
+  const playback = createPlayback(() => video, props.room, { quality: chosen, subtitle: () => activeSubtitle() || null });
+  const { qualities, activeHeight, debug, nowMs, pip } = playback;
+
   const pickSubtitle = (lang: string) => {
     setSubtitle(lang);
     store("couchcast.subtitles", lang);
-    player?.selectSubtitle(lang || null);
+    playback.selectSubtitle(lang || null);
   };
   const toggleSubtitles = () => {
     const list = subtitles();
     if (!list.length) return;
     pickSubtitle(activeSubtitle() ? "" : list[0]!.lang);
   };
-  const [buffering, setBuffering] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  const [debug, setDebug] = createSignal<SyncDebug | null>(null);
   const [showSync, setShowSync] = createSignal(false);
-  const [nowMs, setNowMs] = createSignal(0);
   const [muted, setMuted] = createSignal(readStored("couchcast.muted", true));
   const [volume, setVolume] = createSignal(readStored("couchcast.volume", 1));
-  const [loadedMediaId, setLoadedMediaId] = createSignal<string | null>(null);
-  const [blocked, setBlocked] = createSignal(false);
-  const [seekTip, setSeekTip] = createSignal<{ ms: number; x: number; w: number } | null>(null);
-  const [pip, setPip] = createSignal(false);
   const [showKeys, setShowKeys] = createSignal(false);
   const [showReactions, setShowReactions] = createSignal(false);
   const [showChapters, setShowChapters] = createSignal(false);
   const chapters = () => current()?.media.chapters ?? [];
-  const chapterAt = (ms: number) => {
-    let found: Chapter | null = null;
-    for (const c of chapters()) {
-      if (c.startMs <= ms) found = c;
-      else break;
-    }
-    return found;
-  };
-  const currentChapter = () => chapterAt(nowMs());
+  const currentChapter = () => chapterAt(chapters(), nowMs());
 
-  // The tip is centred on the pointer but kept inside the bar, so a wide
-  // preview near either end is not cut off by the player's edge.
-  const tipLeft = (t: { ms: number; x: number; w: number }) => {
-    const sb = current()?.media.storyboard;
-    const half = sb ? sb.width / 2 + 4 : 24;
-    return t.w > 2 * half ? Math.min(Math.max(t.x, half), t.w - half) : t.x;
-  };
-
-  // Timeline preview: the storyboard cell for a position, as CSS for a
-  // box of the frame's size cropping the sheet.
-  const previewStyle = (ms: number) => {
-    const m = current()?.media;
-    const sb = m?.storyboard;
-    if (!sb || !m.manifest || !m.token) return null;
-    const i = Math.min(sb.count - 1, Math.max(0, Math.floor(ms / sb.intervalMs)));
-    const perSheet = sb.cols * sb.rows;
-    const cell = i % perSheet;
-    const base = m.manifest.slice(0, m.manifest.lastIndexOf("/") + 1);
-    return {
-      width: `${sb.width}px`,
-      height: `${sb.height}px`,
-      "background-image": `url("${base}sb-${Math.floor(i / perSheet)}.jpg?t=${m.token}")`,
-      "background-position": `-${(cell % sb.cols) * sb.width}px -${Math.floor(cell / sb.cols) * sb.height}px`,
-    };
-  };
   const seekChapter = (dir: 1 | -1) => {
     if (!canControl() || !current()) return;
-    const list = chapters();
-    if (!list.length) return;
-    const idx = list.findIndex((c) => c === currentChapter());
-    // Backwards inside a chapter restarts it, like a track on a CD player.
-    const target = dir < 0 && idx >= 0 && nowMs() - list[idx]!.startMs > 3000 ? idx : idx + dir;
-    const c = list[Math.max(0, Math.min(list.length - 1, target))];
+    const c = chapterTarget(chapters(), nowMs(), dir);
     if (c) props.room.commands.seek(c.startMs);
   };
   const jumpToChapter = (c: Chapter) => {
@@ -140,33 +100,10 @@ const Player: Component<Props> = (props) => {
   const rate = () => props.room.state.playback?.rate || 1;
   const stepRate = (dir: 1 | -1) => {
     if (!canControl() || !current()) return;
-    const i = RATES.indexOf(rate());
-    const next = RATES[Math.max(0, Math.min(RATES.length - 1, (i < 0 ? RATES.indexOf(1) : i) + dir))];
-    if (next !== undefined && next !== rate()) props.room.commands.rate(next);
+    const next = nextRate(rate(), dir);
+    if (next !== null) props.room.commands.rate(next);
   };
-
-  const current = () => props.room.current();
-  // Whole seconds left of a counted-down start, by the server clock; the
-  // tick keeps it moving between snapshots.
-  const countdownLeft = () => {
-    const at = props.room.state.snapshot?.countdownMs;
-    nowMs();
-    if (!at) return null;
-    const left = Math.ceil((at - props.room.clock.serverNow()) / 1000);
-    return left > 0 ? left : null;
-  };
-  const canControl = () => props.room.isModerator();
   const duration = () => current()?.media.durationMs ?? 0;
-  const queue = () => props.room.state.snapshot?.queue ?? [];
-  const upNext = () => {
-    const list = queue();
-    const idx = list.findIndex((q) => q.current);
-    return idx >= 0 ? (list[idx + 1] ?? null) : null;
-  };
-  const nearEnd = () => {
-    const d = duration();
-    return d > 0 && props.room.state.playback?.playing === true && d - nowMs() <= UP_NEXT_WINDOW_MS && d - nowMs() > 0;
-  };
 
   // Sync state derived from the last correction, for the indicator.
   const syncState = (): SyncState => {
@@ -178,55 +115,29 @@ const Player: Component<Props> = (props) => {
   };
 
   onMount(() => {
-    player = new ShakaPlayer(video);
-    player.onTracks = (t, active) => {
-      setQualities(t);
-      setActiveHeight(active);
-    };
-    player.onBuffering = (b) => {
-      setBuffering(b);
-      props.room.commands.report(b ? "buffering" : "playing", video.currentTime * 1000);
-    };
-    player.onError = (m) => setError(m);
-    void player.attach();
-
-    sync = new Synchronizer(video, props.room.clock);
-    sync.onDebug = setDebug;
-    sync.onBlocked = setBlocked;
-    sync.start();
-
     // Wheel over the video adjusts volume; the listener must not be passive
     // so the page does not scroll underneath.
     wrap.addEventListener("wheel", onWheel, { passive: false });
     onCleanup(() => wrap.removeEventListener("wheel", onWheel));
-    video.addEventListener("playing", () => setError(null));
-    video.addEventListener("enterpictureinpicture", () => setPip(true));
-    video.addEventListener("leavepictureinpicture", () => setPip(false));
 
     video.muted = muted();
     video.volume = volume();
-    const tick = window.setInterval(() => setNowMs(video.currentTime * 1000), 250);
-    onCleanup(() => window.clearInterval(tick));
-    // Tell the room where this video is, so moderators see who lags.
-    const heartbeat = window.setInterval(() => {
-      if (loadedMediaId() && props.room.state.playback?.playing) {
-        props.room.commands.report(buffering() ? "buffering" : "playing", video.currentTime * 1000);
-      }
-    }, REPORT_EVERY_MS);
-    onCleanup(() => window.clearInterval(heartbeat));
 
     document.addEventListener("keydown", onKey);
     onCleanup(() => document.removeEventListener("keydown", onKey));
+    onCleanup(() => {
+      if (clickTimer !== null) window.clearTimeout(clickTimer);
+    });
 
     // The media half of a bug report, and the frame to attach.
     onCleanup(registerVideo(() => video));
     onCleanup(
       registerProbe("media", () => {
         const cur = current();
-        const target = sync?.targetMs() ?? null;
+        const target = playback.targetMs();
         return {
           item: cur ? { id: cur.id, mediaId: cur.media.id, title: cur.media.title, source: cur.media.sourceUrl, status: cur.media.status, error: cur.media.error, durationMs: cur.media.durationMs } : null,
-          loadedMediaId: loadedMediaId(),
+          loadedMediaId: playback.loadedMediaId(),
           quality: { chosen: chosen(), active: activeHeight(), available: qualities().map((q) => q.height) },
           subtitles: { selected: activeSubtitle() || null, available: subtitles().map((s) => s.lang) },
           rate: rate(),
@@ -234,82 +145,15 @@ const Player: Component<Props> = (props) => {
           targetMs: target === null ? null : Math.round(target),
           driftMs: target === null ? null : Math.round(video.currentTime * 1000 - target),
           element: { paused: video.paused, readyState: video.readyState, networkState: video.networkState, playbackRate: video.playbackRate, muted: video.muted, volume: video.volume, buffered: bufferedRanges(video.buffered) },
-          buffering: buffering(),
-          autoplayBlocked: blocked(),
-          overlayError: error(),
+          buffering: playback.buffering(),
+          autoplayBlocked: playback.blocked(),
+          overlayError: playback.error(),
           pip: pip(),
           fullscreen: props.isFullscreen ?? false,
-          shaka: player?.stats() ?? null,
+          shaka: playback.stats(),
         };
       }),
     );
-  });
-
-  onCleanup(() => {
-    sync?.stop();
-    player?.destroy();
-  });
-
-  // Load the manifest whenever the current media changes or becomes ready.
-  createEffect(
-    on(
-      () => {
-        const c = current();
-        return c?.media.status === "ready" ? { id: c.media.id, manifest: c.media.manifest, token: c.media.token } : null;
-      },
-      async (target) => {
-        if (!player || !sync) return;
-        if (!target || !target.manifest || !target.token) {
-          if (loadedMediaId() !== null) {
-            setLoadedMediaId(null);
-            await player.unload();
-          }
-          return;
-        }
-        if (target.id === loadedMediaId()) {
-          player.setTokenFor(target.manifest, target.token);
-          return;
-        }
-        sync.suspended = true;
-        setError(null);
-        try {
-          // The effect that feeds the synchronizer runs after this one, so
-          // on the first load it would not know the room's position yet
-          // and every viewer would start at 0 and then seek.
-          const pb = props.room.state.playback;
-          if (pb) sync.update({ ...pb });
-          const start = sync.targetMs() ?? 0;
-          await player.load(target.manifest, target.token, start);
-          setLoadedMediaId(target.id);
-          player.selectQuality(chosen());
-          const subs = current()?.media.subtitles ?? [];
-          if (subs.length) {
-            await player.addSubtitles(target.manifest, subs);
-            player.selectSubtitle(activeSubtitle() || null);
-          }
-        } catch (e) {
-          const code = (e as { code?: number }).code;
-          // 7000 = LOAD_INTERRUPTED: a newer load superseded this one.
-          if (code !== 7000) setError(code ? `Player error ${code}` : e instanceof Error ? e.message : String(e));
-        } finally {
-          sync.suspended = false;
-        }
-      },
-    ),
-  );
-
-  // Preload the next item's manifest shortly before the current one ends
-  // so auto-advance starts without a black gap.
-  createEffect(() => {
-    const next = upNext();
-    if (!player || !nearEnd() || !next || next.media.status !== "ready" || !next.media.manifest || !next.media.token) return;
-    void player.preload(next.media.manifest, next.media.token);
-  });
-
-  // Feed playback updates to the synchroniser.
-  createEffect(() => {
-    const pb = props.room.state.playback;
-    if (pb && sync) sync.update({ ...pb });
   });
 
   const togglePlay = () => {
@@ -324,15 +168,10 @@ const Player: Component<Props> = (props) => {
     props.room.commands.seek(target);
   };
 
-  const onSeekInput = (e: Event) => {
-    if (!canControl()) return;
-    props.room.commands.seek(Number((e.currentTarget as HTMLInputElement).value));
-  };
-
   const pickQuality = (h: number | null) => {
     setChosen(h);
     store("couchcast.quality", h);
-    player?.selectQuality(h);
+    playback.selectQuality(h);
   };
 
   const setVolumeTo = (v: number) => {
@@ -372,18 +211,6 @@ const Player: Component<Props> = (props) => {
     fullscreen();
   };
 
-  // resume runs inside the user's gesture, which is what the autoplay
-  // policy wants.
-  const resume = () => sync?.resume();
-
-  const onSeekHover = (e: MouseEvent) => {
-    const d = duration();
-    if (!d) return setSeekTip(null);
-    const r = seekBar.getBoundingClientRect();
-    const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
-    setSeekTip({ ms: frac * d, x: e.clientX - r.left, w: r.width });
-  };
-
   const togglePip = async () => {
     try {
       if (document.pictureInPictureElement) await document.exitPictureInPicture();
@@ -412,67 +239,58 @@ const Player: Component<Props> = (props) => {
     else void el.requestFullscreen();
   };
 
-  // Hotkeys: ignored while typing so the chat stays usable.
   const onKey = (e: KeyboardEvent) => {
-    const t = e.target as HTMLElement | null;
-    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const action = playerHotkey(e);
+    if (!action) return;
     if (showKeys()) {
-      if (e.key === "Escape" || e.key === "?") setShowKeys(false);
+      if (action === "escape" || action === "help") setShowKeys(false);
       return;
     }
-    switch (e.key) {
-      case "?":
+    switch (action) {
+      case "help":
         e.preventDefault();
         setShowKeys(true);
         break;
-      case " ":
+      case "togglePlay":
         e.preventDefault();
         togglePlay();
         break;
-      case "ArrowLeft":
+      case "back":
         e.preventDefault();
         seekBy(-SEEK_STEP_MS);
         break;
-      case "ArrowRight":
+      case "forward":
         e.preventDefault();
         seekBy(SEEK_STEP_MS);
         break;
-      case "f":
-      case "F":
+      case "fullscreen":
         fullscreen();
         break;
-      case "t":
-      case "T":
+      case "theater":
         props.onTheater?.();
         break;
-      case "B":
-        if (e.shiftKey) openBugReport();
+      case "bugReport":
+        openBugReport();
         break;
-      case "m":
-      case "M":
+      case "mute":
         toggleMute();
         break;
-      case "n":
-      case "N":
+      case "next":
         if (canControl() && current()) props.room.commands.next();
         break;
-      case "c":
-      case "C":
+      case "subtitles":
         toggleSubtitles();
         break;
-      case "<":
-      case ",":
+      case "slower":
         stepRate(-1);
         break;
-      case ">":
-      case ".":
+      case "faster":
         stepRate(1);
         break;
-      case "[":
+      case "prevChapter":
         seekChapter(-1);
         break;
-      case "]":
+      case "nextChapter":
         seekChapter(1);
         break;
     }
@@ -482,113 +300,7 @@ const Player: Component<Props> = (props) => {
     <div class="player">
       <div class="video-wrap" ref={wrap} onClick={onVideoClick} onDblClick={onVideoDblClick}>
         <video ref={video} playsinline />
-
-        <Show when={blocked() && current()?.media.status === "ready"}>
-          <button type="button" class="video-overlay gate" onClick={resume}>
-            <span class="gate-icon" aria-hidden="true">▶</span>
-            <span>Tap to play</span>
-          </button>
-        </Show>
-
-        <Show when={!current()}>
-          <div class="video-overlay quiet">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-              <rect x="3" y="5" width="18" height="14" rx="2" />
-              <path d="M10 9.5v5l4.5-2.5z" fill="currentColor" stroke="none" />
-            </svg>
-            <span>Nothing playing</span>
-          </div>
-        </Show>
-
-        <Show when={current() && current()!.media.status !== "ready"}>
-          <div class="video-overlay preparing">
-            <Show when={current()!.media.thumbnailUrl}>{(src) => <img class="poster" src={src()} alt="" />}</Show>
-            <div class="preparing-body">
-              <p>{statusLabel(current()!.media.status)}</p>
-              <Show when={progressDetail(current()!.media)}>
-                {(detail) => (
-                  <>
-                    <progress max="1" value={current()!.media.progress} />
-                    <span class="muted small">{detail()}</span>
-                  </>
-                )}
-              </Show>
-              <Show when={current()!.media.error}>
-                <p class="error">{current()!.media.error}</p>
-              </Show>
-            </div>
-          </div>
-        </Show>
-
-        <Show when={countdownLeft()}>
-          {(n) => (
-            <div class="video-overlay countdown" role="status" aria-live="assertive">
-              <span class="countdown-number">{n()}</span>
-            </div>
-          )}
-        </Show>
-
-        <Show when={(props.room.state.snapshot?.waiting ?? []).length > 0 && current()}>
-          <div class="video-overlay waiting" role="status">
-            <span class="ring" aria-hidden="true" />
-            <span>Waiting for {listNames(props.room.state.snapshot?.waiting ?? [])}…</span>
-            <Show when={canControl()}>
-              <button type="button" class="ghost small" onClick={() => props.room.commands.play()}>
-                Continue without them
-              </button>
-            </Show>
-          </div>
-        </Show>
-
-        <Show when={buffering() && !blocked() && current()?.media.status === "ready"}>
-          <div class="video-overlay spinner" role="status" aria-label="Buffering">
-            <span class="ring" />
-          </div>
-        </Show>
-        <Show when={error()}>
-          {(e) => (
-            <div class="video-overlay error">
-              <span>{e()}</span>
-              <button type="button" class="ghost small" onClick={() => openBugReport({ category: "playback", description: `The player stopped with “${e()}”.` })}>
-                Report this
-              </button>
-            </div>
-          )}
-        </Show>
-
-        <Show when={nearEnd() && upNext()}>
-          {(next) => (
-            <div class="up-next-card">
-              <span class="muted small">Up next</span>
-              <strong>{next().media.title || next().media.sourceUrl}</strong>
-              <Show when={canControl()}>
-                <button type="button" class="ghost" onClick={() => props.room.commands.next()}>
-                  Play now
-                </button>
-              </Show>
-            </div>
-          )}
-        </Show>
-
-        <div class="reactions" aria-hidden="true">
-          <For each={props.room.reactions()}>
-            {(r) => (
-              <span class="reaction" style={{ left: `${10 + ((r.id * 37) % 80)}%` }} title={r.username}>
-                {r.emoji}
-              </span>
-            )}
-          </For>
-        </div>
-
-        <Show when={showSync() && debug()}>
-          {(d) => (
-            <pre class="debug-overlay">
-              offset {props.room.clockInfo().offset.toFixed(0)}ms rtt {props.room.clockInfo().rtt.toFixed(0)}ms{"\n"}
-              drift {d().driftMs.toFixed(0)}ms rate {d().rate.toFixed(2)} {d().action}{"\n"}
-              seq {props.room.state.playback?.seq ?? 0} active {activeHeight() ?? "-"}p
-            </pre>
-          )}
-        </Show>
+        <PlayerOverlays room={props.room} playback={playback} canControl={canControl()} showSync={showSync()} />
       </div>
 
       <div class="controls">
@@ -597,33 +309,7 @@ const Player: Component<Props> = (props) => {
             {props.room.state.playback?.playing ? "❚❚" : "▶"}
           </button>
           <span class="time">{formatTime(nowMs())}</span>
-          <div class="seek-wrap" onMouseMove={onSeekHover} onMouseLeave={() => setSeekTip(null)}>
-            <input
-              ref={seekBar}
-              type="range"
-              class="seek"
-              min="0"
-              max={duration() || 0}
-              value={Math.min(nowMs(), duration() || 0)}
-              disabled={!canControl() || !duration()}
-              onChange={onSeekInput}
-              aria-label="Position"
-            />
-            <Show when={duration() > 0 && chapters().length > 0}>
-              <div class="chapter-marks" aria-hidden="true">
-                <For each={chapters().slice(1)}>{(c) => <span style={{ left: `${(c.startMs / duration()) * 100}%` }} />}</For>
-              </div>
-            </Show>
-            <Show when={seekTip()}>
-              {(t) => (
-                <span class="seek-tip" classList={{ "has-preview": previewStyle(t().ms) !== null }} style={{ left: `${tipLeft(t())}px` }}>
-                  <Show when={previewStyle(t().ms)}>{(style) => <span class="seek-preview" style={style()} />}</Show>
-                  <Show when={chapterAt(t().ms)}>{(c) => <span class="seek-tip-chapter">{c().title}</span>}</Show>
-                  {formatTime(t().ms)}
-                </span>
-              )}
-            </Show>
-          </div>
+          <PlayerTimeline media={current()?.media} nowMs={nowMs()} canControl={canControl()} onSeek={(ms) => props.room.commands.seek(ms)} />
           <span class="time">{formatTime(duration())}</span>
         </div>
         <div class="control-group">
@@ -750,30 +436,6 @@ const Player: Component<Props> = (props) => {
     </div>
   );
 };
-
-function listNames(names: string[]): string {
-  if (names.length <= 2) return names.join(" and ");
-  return `${names.slice(0, 2).join(", ")} and ${names.length - 2} more`;
-}
-
-function statusLabel(status: string): string {
-  switch (status) {
-    case "queued":
-      return "Waiting for the ingest worker…";
-    case "probing":
-      return "Looking up the video…";
-    case "downloading":
-      return "Downloading…";
-    case "packaging":
-      return "Packaging…";
-    case "uploading":
-      return "Uploading…";
-    case "failed":
-      return "Ingest failed";
-    default:
-      return status;
-  }
-}
 
 function syncTitle(state: SyncState, d: SyncDebug | null): string {
   const drift = d ? ` · drift ${Math.round(d.driftMs)} ms` : "";

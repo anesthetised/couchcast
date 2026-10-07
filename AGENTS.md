@@ -355,14 +355,18 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
   it belongs to instead of guessing.
 - Frontend sync lives in `web/src/lib`: `clock.ts` (ping/pong offset,
   median of samples), `sync.ts` (deadband 50 ms, `playbackRate` nudge up
-  to 1 s, seek beyond), `player.ts` (Shaka + token request filter).
+  to 1 s, seek beyond), `player.ts` (Shaka + token request filter),
+  `playback.ts` (`createPlayback`: the player's media lifecycle — Shaka
+  and the synchronizer, loading the current item, token refresh,
+  preloading, the position tick and heartbeat, teardown), `timeline.ts`
+  (chapters, storyboard cells, speed steps) and `hotkeys.ts` (key → action).
   `store/room.ts` wraps the socket in a Solid store; server errors surface
   through `lib/toast.ts` (`<Toasts>` is mounted once in `App.tsx`). A
   dropped socket shows a reconnecting strip; a `kicked` message, a close
   with reason `room deleted`, or a 404/403 on the REST check before the
   second retry ends the session (`store.ended()`) with a full-stage notice.
-  `Player.tsx` owns the hotkeys (Space, ←/→, F, T, M, N, `?` — ignored in inputs),
-  persists volume/mute/quality in `localStorage` (`couchcast.*`) and shows
+  `Player.tsx` carries out the hotkeys (Space, ←/→, F, T, M, N, `?` — ignored in inputs),
+  draws the controls (`PlayerOverlays`, `PlayerTimeline` hold the rest), persists volume/mute/quality in `localStorage` (`couchcast.*`) and shows
   the sync state as a dot (click for the debug overlay). `chat.typing`
   and `react {emoji}` are ephemeral fan-outs (never stored; reactions are
   rate limited per user); `lib/chatText.ts` also turns timecodes into seek
