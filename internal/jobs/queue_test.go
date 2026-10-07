@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -537,4 +539,102 @@ func TestListenCatchesUpAfterReconnect(t *testing.T) {
 	}
 	cancel()
 	<-done
+}
+
+// claimCounter counts Claim queries on a pool.
+type claimCounter struct{ n atomic.Int32 }
+
+func (c *claimCounter) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+	if strings.Contains(data.SQL, "SKIP LOCKED") {
+		c.n.Add(1)
+	}
+	return ctx
+}
+
+func (c *claimCounter) TraceQueryEnd(context.Context, *pgx.Conn, pgx.TraceQueryEndData) {}
+
+// countingPool opens a second pool on the test schema that counts claims.
+func countingPool(t *testing.T) (*pgxpool.Pool, *claimCounter) {
+	t.Helper()
+	cfg := repotest.Pool(t).Config()
+	counter := &claimCounter{}
+	cfg.ConnConfig.Tracer = counter
+	pool, err := pgxpool.NewWithConfig(context.Background(), cfg)
+	require.NoError(t, err)
+	t.Cleanup(pool.Close)
+	return pool, counter
+}
+
+// The regression from #139: idle slots re-armed each other every 200 ms
+// and claimed in a loop although nothing was queued or notified.
+func TestIdleWorkerWaitsForWork(t *testing.T) {
+	pool, claims := countingPool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	q := New(pool)
+	started := make(chan struct{}, 1)
+	w := NewWorker(q, slog.New(slog.DiscardHandler), "test", []string{"ingest"}, func(context.Context, *Job) error {
+		started <- struct{}{}
+		return nil
+	})
+	w.PollInterval = time.Hour
+	runErr := make(chan error, 1)
+	go func() { runErr <- w.Run(ctx, 4) }()
+
+	// The start and the listener's connect each look once.
+	time.Sleep(time.Second)
+	idle := claims.n.Load()
+	assert.LessOrEqual(t, idle, int32(2), "claims while idle")
+
+	// A notification still wakes a slot at once.
+	_, err := q.Enqueue(ctx, nil, "ingest", "a", 1)
+	require.NoError(t, err)
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("a notification did not wake the worker")
+	}
+
+	cancel()
+	assert.ErrorIs(t, <-runErr, context.Canceled)
+}
+
+// A backlog that was queued before the worker started (no notification)
+// uses every slot at once instead of one slot per poll.
+func TestWorkerSpreadsBacklogOverSlots(t *testing.T) {
+	pool := repotest.Pool(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	q := New(pool)
+	const slots = 3
+	for range slots {
+		_, err := q.Enqueue(ctx, nil, "ingest", "x", 1)
+		require.NoError(t, err)
+	}
+
+	var running sync.WaitGroup
+	running.Add(slots)
+	all := make(chan struct{})
+	go func() { running.Wait(); close(all) }()
+	w := NewWorker(q, slog.New(slog.DiscardHandler), "test", []string{"ingest"}, func(ctx context.Context, _ *Job) error {
+		running.Done()
+		select { // hold the slot until every job runs at once
+		case <-all:
+		case <-ctx.Done():
+		}
+		return nil
+	})
+	w.PollInterval = time.Hour
+	runErr := make(chan error, 1)
+	go func() { runErr <- w.Run(ctx, slots) }()
+
+	select {
+	case <-all:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the backlog did not run in parallel")
+	}
+	cancel()
+	assert.ErrorIs(t, <-runErr, context.Canceled)
 }
