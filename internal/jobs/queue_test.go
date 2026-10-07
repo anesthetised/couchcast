@@ -572,6 +572,17 @@ func TestIdleWorkerWaitsForWork(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
+	// Other packages' tests share the database and the NOTIFY channel; every
+	// notification they send rightly wakes this worker, so count them too.
+	var notes atomic.Int32
+	listening := make(chan struct{})
+	var once sync.Once
+	go func() {
+		_ = Listen(ctx, pool, Channel, slog.New(slog.DiscardHandler),
+			func(string) { notes.Add(1) }, func() { once.Do(func() { close(listening) }) })
+	}()
+	<-listening
+
 	q := New(pool)
 	started := make(chan struct{}, 1)
 	w := NewWorker(q, slog.New(slog.DiscardHandler), "test", []string{"ingest"}, func(context.Context, *Job) error {
@@ -582,10 +593,11 @@ func TestIdleWorkerWaitsForWork(t *testing.T) {
 	runErr := make(chan error, 1)
 	go func() { runErr <- w.Run(ctx, 4) }()
 
-	// The start and the listener's connect each look once.
+	// The start and the listener's connect each look once, then only
+	// notifications do; the old loop claimed about 20 times a second.
 	time.Sleep(time.Second)
 	idle := claims.n.Load()
-	assert.LessOrEqual(t, idle, int32(2), "claims while idle")
+	assert.LessOrEqual(t, idle, 2+notes.Load(), "claims while idle")
 
 	// A notification still wakes a slot at once.
 	_, err := q.Enqueue(ctx, nil, "ingest", "a", 1)
