@@ -90,6 +90,19 @@ describe("RoomSocket", () => {
     expect(FakeWebSocket.all).toHaveLength(1);
   });
 
+  it("reconnects after a technical close with a reason (slow client)", async () => {
+    const s = new RoomSocket("r");
+    const got: ServerMessage[] = [];
+    s.subscribe((m) => got.push(m));
+    s.connect();
+    last().accept();
+    last().drop(1013, "slow client");
+    expect(s.status).toBe("closed");
+    expect(got).toEqual([]);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(FakeWebSocket.all).toHaveLength(2);
+  });
+
   it("reconnects when the server restarts (going away, not a kick)", async () => {
     const s = new RoomSocket("r");
     s.connect();

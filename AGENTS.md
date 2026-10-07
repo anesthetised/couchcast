@@ -438,6 +438,8 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
   On shutdown the manager closes viewers with `room.ReasonShutdown`, which
   the hub sends as 1001 (going away): clients reconnect, while 1008 would
   end their session; the HTTP server alone leaves hijacked sockets open.
+  The hub's own transport closes (`slow client`, `write failed`, `bye`)
+  go out as 1013 (try again later), so they reconnect too (`closeStatus`).
   The hub's `Close` only signals: its write loop sends what is queued
   (the `kicked` message), then the close frame, so a room never blocks
   on a slow client while holding its lock.

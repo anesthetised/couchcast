@@ -111,7 +111,7 @@ func (c *conn) Send(msg any) {
 	case c.out <- msg:
 	case <-c.closed:
 	default:
-		c.Close("slow client")
+		c.Close(reasonSlowClient)
 	}
 }
 
@@ -134,7 +134,7 @@ func (c *conn) run(ctx context.Context) {
 	defer c.room.Leave(c)
 
 	c.readLoop(ctx)
-	c.Close("bye")
+	c.Close(reasonBye)
 	<-written
 }
 
@@ -146,15 +146,11 @@ func (c *conn) writeLoop(ctx context.Context) {
 			return
 		case <-c.closed:
 			c.flush(ctx)
-			status := websocket.StatusPolicyViolation
-			if c.closeReason == room.ReasonShutdown {
-				status = websocket.StatusGoingAway // reconnect, the session goes on
-			}
-			_ = c.ws.Close(status, c.closeReason)
+			_ = c.ws.Close(closeStatus(c.closeReason), c.closeReason)
 			return
 		case msg := <-c.out:
 			if !c.write(ctx, msg) {
-				c.Close("write failed")
+				c.Close(reasonWriteFailed)
 			}
 		}
 	}
@@ -162,6 +158,27 @@ func (c *conn) writeLoop(ctx context.Context) {
 
 // flush writes the messages queued before the close, so a kicked client
 // learns why.
+// Close reasons of the hub's own: transport trouble, not a decision about
+// the viewer, so the client reconnects and gets a fresh snapshot.
+const (
+	reasonSlowClient  = "slow client"
+	reasonWriteFailed = "write failed"
+	reasonBye         = "bye" // the read loop ended: client gone or silent
+)
+
+// closeStatus picks the close code for a reason. Browsers treat 1008
+// (policy violation) with a reason as the end of the session (kick, ban,
+// room deleted, session ended); everything else makes them reconnect.
+func closeStatus(reason string) websocket.StatusCode {
+	switch reason {
+	case room.ReasonShutdown:
+		return websocket.StatusGoingAway
+	case reasonSlowClient, reasonWriteFailed, reasonBye:
+		return websocket.StatusTryAgainLater
+	}
+	return websocket.StatusPolicyViolation
+}
+
 func (c *conn) flush(ctx context.Context) {
 	for {
 		select {
