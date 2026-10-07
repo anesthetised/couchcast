@@ -85,6 +85,25 @@ describe("Chat", () => {
     expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
   });
 
+  it("restores the line's text when the same edit starts again", async () => {
+    mount([line(1, "first", { username: "alice", createdMs: Date.now() })]);
+    const input = (await screen.findByPlaceholderText("Say something")) as HTMLInputElement;
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    fireEvent.input(input, { target: { value: "" } });
+    fireEvent.keyDown(input, { key: "ArrowUp" });
+    expect(input.value).toBe("first");
+  });
+
+  it("focuses the field when replying to the same line again", async () => {
+    mount([line(1, "which one?")]);
+    const reply = within((await screen.findByText("which one?")).closest("li")!).getByRole("button", { name: "reply" });
+    fireEvent.click(reply);
+    const input = screen.getByPlaceholderText("Say something");
+    input.blur();
+    fireEvent.click(reply);
+    expect(document.activeElement).toBe(input);
+  });
+
   it("does not offer editing after the window", async () => {
     mount([line(1, "old", { username: "alice", createdMs: Date.now() - 6 * 60_000 })]);
     const mine = (await screen.findByText("old")).closest("li")!;

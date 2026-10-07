@@ -371,7 +371,12 @@ caches at directories `actions/cache` keeps (named volumes otherwise).
   and `react {emoji}` are ephemeral fan-outs (never stored; reactions are
   rate limited per user); `lib/chatText.ts` also turns timecodes into seek
   buttons for moderators, and video links in recent messages unfurl via
-  the probe endpoint (`LinkCard`, one probe per URL per page). When the browser
+  the probe endpoint (`LinkCard`, one probe per URL per page). `Chat.tsx`
+  ties the chat together: `lib/readingPosition.ts` (bottom-follow, the
+  "N new" pill, the divider after a hidden tab), `lib/chatLines.ts`
+  (grouping, folded system runs), `ChatLine` (one message and its tools)
+  and `ChatComposer` (completion, emoji, reply/edit bars, typing hints;
+  Chat holds which line is replied to or edited). When the browser
   rejects `play()` (autoplay policy) `sync.ts` reports it and the player
   shows a tap-to-play gate that resumes inside the gesture.
 - Site administration: `couchcast admin grant|revoke <username>` sets the
