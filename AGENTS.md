@@ -106,11 +106,16 @@ commands run from the repo root via `just` (see `justfile`):
   motion nothing moves (fades are allowed). Failures
   leave traces and screenshots in `e2e/results/`, the HTML report in
   `e2e/report/`. Use it to verify signed-in flows.
-- `just load [flags]` — `tools/loadtest` against the running dev stack:
-  a crowd of WebSocket viewers in one room, playback latency, dropping
-  viewers that stop reading, heap; `-storm` makes everyone buffer at
-  once. Results and limits live in `docs/load.md`; rerun after touching
-  the hub or room broadcasts.
+- `just load [flags]` — `tools/loadtest` against the running dev stack.
+  `-profile crowd` (default): anonymous WebSocket viewers in one room,
+  playback latency, dropping viewers that stop reading, heap; `-storm`
+  makes everyone buffer at once. `-profile votes`: signed-in viewers
+  (users and sessions written straight to the database) in a vote-mode
+  room voting, adding and reconnecting. `-profile rooms`: many rooms,
+  then every viewer reconnects and buffers at once. Each reports CPU,
+  database transactions and bytes sent per message type. Results and
+  limits live in `docs/load.md`; rerun after touching the hub or room
+  broadcasts.
 - `just backup` / `just restore <dir>` — Postgres dump plus an archive of
   the SeaweedFS volume (paused meanwhile) in `backups/<time>/`; restore
   asks first. `COMPOSE_PROJECT_NAME` picks the stack (volumes are
