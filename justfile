@@ -283,7 +283,8 @@ demo-media:
     echo "docs/media: $(du -sh docs/media/room.jpg docs/media/sync.gif | awk '{print $2" "$1}' | tr '\n' ' ')"
 
 # Load test against the running dev stack (`just dev`); see docs/load.md.
-# Flags: -viewers 300 -stuck 10 -seeks 60 -every 200ms.
+# Flags: -profile crowd|votes|rooms -viewers 300 -rooms 20 -duration 2m,
+# crowd also -stuck 10 -seeks 60 -every 200ms -storm.
 [group('code')]
 load *args:
     {{compose}} run --rm web go run ./tools/loadtest {{args}}
