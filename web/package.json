@@ -14,16 +14,16 @@
   },
   "dependencies": {
     "@solidjs/router": "^1.0.0",
-    "shaka-player": "^5.2.12",
-    "solid-js": "^1.9.15"
+    "shaka-player": "^5.2.13",
+    "solid-js": "^1.9.17"
   },
   "devDependencies": {
     "@solidjs/testing-library": "^0.8.10",
-    "@types/node": "^22.0.0",
+    "@types/node": "^22.20.5",
     "@vitest/coverage-v8": "^5.0.3",
-    "jsdom": "^30.1.1",
+    "jsdom": "^30.1.2",
     "typescript": "^7.0.2",
-    "vite": "^8.3.3",
+    "vite": "^8.3.4",
     "vite-plugin-solid": "^2.11.14",
     "vitest": "^5.0.3"
   }
